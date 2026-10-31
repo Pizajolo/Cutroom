@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "lib": ["ES2022", "DOM"], "types": ["node"], "noEmit": true },
+  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "src/engine/**/*.ts", "src/cli/**/*.ts", "tests/main/**/*.ts", "*.config.ts"]
+}
