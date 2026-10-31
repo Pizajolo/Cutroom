@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "elements": [{
+    "id": "title-1", "name": "Opening title", "kind": "text",
+    "props": {
+      "text": { "type": "text", "bind": "text", "default": "Cutroom" },
+      "color": { "type": "color", "bind": "css:--title-color", "default": "#ffffff" },
+      "size": { "type": "number", "bind": "attr:data-prop-size", "default": 72, "min": 12, "max": 200 }
+    }
+  }]
+}

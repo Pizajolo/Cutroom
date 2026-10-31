@@ -1,4 +1,12 @@
 node_modules/
+resources/bin/*
+!resources/bin/README.md
+resources/models/*
+!resources/models/README.md
+resources/chrome/*
+!resources/chrome/README.md
+playwright-report/
+test-results/
 .env
 .env.*
 !.env.example
