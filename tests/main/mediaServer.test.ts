@@ -33,6 +33,21 @@ describe('tokenized loopback media server', () => {
     expect(response).toMatchObject({ status: 200, body: '0123456789', headers: { 'content-type': 'video/mp4', 'cache-control': 'no-store', 'accept-ranges': 'bytes', 'x-content-type-options': 'nosniff' } });
     expect(await get(`${prefix}/p/project/raw/clip.mp4`, {}, 'HEAD')).toMatchObject({ status: 200, body: '', headers: { 'content-length': '10' } });
   });
+  it('round-trips literal percent signs and encoded-looking names with exactly one URL decode', async () => {
+    const rels = ['raw/100% done.mp4', 'raw/take%20one.mp4', 'raw/take one.mp4', 'raw/%2e%2e.mp4', 'raw/%00.mp4', 'raw/%2Fetc.mp4'];
+    for (const rel of rels) await writeFile(path.join(root, rel), rel);
+    await mkdir(path.join(root, '%2e%2e')); await writeFile(path.join(root, '%2e%2e/literal.txt'), 'inside only');
+    for (const rel of [...rels, '%2e%2e/literal.txt']) {
+      const url = new URL(server.url('project', rel));
+      const body = rel === '%2e%2e/literal.txt' ? 'inside only' : rel;
+      expect(await get(url.pathname)).toMatchObject({ status: 200, body });
+      expect(await get(url.pathname, {}, 'HEAD')).toMatchObject({ status: 200, body: '' });
+    }
+    expect((await get(`${prefix}/p/project/raw/take%2520one.mp4`)).body).toBe('raw/take%20one.mp4');
+    expect((await get(`${prefix}/p/project/raw/take%20one.mp4`)).body).toBe('raw/take one.mp4');
+    expect((await get(`${prefix}/p/project/%252e%252e/project-outside/secret.txt`)).status).toBe(404);
+    expect((await get(`${prefix}/p/project/raw/bad%encoding.mp4`)).status).toBe(403);
+  });
   it('supports closed, open, suffix and clamped ranges', async () => {
     const target = `${prefix}/p/project/raw/clip.mp4`;
     await writeFile(path.join(root, 'raw/larger.mp4'), Buffer.alloc(256, 65));
@@ -54,7 +69,7 @@ describe('tokenized loopback media server', () => {
   it('rejects raw/encoded traversal, absolute paths and symlink escapes', async () => {
     const outside = path.join(directory, 'project-outside'); await mkdir(outside); await writeFile(path.join(outside, 'secret.txt'), 'not served');
     await symlink(outside, path.join(root, 'escape'));
-    for (const rel of ['../project-outside/secret.txt', '..%2f..%2fetc%2fpasswd', 'raw/../../project-outside/secret.txt', '%2e%2e/project-outside/secret.txt', '%252e%252e/project-outside/secret.txt', '%2Fetc/passwd', 'escape/secret.txt', 'raw/%00.mp4']) expect((await get(`${prefix}/p/project/${rel}`)).status).toBe(403);
+    for (const rel of ['../project-outside/secret.txt', '..%2f..%2fetc%2fpasswd', 'raw/../../project-outside/secret.txt', '%2e%2e/project-outside/secret.txt', '%2Fetc/passwd', 'escape/secret.txt', 'raw/%00.mp4']) expect((await get(`${prefix}/p/project/${rel}`)).status).toBe(403);
     expect((await get(`${prefix}/p/project/raw/clip.mp4`, {}, 'POST')).status).toBe(405);
   });
   it('revokes an old project root and never serves directories', async () => {

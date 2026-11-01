@@ -149,7 +149,7 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
     }
     case 'trimItem': {
       const { item } = locate(doc, op.itemId);
-      const oldEnd = endOf(item); const rate = item.type === 'clip' ? item.speed : 1;
+      const oldStart = item.start; const oldEnd = endOf(item); const rate = item.type === 'clip' ? item.speed : 1;
       let time = quantize(op.time, fps);
       if (op.edge === 'start') {
         const earliest = media(item) ? Math.max(0, item.start - item.in / rate) : 0;
@@ -164,7 +164,14 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
         if (media(item)) item.out = item.in + (time - item.start) * rate;
         item.duration = time - item.start;
       }
-      quantizeItem(item); touch(item, 'start', 'duration', ...(media(item) ? ['in', 'out'] : [])); break;
+      quantizeItem(item);
+      if (item.type === 'caption') {
+        const offset = item.start - oldStart;
+        item.words = item.words.map((word) => ({ ...word, start: Math.max(0, word.start - offset), end: Math.min(item.duration, word.end - offset) }))
+          .filter((word) => word.end > word.start);
+        if (!item.words.some((word) => word.id === item.highlight)) item.highlight = null;
+      }
+      touch(item, 'start', 'duration', ...(media(item) ? ['in', 'out'] : []), ...(item.type === 'caption' ? ['words', 'highlight'] : [])); break;
     }
     case 'splitItem': {
       const { track, item, index } = locate(doc, op.itemId);

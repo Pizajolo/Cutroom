@@ -14,9 +14,24 @@ beforeEach(async () => {
 afterEach(async () => { await rm(temp, { recursive: true }); });
 
 describe('resolveInProject', () => {
-  it.each(['../x', '/etc/passwd', 'a/%2e%2e/b', 'x\0y', 'a/%252e%252e/b', '..\\outside', 'C:\\private', '%2fetc/passwd', 'a//b'])('rejects %j before mutation', async (rel) => {
+  it.each(['../x', '/etc/passwd', 'a/../b', 'x\0y', 'a/./b', '..\\outside', 'C:\\private', '//etc/passwd', 'a//b'])('rejects %j before mutation', async (rel) => {
     await expect(resolveInProject(root, rel, { write: true })).rejects.toMatchObject({ code: 'forbidden' });
     expect(await readFile(path.join(root, 'raw', 'source.mp4'), 'utf8')).toBe('unchanged');
+  });
+  it('resolves percent signs and URL-looking names literally, without aliasing distinct files', async () => {
+    const names = ['100% done.mp4', 'take%20one.mp4', 'take one.mp4', '%2e%2e.mp4', '%00.mp4'];
+    for (const name of names) await writeFile(path.join(root, 'raw', name), name);
+    for (const name of names) {
+      const resolved = await resolveInProject(root, `raw/${name}`);
+      expect(resolved).toBe(path.join(root, 'raw', name));
+      expect(await readFile(resolved, 'utf8')).toBe(name);
+      await expect(resolveInProject(root, `raw/${name}`, { write: true })).rejects.toMatchObject({ code: 'forbidden' });
+    }
+    await mkdir(path.join(root, '%2e%2e'));
+    expect(await resolveInProject(root, '%2e%2e/new.txt', { write: true })).toBe(path.join(root, '%2e%2e/new.txt'));
+    await mkdir(path.join(temp, 'outside'));
+    await symlink(path.join(temp, 'outside'), path.join(root, '%20escape'));
+    await expect(resolveInProject(root, '%20escape/new.txt', { write: true })).rejects.toMatchObject({ code: 'forbidden' });
   });
   it('rejects a symlink to an existing outside folder', async () => {
     await mkdir(path.join(temp, 'outside')); await symlink(path.join(temp, 'outside'), path.join(root, 'escape'));

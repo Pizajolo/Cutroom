@@ -1,6 +1,7 @@
 import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { READ_ONLY_DIRS } from '../../shared/project/constants';
+import { isProjectPath } from '../../shared/project/paths';
 
 export class PathError extends Error {
   readonly code = 'forbidden';
@@ -18,13 +19,9 @@ function readonlyPath(root: string, target: string): boolean {
 }
 
 export async function resolveInProject(root: string, rel: string, options: ResolveOptions = {}): Promise<string> {
-  let decoded: string;
-  try { decoded = decodeURIComponent(rel); } catch { return reject('Invalid path encoding'); }
-  // Reject nested encoding, separator ambiguity and Windows paths even on macOS.
-  if (!decoded || decoded.includes('\0') || decoded.includes('\\') || /%[0-9a-f]{2}/i.test(decoded) || path.isAbsolute(decoded) || /^[a-zA-Z]:/.test(decoded)) reject('Expected a project-relative path');
-  if (decoded.split('/').some((segment) => segment === '..' || segment === '.' || segment === '')) reject('Path traversal is forbidden');
+  if (!isProjectPath(rel)) reject('Expected a project-relative path without traversal');
   const realRoot = await realpath(root);
-  const target = path.resolve(realRoot, decoded);
+  const target = path.resolve(realRoot, rel);
   if (!inside(realRoot, target)) reject('Path leaves the project');
   if (options.write && !options.allowReadOnlyWrite && readonlyPath(realRoot, target)) reject('Source folders are read-only');
 

@@ -25,10 +25,11 @@ const hook = registerHooks({
   },
 });
 const { ToolRegistry } = await import('../src/main/tools/registry.ts');
-const { startMediaServer, parseRange } = await import('../src/main/server/mediaServer.ts');
+const { startMediaServer, parseRange, resolveMediaPath } = await import('../src/main/server/mediaServer.ts');
+const { resolveInProject } = await import('../src/main/fs/safePath.ts');
 const { importPaths } = await import('../src/main/media/import.ts');
 const { runTool, stopMediaProcesses } = await import('../src/main/media/process.ts');
-const { writeCache } = await import('../src/main/media/cache.ts');
+const { writeCache, sourceKey } = await import('../src/main/media/cache.ts');
 const temporary = await fs.mkdtemp(path.join(tmpdir(), 'cutroom-core-probe-'));
 let server;
 try {
@@ -43,6 +44,23 @@ try {
   assert.deepEqual(parseRange('bytes=-4', 10), { start: 6, end: 9 }); assert.equal(parseRange('bytes=10-', 10), 'unsatisfiable');
   const root = path.join(temporary, 'project'); await fs.mkdir(path.join(root, 'raw'), { recursive: true }); await fs.writeFile(path.join(root, 'raw/clip.mp4'), '0123456789');
   await fs.mkdir(path.join(temporary, 'project-outside')); await fs.writeFile(path.join(temporary, 'project-outside/secret'), 'secret'); await fs.symlink(path.join(temporary, 'project-outside'), path.join(root, 'escape'));
+  const literalRels = ['raw/100% done.mp4', 'raw/take%20one.mp4', 'raw/take one.mp4', 'raw/%2e%2e.mp4', 'raw/%00.mp4'];
+  const canonicalRoot = await fs.realpath(root); const keys = new Set();
+  for (const rel of literalRels) await fs.writeFile(path.join(root, rel), rel);
+  for (const rel of literalRels) {
+    const expected = path.join(canonicalRoot, rel);
+    assert.equal(await resolveInProject(root, rel), expected);
+    const file = await resolveMediaPath(root, rel.split('/').map(encodeURIComponent).join('/'));
+    assert.equal(file, expected); assert.equal(await fs.readFile(file, 'utf8'), rel);
+    const source = await sourceKey({ root, resolveTool: async () => binary, url: (rel) => rel }, rel, 'probe-v1', 'ffprobe');
+    assert.equal(source.file, expected); keys.add(source.key);
+    await assert.rejects(resolveInProject(root, rel, { write: true }), { code: 'forbidden' });
+  }
+  assert.equal(keys.size, literalRels.length);
+  for (const rel of ['../project-outside/secret', '..%2f..%2fetc%2fpasswd', '%2e%2e/project-outside/secret', 'escape/secret', '%2Fetc/passwd', 'raw/%00.mp4', 'raw/bad%encoding.mp4']) await assert.rejects(resolveMediaPath(root, rel), { code: 'forbidden' });
+  await fs.mkdir(path.join(root, '%2e%2e')); await fs.writeFile(path.join(root, '%2e%2e/literal'), 'inside only');
+  assert.equal(await fs.readFile(await resolveMediaPath(root, '%252e%252e/literal'), 'utf8'), 'inside only');
+  console.log('PASS: literal percent/space paths, distinct source keys, exactly-once HTTP path resolution and escape refusal (without opening a socket)');
   const source = path.join(temporary, 'source.mp4'); await fs.writeFile(source, 'original-source-bytes');
   assert.deepEqual(await importPaths(root, [source], 'raw'), ['raw/source.mp4']);
   assert.deepEqual(await importPaths(root, [source], 'raw'), ['raw/source-1.mp4']);
@@ -69,13 +87,16 @@ try {
       response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString(), headers: response.headers }));
     }); client.on('error', reject); client.end();
   });
+  for (const rel of literalRels) assert.equal((await get(rel.split('/').map(encodeURIComponent).join('/'))).body, rel);
+  assert.equal((await get('%252e%252e/literal')).body, 'inside only');
+  assert.equal((await get('%252e%252e/project-outside/secret')).status, 404);
   assert.equal((await get('raw/clip.mp4')).body, '0123456789');
   assert.equal((await get('raw/clip.mp4', {}, 'HEAD')).body, '');
   for (const [range, body] of [['bytes=2-5', '2345'], ['bytes=-4', '6789'], ['bytes=7-', '789'], ['bytes=8-99', '89']]) {
     const ranged = await get('raw/clip.mp4', { Range: range }); assert.equal(ranged.status, 206); assert.equal(ranged.body, body);
   }
   for (const range of ['bytes=10-', 'bytes=-0', 'bytes=4-2', 'bytes=0-1,4-5']) assert.equal((await get('raw/clip.mp4', { Range: range })).status, 416);
-  for (const rel of ['../project-outside/secret', '%2e%2e/project-outside/secret', '%252e%252e/project-outside/secret', 'escape/secret', '%2Fetc/passwd', 'raw/%00.mp4']) assert.equal((await get(rel)).status, 403);
+  for (const rel of ['../project-outside/secret', '%2e%2e/project-outside/secret', 'escape/secret', '%2Fetc/passwd', 'raw/%00.mp4']) assert.equal((await get(rel)).status, 403);
   assert.equal((await get('raw/clip.mp4', {}, 'GET', '/k/wrong')).status, 403);
   assert.equal((await get('raw/clip.mp4', { Origin: 'https://evil.test' })).status, 403);
   assert.equal((await get('raw/clip.mp4', { Origin: 'app://cutroom' })).headers['access-control-allow-origin'], 'app://cutroom');

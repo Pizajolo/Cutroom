@@ -1,15 +1,9 @@
 import { z } from 'zod/v3';
+import { isProjectPath } from '../project/paths';
 
 export const secondsSchema = z.number().finite().nonnegative();
 export const positiveSchema = z.number().finite().positive();
-export const projectPathSchema = z.string().min(1).refine((value) => {
-  try {
-    const decoded = decodeURIComponent(value);
-    return !decoded.includes('\0') && !decoded.includes('\\') &&
-      !decoded.startsWith('/') && !/^[a-zA-Z]:/.test(decoded) &&
-      !decoded.split('/').some((part) => part === '..' || part === '.' || part === '');
-  } catch { return false; }
-}, 'Expected a project-relative path without traversal');
+export const projectPathSchema = z.string().min(1).refine(isProjectPath, 'Expected a literal project-relative path without traversal');
 
 export const formatSchema = z.object({
   aspect: z.enum(['16:9', '9:16', '1:1', '4:5']),
