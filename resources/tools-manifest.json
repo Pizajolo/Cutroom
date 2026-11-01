@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    { "name": "ffmpeg", "version": "9.0.2", "arch": "arm64", "bundled": true, "sourceUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip", "checksumUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip.sha256", "archiveSha256": null, "sha256": null },
+    { "name": "ffprobe", "version": "9.0.2", "arch": "arm64", "bundled": true, "sourceUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip", "checksumUrl": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffprobe.zip.sha256", "archiveSha256": null, "sha256": null },
+    { "name": "ffmpeg", "version": "9.0.2", "arch": "x64", "bundled": true, "sourceUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip", "checksumUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffmpeg.zip.sha256", "archiveSha256": null, "sha256": null },
+    { "name": "ffprobe", "version": "9.0.2", "arch": "x64", "bundled": true, "sourceUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffprobe.zip", "checksumUrl": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/ffprobe.zip.sha256", "archiveSha256": null, "sha256": null }
+  ]
+}
