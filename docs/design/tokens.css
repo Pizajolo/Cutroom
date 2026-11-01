@@ -87,6 +87,11 @@
   --bg-hover: #323942;
   --bg-active: #3b4652;
   --bg-canvas: #111418;
+  /* Output gaps are black; the surrounding preview mat uses bg-canvas. */
+  --bg-frame: #000000;
+  /* Canvas foregrounds stay light in both system appearances. */
+  --text-on-canvas: #e8edf2;
+  --text-on-canvas-muted: #b4bec9;
   --bg-selected: #293f53;
   --bg-backdrop: rgb(7 10 14 / 65%);
   --text-primary: #e8edf2;
