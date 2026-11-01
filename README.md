@@ -7,7 +7,7 @@ A macOS video editor built with Electron, React and TypeScript. The app foundati
 Requires Node **22 or newer** and npm. End users of the packaged app will not need either.
 
 ```sh
-npm install
+npm install --legacy-peer-deps
 npm run dev
 npm run build
 npm run typecheck
