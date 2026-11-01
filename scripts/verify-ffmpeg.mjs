@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const manifest = JSON.parse(await readFile(path.join(root, 'resources/tools-manifest.json'), 'utf8'));
 const run = promisify(execFile);
 const native = new Map();
-for (const entry of manifest.tools.filter((tool) => tool.bundled !== false)) {
+for (const entry of manifest.tools.filter((tool) => tool.bundled !== false && ['ffmpeg', 'ffprobe'].includes(tool.name))) {
   if (!['ffmpeg', 'ffprobe'].includes(entry.name) || !['arm64', 'x64'].includes(entry.arch)) throw new Error('Invalid tool manifest entry');
   if (!/^[a-f0-9]{64}$/.test(entry.sha256 ?? '') || !/^[a-f0-9]{64}$/.test(entry.archiveSha256 ?? '')) throw new Error(`${entry.name}/${entry.arch}: checksums have not been pinned; bundled FFmpeg is not verified.`);
   const file = path.join(root, 'resources/bin', entry.arch, entry.name);

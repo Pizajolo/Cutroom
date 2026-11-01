@@ -2,6 +2,8 @@
 
 No FFmpeg binary has been downloaded or distributed by this checkout. The manifest currently contains unresolved (`null`) checksum pins because the source host was blocked by the development sandbox.
 
+The app now downloads FFmpeg/ffprobe automatically into the user's Cutroom data directory. Without reviewed application pins it verifies the exact archive against the upstream TLS-served checksum, then records the executable digest. This is integrity checking, not a license/source-compliance exemption or publisher signature. The selected GPL-enabled builds are not to be represented as LGPL-only builds.
+
 Selected upstream build source: <https://ffmpeg.martin-riedl.de/> (macOS arm64 / amd64 release 9.0.2). Exact artifact/checksum URLs are in `resources/tools-manifest.json`. The upstream build-script link is <https://git.martin-riedl.de/ffmpeg/build-script>. These links do not constitute complete corresponding source for a binary.
 
 Before distributing either architecture:

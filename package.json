@@ -15,6 +15,7 @@
     "test:e2e": "npm run build && playwright test",
     "schemas": "node scripts/schemas.mjs",
     "fetch:binaries": "node scripts/fetch-binaries.mjs",
+    "build:whisper": "node scripts/build-whisper.mjs",
     "verify:ffmpeg": "node scripts/verify-ffmpeg.mjs",
     "postinstall": "electron-builder install-app-deps"
   },

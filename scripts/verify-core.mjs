@@ -1,4 +1,4 @@
-// Dependency-free development smoke probe; not a replacement for Electron/Vitest acceptance tests.
+// Development smoke probe; not a replacement for Electron/Vitest acceptance tests.
 import { registerHooks, stripTypeScriptTypes } from 'node:module';
 import { readFileSync, existsSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os';
 const sourceRoot = pathToFileURL(fileURLToPath(new URL('../', import.meta.url))).href;
 const hook = registerHooks({
   resolve(specifier, context, next) {
+    if (specifier.startsWith('@shared/')) return { url: new URL(`src/shared/${specifier.slice(8)}.ts`, sourceRoot).href, shortCircuit: true };
+    if (specifier === 'zod/v3') return next(specifier, context);
     if (specifier.startsWith('.') && context.parentURL?.startsWith(sourceRoot)) {
       const candidate = new URL(`${specifier}.ts`, context.parentURL);
       if (existsSync(candidate)) return { url: candidate.href, shortCircuit: true };
@@ -35,8 +37,8 @@ let server;
 try {
   const bundledRoot = path.join(temporary, 'bundle'); await fs.mkdir(bundledRoot);
   const binary = path.join(bundledRoot, 'ffmpeg'); await fs.writeFile(binary, 'fixture1', { mode: 0o755 });
-  const pin = { name: 'ffmpeg', version: '1.0.0', arch: 'arm64', bundled: true, sourceUrl: 'https://example.com/f.zip', checksumUrl: 'https://example.com/f.sha256', archiveSha256: 'a'.repeat(64), sha256: createHash('sha256').update('fixture1').digest('hex') };
-  const registry = new ToolRegistry({ home: path.join(temporary, 'home'), bundledRoot, arch: 'arm64', manifest: { schemaVersion: 1, tools: [pin] } });
+  const pin = { name: 'ffmpeg', version: '1.0.0', arch: 'arm64', bundled: true, source: { url: 'https://example.com/f.zip', format: 'zip', entry: 'ffmpeg' }, checksum: { url: 'https://example.com/f.sha256', format: 'single' }, allowedHosts: ['example.com'], updatable: false, license: 'test', archiveSha256: 'a'.repeat(64), sha256: createHash('sha256').update('fixture1').digest('hex') };
+  const registry = new ToolRegistry({ home: path.join(temporary, 'home'), bundledRoot, arch: 'arm64', manifest: { schemaVersion: 2, models: [], tools: [pin] } });
   await registry.initialize(); assert.equal(await registry.resolve('ffmpeg'), binary);
   await fs.writeFile(binary, 'fixture2'); assert.equal((await registry.list())[0].status, 'checksum_mismatch');
   await assert.rejects(fs.lstat(path.join(temporary, 'home/bin/ffmpeg')), { code: 'ENOENT' });
