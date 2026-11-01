@@ -12,9 +12,9 @@ const roots: string[] = []; const services: WhisperModels[] = [];
 afterEach(async () => { await Promise.all(services.splice(0).map((service) => service.close())); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 const bytes = 'test model bytes'; const digest = createHash('sha256').update(bytes).digest('hex');
 const pin = (name: ModelPin['name']): ModelPin => ({ name, url: `https://huggingface.co/${name}`, sizeBytes: Buffer.byteLength(bytes), sha256: digest, allowedHosts: ['huggingface.co'], allowedHostSuffixes: ['.hf.co'] });
-async function fixture(fetch: Fetch = async () => new Response(bytes)): Promise<{ home: string; service: WhisperModels; settings: SettingsStore }> {
+async function fixture(fetch: Fetch = async () => new Response(bytes), pins: ModelPin[] = [pin('base'), pin('small')]): Promise<{ home: string; service: WhisperModels; settings: SettingsStore }> {
   const home = await mkdtemp(path.join(tmpdir(), 'cutroom-models-test-')); roots.push(home);
-  const settings = await SettingsStore.load(home); const service = new WhisperModels({ home, pins: [pin('base'), pin('small')], settings, fetch }); services.push(service); await service.initialize(); return { home, service, settings };
+  const settings = await SettingsStore.load(home); const service = new WhisperModels({ home, pins, settings, fetch }); services.push(service); await service.initialize(); return { home, service, settings };
 }
 describe('Whisper models', () => {
   it('downloads the default once, reports installed, persists selection and deletes explicitly', async () => {
@@ -26,6 +26,43 @@ describe('Whisper models', () => {
     expect((await service.list())[1]).toMatchObject({ status: 'installed', isDefault: true });
     await service.delete('small'); expect((await service.list())[1]?.status).toBe('missing');
     expect((await readdir(path.join(home, 'models'))).some((file) => file.startsWith('.staging-'))).toBe(false);
+  });
+  it.each(['base', 'small', 'medium', 'large-v3-turbo'] as const)('does not automatically re-download deliberately deleted default %s after restart', async (name) => {
+    const { home, service } = await fixture(undefined, [pin(name)]); await service.setDefault(name); await service.ensureDefault(); await service.delete(name);
+    const settings = await SettingsStore.load(home);
+    expect(settings.get()).toMatchObject({ whisperModel: name, whisperAutoDownloadSuppressed: [name] });
+    const fetch = vi.fn<Fetch>(async () => new Response(bytes));
+    const next = new WhisperModels({ home, settings, pins: [pin(name)], fetch }); services.push(next); await next.initialize();
+    await next.ensureDefault(); await next.setDefault(name); await next.ensureDefault();
+    expect(fetch).not.toHaveBeenCalled();
+    expect((await next.list()).find((model) => model.name === name)).toMatchObject({ status: 'missing', isDefault: true });
+    await next.download(name);
+    expect(fetch).toHaveBeenCalledOnce(); expect((await SettingsStore.load(home)).get().whisperAutoDownloadSuppressed).toEqual([]);
+    expect((await next.list()).find((model) => model.name === name)).toMatchObject({ status: 'installed', isDefault: true });
+  });
+  it('keeps automatic downloads suppressed after a failed explicit retry', async () => {
+    const { home, service } = await fixture(); await service.download('base'); await service.delete('base');
+    const fetch = vi.fn<Fetch>(async () => new Response('x'.repeat(bytes.length)));
+    const next = new WhisperModels({ home, settings: await SettingsStore.load(home), pins: [pin('base')], fetch }); services.push(next); await next.initialize();
+    await expect(next.download('base')).rejects.toMatchObject({ code: 'unavailable' }); await next.ensureDefault();
+    expect(fetch).toHaveBeenCalledOnce(); expect((await SettingsStore.load(home)).get().whisperAutoDownloadSuppressed).toEqual(['base']);
+  });
+  it('keeps automatic downloads suppressed after a cancelled explicit retry', async () => {
+    const { home, service } = await fixture(); await service.download('base'); await service.delete('base');
+    let started = (): void => {}; const ready = new Promise<void>((resolve) => { started = resolve; });
+    const fetch = vi.fn<Fetch>(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1])); started(); } })));
+    const next = new WhisperModels({ home, settings: await SettingsStore.load(home), pins: [pin('base')], fetch }); services.push(next); await next.initialize();
+    const done = next.download('base'); const rejected = expect(done).rejects.toMatchObject({ code: 'unavailable' }); await ready;
+    await next.cancel('base'); await rejected; await next.ensureDefault();
+    expect(fetch).toHaveBeenCalledOnce(); expect((await SettingsStore.load(home)).get().whisperAutoDownloadSuppressed).toEqual(['base']);
+    expect(await readdir(path.join(home, 'models'))).toEqual([]);
+  });
+  it('does not remove model bytes if the automatic-download opt-out cannot be persisted', async () => {
+    const { home, service, settings } = await fixture(); await service.download('base');
+    vi.spyOn(settings, 'update').mockRejectedValueOnce(new Error('Settings are not writable.'));
+    await expect(service.delete('base')).rejects.toThrow('Settings are not writable.');
+    expect(await readFile(path.join(home, 'models/ggml-base.bin'), 'utf8')).toBe(bytes);
+    expect(settings.get().whisperAutoDownloadSuppressed).toEqual([]);
   });
   it('never reports a mismatching file as installed and does not overwrite it', async () => {
     const { home, service } = await fixture(); await mkdir(path.join(home, 'models'));
@@ -45,10 +82,11 @@ describe('Whisper models', () => {
     await service.cancel('base'); await rejected; expect(await readdir(path.join(home, 'models'))).toEqual([]); expect((await service.list())[0]?.install).toBeNull();
   });
   it('refuses traversal names and symlink deletion without mutating the outside file', async () => {
-    const { home, service } = await fixture(); await mkdir(path.join(home, 'models')); const outside = path.join(home, 'outside'); await writeFile(outside, bytes);
+    const { home, service, settings } = await fixture(); await mkdir(path.join(home, 'models')); const outside = path.join(home, 'outside'); await writeFile(outside, bytes);
     await symlink(outside, path.join(home, 'models/ggml-base.bin'));
     await expect(service.delete('../base')).rejects.toMatchObject({ code: 'invalid_request' });
     await expect(service.delete('base')).rejects.toMatchObject({ code: 'forbidden' }); expect(await readFile(outside, 'utf8')).toBe(bytes);
+    expect(settings.get().whisperAutoDownloadSuppressed).toEqual([]);
   });
   it('reuses persisted stat verification on restart and detects later tampering', async () => {
     const { home, service, settings } = await fixture(); await service.download('base');

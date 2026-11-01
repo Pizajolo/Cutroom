@@ -18,6 +18,7 @@ export const globalSettingsSchema = z.object({
     anthropic: savedAccountStateSchema, openai: savedAccountStateSchema, elevenlabs: savedAccountStateSchema,
   }).strict().default({ anthropic: disconnected, openai: disconnected, elevenlabs: disconnected }),
   voiceInput: z.enum(['whisper', 'scribe']), whisperModel: whisperModelNameSchema,
+  whisperAutoDownloadSuppressed: z.array(whisperModelNameSchema).max(4).default([]),
   remotionLicenseAcknowledgedAt: z.string().datetime().nullable(),
   sandbox: z.object({ networkByDefault: z.literal(false), allowedDomains: z.array(z.string()) }).strict(),
   snapshots: z.object({ retainDays: z.number().int().positive(), maxBytes: z.number().int().positive() }).strict(),

@@ -17,6 +17,7 @@ export class WhisperModels {
   private cache: z.infer<typeof cacheSchema> = {};
   private readonly installs = new Map<string, InstallState>();
   private readonly jobs = new Map<string, { controller: AbortController; done: Promise<void> }>();
+  private readonly deleting = new Set<string>();
   private infos: WhisperModelInfo[] = [];
   private timer?: ReturnType<typeof setTimeout>;
   private lastEmitted = 0;
@@ -65,19 +66,24 @@ export class WhisperModels {
   }
   async ensureDefault(): Promise<void> {
     if (this.closed) return;
-    const name = this.options.settings.get().whisperModel;
+    const settings = this.options.settings.get(); const name = settings.whisperModel;
+    if (settings.whisperAutoDownloadSuppressed.includes(name) || this.deleting.has(name)) return;
     const model = (await this.list()).find((model) => model.name === name);
-    if (model?.status === 'missing') await this.download(name).catch(() => undefined);
+    if (model?.status === 'missing' && !this.options.settings.get().whisperAutoDownloadSuppressed.includes(name)) await this.download(name).catch(() => undefined);
+  }
+  private async allowAutomaticDownload(name: WhisperModelName): Promise<void> {
+    if (this.options.settings.get().whisperAutoDownloadSuppressed.includes(name)) await this.options.settings.update((draft) => { draft.whisperAutoDownloadSuppressed = draft.whisperAutoDownloadSuppressed.filter((model) => model !== name); });
   }
   download(name: string): Promise<void> {
     const pin = this.pin(name); if (this.closed) return Promise.reject(new IpcFailure({ code: 'unavailable', message: 'The app is shutting down.' }));
+    if (this.deleting.has(name)) return Promise.reject(new IpcFailure({ code: 'unavailable', message: 'This model is being deleted. Wait and retry the download.' }));
     const old = this.jobs.get(name); if (old) return old.done;
     const controller = new AbortController(); const signal = controller.signal;
     this.state(name, { state: 'queued', received: 0, total: pin.sizeBytes });
     const done = (async () => {
       let staging: string | undefined;
       try {
-        if (await this.status(pin) === 'installed') return;
+        if (await this.status(pin) === 'installed') { await this.allowAutomaticDownload(pin.name); return; }
         const root = await managedDirectory(this.options.home, 'models'); staging = await mkdtemp(path.join(root, '.staging-'));
         const downloads = path.join(staging, 'downloads'); await mkdir(downloads);
         const file = path.join(downloads, 'model.bin');
@@ -90,6 +96,7 @@ export class WhisperModels {
         await publishExclusive(file, target, pin.sha256);
         const installed = await lstat(target);
         this.cache[pin.name] = { size: installed.size, mtimeMs: installed.mtimeMs, ctimeMs: installed.ctimeMs, ino: installed.ino, sha256: pin.sha256 };
+        await this.allowAutomaticDownload(pin.name);
       } catch (error) {
         if (!signal.aborted) this.state(name, { state: 'failed', received: 0, total: pin.sizeBytes, error: error instanceof DownloadFailure ? error.message : 'Could not save the model. Check disk space and permissions; existing files are never overwritten.' });
         throw new IpcFailure({ code: 'unavailable', message: signal.aborted ? 'Model download cancelled.' : error instanceof DownloadFailure ? error.message : 'Model download failed. Check disk space and permissions.' });
@@ -103,11 +110,21 @@ export class WhisperModels {
   }
   async cancel(name: string): Promise<void> { this.pin(name); const job = this.jobs.get(name); if (job) { job.controller.abort(); await job.done.catch(() => undefined); } }
   async delete(name: string): Promise<void> {
-    const pin = this.pin(name); await this.cancel(name);
-    const root = await managedDirectory(this.options.home, 'models'); const target = path.join(root, `ggml-${pin.name}.bin`);
-    try { if (!(await lstat(target)).isFile() || await realpath(target) !== target) throw new Error('Not a regular model file.'); await rm(target); }
-    catch (error) { if (!isMissing(error)) throw new IpcFailure({ code: 'forbidden', message: 'The model path is not an ordinary managed file.' }); }
-    delete this.cache[name]; this.state(name, null); await this.list();
+    const pin = this.pin(name);
+    if (this.deleting.has(name)) throw new IpcFailure({ code: 'unavailable', message: 'This model is already being deleted.' });
+    this.deleting.add(name);
+    try {
+      await this.cancel(name);
+      const root = await managedDirectory(this.options.home, 'models'); const target = path.join(root, `ggml-${pin.name}.bin`);
+      let exists = true;
+      try { if (!(await lstat(target)).isFile() || await realpath(target) !== target) throw new Error('Not a regular model file.'); }
+      catch (error) { if (isMissing(error)) exists = false; else throw new IpcFailure({ code: 'forbidden', message: 'The model path is not an ordinary managed file.' }); }
+      // Persist opt-out before removing bytes, so a crash cannot undo deliberate deletion.
+      await this.options.settings.update((draft) => { if (!draft.whisperAutoDownloadSuppressed.includes(pin.name)) draft.whisperAutoDownloadSuppressed.push(pin.name); });
+      try { if (exists) await rm(target); }
+      catch (error) { if (!isMissing(error)) throw new IpcFailure({ code: 'forbidden', message: 'The model file could not be deleted. Check its permissions.' }); }
+      delete this.cache[name]; this.state(name, null); await this.list();
+    } finally { this.deleting.delete(name); }
   }
   async setDefault(name: string): Promise<WhisperModelInfo[]> { const pin = this.pin(name); await this.options.settings.update((draft) => { draft.whisperModel = pin.name as WhisperModelName; }); return this.list(); }
   async close(): Promise<void> { this.closed = true; if (this.timer) clearTimeout(this.timer); for (const job of this.jobs.values()) job.controller.abort(); await Promise.all([...this.jobs.values()].map((job) => job.done.catch(() => undefined))); }

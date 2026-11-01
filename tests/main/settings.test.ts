@@ -31,11 +31,12 @@ describe('settings store', () => {
     expect(await readFile(path.join(home, 'settings.json'), 'utf8')).toBe(raw);
   });
   it('migrates subscription auth and absent account metadata from older v1 settings', async () => {
-    const old = { ...defaultGlobalSettings(), claude: { auth: 'subscription', credentialRef: 'keychain-ref' }, openai: undefined, accounts: undefined };
+    const old = { ...defaultGlobalSettings(), claude: { auth: 'subscription', credentialRef: 'keychain-ref' }, openai: undefined, accounts: undefined, whisperAutoDownloadSuppressed: undefined };
     await writeFile(path.join(home, 'settings.json'), JSON.stringify(old));
     const settings = (await SettingsStore.load(home)).get();
     expect(settings.claude).toEqual({ auth: 'claude-code', credentialRef: 'keychain-ref' });
     expect(settings.accounts.anthropic.status).toBe('not_connected');
+    expect(settings.whisperAutoDownloadSuppressed).toEqual([]);
   });
   it('serializes concurrent updates and recovers after a rejected update', async () => {
     const store = await SettingsStore.load(home);

@@ -43,6 +43,15 @@ describe('official Claude Code status', () => {
     expect(run.mock.calls.map((call) => call[1])).toEqual([['auth', 'status'], ['--version']]);
     for (const call of run.mock.calls) { expect(call[0]).toBe('/safe/claude'); expect(call[2]?.env).not.toHaveProperty('CLAUDE_CODE_OAUTH_TOKEN'); expect(call[2]?.env).not.toHaveProperty('ANTHROPIC_API_KEY'); }
   });
+  it.each([new Error('private failure details'), new DOMException('private timeout details', 'TimeoutError')])('reports rejected/timed-out auth status as retryable, not signed out (%s)', async (failure) => {
+    const run = vi.fn<RunCommand>(async (_bin, args) => { if (args[0] === '--version') return { code: 0, stdout: '2.1.208' }; throw failure; });
+    const service = new ClaudeCodeService({ resolve: async () => ({ path: '/safe/claude', source: 'sdk-bundled' }), run });
+    await expect(service.status()).rejects.toMatchObject({ code: 'unavailable', message: expect.stringContaining('Retry') });
+    await expect(service.status()).rejects.not.toHaveProperty('message', failure.message);
+  });
+  it.each([null, 2, 137])('does not treat a signal or unexpected exit code %s as a confirmed sign-out', (code) => {
+    expect(() => parseClaudeStatus('', code)).toThrow('Could not check Claude Code sign-in');
+  });
   it('reports no binary as unavailable without spawning', async () => {
     const run = vi.fn<RunCommand>(); const service = new ClaudeCodeService({ resolve: async () => null, run });
     expect(await service.status()).toMatchObject({ available: false, binarySource: null, loggedIn: false }); expect(run).not.toHaveBeenCalled();

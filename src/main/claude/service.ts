@@ -10,6 +10,8 @@ export function cleanClaudeEnv(base: NodeJS.ProcessEnv = process.env): Record<st
 const statusSchema = z.object({ authMethod: z.string().optional(), email: z.string().max(320).nullish(), organization: z.string().max(512).nullish(), orgName: z.string().max(512).nullish() }).passthrough();
 const methods = new Set<ClaudeCodeStatus['authMethod']>(['none', 'claude.ai', 'oauth_token', 'api_key', 'api_key_helper', 'third_party', 'unknown']);
 export function parseClaudeStatus(stdout: string, exitCode: number | null): Pick<ClaudeCodeStatus, 'loggedIn' | 'authMethod' | 'email' | 'organization'> {
+  // The official CLI documents 0/1 for signed in/out; signals and other codes prove neither.
+  if (exitCode !== 0 && exitCode !== 1) throw new IpcFailure({ code: 'unavailable', message: 'Could not check Claude Code sign-in. Retry the status check.' });
   let parsed: z.infer<typeof statusSchema> | null = null;
   try { const result = statusSchema.safeParse(JSON.parse(stdout)); if (result.success) parsed = result.data; } catch { /* Old CLIs may not return JSON. Exit status remains authoritative. */ }
   const loggedIn = exitCode === 0;
@@ -26,16 +28,16 @@ export class ClaudeCodeService {
   private readonly resolve: () => Promise<ClaudeBinary | null>;
   constructor(options: { run?: RunCommand; resolve?: () => Promise<ClaudeBinary | null> } = {}) { this.run = options.run ?? runCommand; this.resolve = options.resolve ?? resolveClaudeBinary; }
   async status(): Promise<ClaudeCodeStatus> {
-    const binary = await this.resolve();
     const absent: ClaudeCodeStatus = { available: false, loggedIn: false, authMethod: 'none', email: null, organization: null, cliVersion: null, binarySource: null };
-    if (!binary) return absent;
-    const base = { ...absent, available: true, binarySource: binary.source };
     try {
+      const binary = await this.resolve();
+      if (!binary) return absent;
+      const base = { ...absent, available: true, binarySource: binary.source };
       const env = cleanClaudeEnv();
       const [auth, version] = await Promise.all([this.run(binary.path, ['auth', 'status'], { env, timeoutMs: 10_000 }), this.run(binary.path, ['--version'], { env, timeoutMs: 10_000 }).catch(() => ({ code: 1, stdout: '' }))]);
       const cliVersion = version.code === 0 ? /^([\w.+-]+)(?:\s|$)/.exec(version.stdout.trim())?.[1] ?? null : null;
       return { ...base, ...parseClaudeStatus(auth.stdout, auth.code), cliVersion };
-    } catch { return { ...base, authMethod: 'unknown' }; }
+    } catch { throw new IpcFailure({ code: 'unavailable', message: 'Could not check Claude Code sign-in. Retry the status check; your saved connection has not been removed.' }); }
   }
   async openLogin(): Promise<void> {
     const binary = await this.resolve();

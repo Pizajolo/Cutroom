@@ -3,6 +3,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { AccountsService } from '@main/accounts/service';
+import { ClaudeCodeService } from '@main/claude/service';
+import type { RunCommand } from '@main/process/run';
 import { SettingsStore } from '@main/settings/store';
 import type { SecretStore } from '@main/secrets/keychain';
 import { providerSchema, type ClaudeCodeStatus, type Provider } from '@shared/schema/accounts';
@@ -72,6 +74,36 @@ describe('account security and Claude login selection', () => {
     const { service, secrets, settings } = await fixture(async () => Response.json({}));
     vi.mocked(secrets.set).mockRejectedValueOnce(new Error(`keychain ${key}`));
     await expect(service.connectKey('openai', key)).rejects.toThrow(); expect(settings.get().accounts.openai.status).toBe('not_connected'); expect(JSON.stringify(service.list())).not.toContain(key);
+  });
+  it.each([new Error('private Keychain failure'), new DOMException('private command timeout', 'TimeoutError')])('preserves a saved Claude connection on auth-status failure and recovers after restart (%s)', async (error) => {
+    let failure: Error | null = null;
+    const run: RunCommand = async (_binary, args) => {
+      if (args[0] === '--version') return { code: 0, stdout: '2.1.208' };
+      if (failure) throw failure;
+      return { code: 0, stdout: '{"authMethod":"claude.ai"}' };
+    };
+    const cli = new ClaudeCodeService({ resolve: async () => ({ path: '/safe/claude', source: 'sdk-bundled' }), run });
+    const { service, settings, home, secrets } = await fixture(vi.fn<Fetch>(), cli);
+    await service.setMethod('claude-code');
+    await settings.update((draft) => { draft.claude.credentialRef = 'dev.cutroom.app/anthropic-api-key'; });
+    failure = error; await service.verifyConnected();
+    expect(service.list().find((account) => account.provider === 'anthropic')).toMatchObject({ status: 'unreachable', method: 'claude-code', keyPreview: null, detail: expect.stringContaining('Retry') });
+    const saved = await SettingsStore.load(home);
+    expect(saved.get().accounts.anthropic.status).toBe('unreachable');
+    expect(saved.get().claude).toEqual({ auth: 'claude-code', credentialRef: 'dev.cutroom.app/anthropic-api-key' });
+    expect(JSON.stringify(service.list())).not.toContain(error.message); expect(secrets.get).not.toHaveBeenCalled();
+    await expect(service.setMethod('claude-code')).rejects.toMatchObject({ code: 'unavailable' });
+    expect(settings.get().accounts.anthropic.status).toBe('unreachable');
+    const next = new AccountsService({ settings: saved, secrets, claudeCode: cli }); services.push(next);
+    failure = null; await next.verifyConnected();
+    expect(next.list().find((account) => account.provider === 'anthropic')).toMatchObject({ status: 'connected', method: 'claude-code' });
+    expect(secrets.get).not.toHaveBeenCalled();
+  });
+  it('does not remove a saved Claude connection if its executable temporarily disappears', async () => {
+    let available = true;
+    const { service } = await fixture(vi.fn<Fetch>(), { status: async () => ({ ...loggedOut, available, loggedIn: available, authMethod: available ? 'claude.ai' : 'none' }) });
+    await service.setMethod('claude-code'); available = false;
+    expect(await service.verify('anthropic')).toMatchObject({ method: 'claude-code', status: 'unreachable' });
   });
   it('requires the official CLI to be logged in and verifies Claude Code without touching Keychain', async () => {
     let signedIn = false; const status = vi.fn(async () => ({ ...loggedOut, loggedIn: signedIn, authMethod: signedIn ? 'claude.ai' as const : 'none' as const, email: signedIn ? 'person@example.com' : null }));
