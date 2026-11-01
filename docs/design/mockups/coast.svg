@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<title>Original North coast storyboard still</title>
+<defs>
+<linearGradient id="sky" x2="0" y2="1"><stop stop-color="#a7b9bf"/><stop offset=".72" stop-color="#d5d5c8"/><stop offset="1" stop-color="#e1d2b8"/></linearGradient>
+<linearGradient id="sea" x2=".1" y2="1"><stop stop-color="#66868b"/><stop offset="1" stop-color="#294d5a"/></linearGradient>
+<linearGradient id="rock" x2=".8" y2="1"><stop stop-color="#777d63"/><stop offset=".4" stop-color="#505f50"/><stop offset="1" stop-color="#243d3c"/></linearGradient>
+<linearGradient id="close" x2=".7" y2="1"><stop stop-color="#9b976e"/><stop offset=".6" stop-color="#606d4e"/><stop offset="1" stop-color="#35483a"/></linearGradient>
+<filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".65" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".1"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+</defs>
+<g filter="url(#grain)">
+<path fill="url(#sky)" d="M0 0h1280v720H0z"/>
+<path fill="#b5c1bc" d="M0 291l126-19 105 20 167-28 166 24 178-3 157 16 201-26 180 24v107H0z" opacity=".7"/>
+<path fill="url(#sea)" d="M0 322q220-15 470 0t810-4v402H0z"/>
+<g fill="none" stroke="#b6c8c3" opacity=".35"><path d="M448 358h202m90-6h330M513 385h260m40 9h405M380 422h290m245 0h300M650 475h420m-22 24h210M765 565h350m-180 36h280M973 644h200"/><path d="M570 340h90m-90 53h-60m365 53h-70m-15 77h-80m350 48h-66"/></g>
+<path fill="#798e87" d="M0 274l101-39 111 19 39 25 110 21 47 40 91 13-32 44-148 19L0 455z"/>
+<path fill="url(#rock)" d="M0 333l104-35 111 7 80 31 88 4 58 46 81 24 78 81-35 41-122 22-87 72L0 720z"/>
+<path fill="#374f4c" d="M144 340l71-35 80 31 88 4 58 46-38 28-88-12-49 56-15 107-78-8z"/>
+<path fill="#889078" d="M0 333l104-35 111 7-71 35-47 58L0 422z"/>
+<path fill="#bdc6b5" d="M467 532l93-28 40-13-35 41-122 22-87 72-19-8 90-82z" opacity=".75"/>
+<path fill="#1d3b42" d="M1280 471l-70-3-29 39 3 44 84 19h12z"/>
+<path fill="#4d6864" d="M1280 471l-70-3-29 39 64 5 35-7z"/>
+<path fill="url(#close)" d="M0 534l75-11 80 27 84-12 57 22 83 12 84 39 88 58 82 51H0z"/>
+<path fill="#b9ad7a" d="M0 560l92-13 62 18 95-11 47 22 68 12 89 42 107 90h-27l-97-80-81-35-67-13-45-24-91 11-64-18L0 580z" opacity=".75"/>
+<g stroke="#b3ab79" stroke-width="2" opacity=".55"><path d="M13 650l10-27m16 39l-3-22m19 49l9-31m72-21l-3-18m78 69l10-28m22 41l3-19m65 45l4-24m55 18l-3-21m-55-49l8-16"/></g>
+<g transform="translate(310 531)"><circle cx="0" cy="-35" r="5" fill="#233631"/><path d="M-4-29l-5 22h16L5-30z" fill="#c5a369"/><path d="M-5-7l-4 20m14-20l5 20" fill="none" stroke="#26382e" stroke-width="4"/><path d="M-6-24l-10 13m21-13l8 11" fill="none" stroke="#293a32" stroke-width="3"/><path d="M-10-27l-5 16" stroke="#444e35" stroke-width="7"/></g>
+</g>
+</svg>
