@@ -26,10 +26,18 @@ export const layoutSchema = z.object({
   rotation: z.number().finite(), anchor: z.enum(['center', 'top-left', 'top', 'top-right', 'left', 'right', 'bottom-left', 'bottom', 'bottom-right']),
 }).strict();
 
+export const cropSchema = z.object({
+  x: z.number().finite().min(0).max(1), y: z.number().finite().min(0).max(1),
+  w: positiveSchema.max(1), h: positiveSchema.max(1),
+}).strict().superRefine((crop, ctx) => {
+  if (crop.x + crop.w > 1) ctx.addIssue({ code: 'custom', path: ['w'], message: 'Crop exceeds source width' });
+  if (crop.y + crop.h > 1) ctx.addIssue({ code: 'custom', path: ['h'], message: 'Crop exceeds source height' });
+});
+
 const clipSchema = z.object({
   ...base, type: z.literal('clip'), id: idFor('clip'), src: projectPathSchema,
   in: secondsSchema, out: positiveSchema, speed: positiveSchema, volume: z.number().finite().nonnegative(), muted: z.boolean(),
-  crop: z.object({ x: secondsSchema, y: secondsSchema, w: positiveSchema, h: positiveSchema }).strict().optional(),
+  crop: cropSchema.optional(),
   reframe: z.object({ mode: z.enum(['fit', 'fill', 'manual', 'track']), x: z.number().finite(), y: z.number().finite(), scale: positiveSchema }).strict().optional(),
   color: z.object({ exposure: z.number().finite(), contrast: z.number().finite(), saturation: z.number().finite(), temperature: z.number().finite(), lut: projectPathSchema.optional() }).strict().optional(),
   behindSubject: z.boolean().optional(),

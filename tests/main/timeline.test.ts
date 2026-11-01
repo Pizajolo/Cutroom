@@ -142,6 +142,109 @@ describe('immutable timeline operations', () => {
   });
 });
 
+describe('normalized clip crop operations', () => {
+  it('accepts a crop contained in the source frame and preserves exact undo', () => {
+    const original = doc();
+    const crop = { x: 0.25, y: 0.5, w: 0.75, h: 0.5 };
+    const result = applyOp(original, { type: 'setProps', itemId: clipId, patch: { crop } });
+    expect(item(result.doc)).toMatchObject({ crop });
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+    expectError(() => applyOp(result.doc, { type: 'setProps', itemId: clipId, patch: { crop: { x: 0.5 } } }), 'invalid');
+  });
+  it.each([
+    { x: 2, y: 0, w: 5, h: 1 }, { x: -0.1, y: 0, w: 1, h: 1 },
+    { x: 0, y: -0.1, w: 1, h: 1 }, { x: 0, y: 0, w: 0, h: 1 },
+    { x: 0, y: 0, w: 1, h: 0 }, { x: 0, y: 0, w: 1.1, h: 1 },
+    { x: 0, y: 0, w: 1, h: 1.1 }, { x: 0.5, y: 0, w: 0.6, h: 1 },
+    { x: 0, y: 0.5, w: 1, h: 0.6 },
+  ])('rejects out-of-frame crop patches %j without mutation', (crop) => {
+    const original = doc(); const before = structuredClone(original);
+    expectError(() => applyOp(original, { type: 'setProps', itemId: clipId, patch: { crop } }), 'invalid');
+    expect(original).toEqual(before);
+  });
+});
+
+const captionId = 'caption_words00001';
+function captionDoc(): TimelineDoc {
+  const original = doc(); const track = original.tracks.find((track) => track.kind === 'captions');
+  if (!track) throw new Error('Missing caption track');
+  track.items.push({ type: 'caption', id: captionId, start: 10, duration: 6, createdBy: 'agent:editor', userEdited: [], stylePreset: 'plain', highlight: 'before', words: [
+    { id: 'before', text: 'Before', start: 0, end: 0.5 },
+    { id: 'at-start', text: 'Boundary', start: 0.5, end: 1 },
+    { id: 'cross-start', text: 'Crossing', start: 0.75, end: 1.25, confidence: 0.83 },
+    { id: 'inside', text: 'Inside', start: 1.5, end: 2.5 },
+    { id: 'cross-end', text: 'Crossing', start: 2.75, end: 3.25 },
+    { id: 'at-end', text: 'Boundary', start: 3, end: 3.5 },
+    { id: 'after', text: 'After', start: 4, end: 5 },
+  ] });
+  return original;
+}
+function caption(document: TimelineDoc): Extract<TimelineItem, { type: 'caption' }> {
+  const found = item(document, captionId); if (found.type !== 'caption') throw new Error('Expected caption'); return found;
+}
+describe('caption trims', () => {
+  it('rebases start trims, preserves absolute timing, clips crossing words and clears removed highlights', () => {
+    const original = captionDoc(); const before = structuredClone(original);
+    const result = applyOp(original, { type: 'trimItem', itemId: captionId, edge: 'start', time: 11 });
+    const trimmed = caption(result.doc);
+    expect(trimmed).toMatchObject({ start: 11, duration: 5, highlight: null });
+    expect(trimmed.words.map(({ id, start, end }) => ({ id, start, end }))).toEqual([
+      { id: 'cross-start', start: 0, end: 0.25 }, { id: 'inside', start: 0.5, end: 1.5 },
+      { id: 'cross-end', start: 1.75, end: 2.25 }, { id: 'at-end', start: 2, end: 2.5 }, { id: 'after', start: 3, end: 4 },
+    ]);
+    expect(trimmed.words[0]?.confidence).toBe(0.83);
+    for (const word of trimmed.words) {
+      const prior = caption(original).words.find((prior) => prior.id === word.id)!;
+      expect(trimmed.start + word.start).toBe(Math.max(trimmed.start, 10 + prior.start));
+      expect(trimmed.start + word.end).toBe(10 + prior.end);
+    }
+    expect(result.changed.paths).toContain(`items.${captionId}.words`);
+    expect(result.changed.paths).toContain(`items.${captionId}.highlight`);
+    expect(original).toEqual(before);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(before);
+  });
+  it('clips end trims and drops words at or past the end without shifting retained starts', () => {
+    const original = captionDoc(); caption(original).highlight = 'after';
+    const result = applyOp(original, { type: 'trimItem', itemId: captionId, edge: 'end', time: 13 });
+    expect(caption(result.doc)).toMatchObject({ start: 10, duration: 3, highlight: null });
+    expect(caption(result.doc).words.map((word) => word.id)).toEqual(['before', 'at-start', 'cross-start', 'inside', 'cross-end']);
+    expect(caption(result.doc).words.at(-1)).toMatchObject({ start: 2.75, end: 3 });
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('retains a surviving highlight through both trims and restores the original through batch inverses', () => {
+    const original = captionDoc(); caption(original).highlight = 'inside';
+    const result = applyOps(original, [
+      { type: 'trimItem', itemId: captionId, edge: 'start', time: 11 },
+      { type: 'trimItem', itemId: captionId, edge: 'end', time: 13 },
+    ]);
+    expect(caption(result.doc)).toMatchObject({ start: 11, duration: 2, highlight: 'inside' });
+    expect(caption(result.doc).words.map(({ id, start, end }) => ({ id, start, end }))).toEqual([
+      { id: 'cross-start', start: 0, end: 0.25 }, { id: 'inside', start: 0.5, end: 1.5 }, { id: 'cross-end', start: 1.75, end: 2 },
+    ]);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('extends the start without moving absolute word times or dropping a valid highlight', () => {
+    const original = captionDoc();
+    const result = applyOp(original, { type: 'trimItem', itemId: captionId, edge: 'start', time: 9 });
+    const trimmed = caption(result.doc); expect(trimmed.highlight).toBe('before');
+    expect(trimmed.words).toEqual(caption(original).words.map((word) => ({ ...word, start: word.start + 1, end: word.end + 1 })));
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('allows a retained interval with no words and clears its highlight', () => {
+    const result = applyOp(captionDoc(), { type: 'trimItem', itemId: captionId, edge: 'start', time: 15.5 });
+    expect(caption(result.doc)).toMatchObject({ words: [], highlight: null, duration: 0.5 });
+  });
+  it('uses the quantized trim time and restores off-grid originals exactly', () => {
+    const original = captionDoc(); caption(original).start = 10.013; caption(original).duration = 5.987;
+    const result = applyOp(original, { type: 'trimItem', itemId: captionId, edge: 'start', time: 11.018 });
+    const trimmed = caption(result.doc); const inside = trimmed.words.find((word) => word.id === 'inside')!;
+    expect(trimmed.start).toBe(331 / 30);
+    expect(trimmed.start + inside.start).toBeCloseTo(11.513, 12);
+    expect(trimmed.start + inside.end).toBeCloseTo(12.513, 12);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+});
+
 describe('inverse property', () => {
   it('restores random valid docs exactly for 250 generated edits', () => {
     fc.assert(fc.property(

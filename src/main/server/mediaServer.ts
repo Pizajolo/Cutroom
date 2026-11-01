@@ -26,6 +26,11 @@ const mimeTypes: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff', aif: 'audio/aiff', aiff: 'audio/aiff', json: 'application/json',
 };
 export function mediaMime(rel: string): string { return mimeTypes[rel.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream'; }
+export async function resolveMediaPath(root: string, encoded: string): Promise<string> {
+  let literal: string;
+  try { literal = decodeURIComponent(encoded); } catch { throw new PathError('Invalid path encoding'); }
+  return resolveInProject(root, literal);
+}
 export async function startMediaServer(options: MediaServerOptions): Promise<{ baseUrl: string; url: (projectId: string, rel: string) => string; close: () => Promise<void> }> {
   const token = randomBytes(32).toString('hex');
   const allowedOrigins = new Set(['app://cutroom']);
@@ -53,7 +58,7 @@ export async function startMediaServer(options: MediaServerOptions): Promise<{ b
     if (!root || !rel) { fail(404); return; }
     let handle: FileHandle | undefined;
     try {
-      const file = await resolveInProject(root, rel);
+      const file = await resolveMediaPath(root, rel);
       handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
       const stat = await handle.stat();
       if (!stat.isFile()) { fail(404); return; }

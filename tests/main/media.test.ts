@@ -14,6 +14,7 @@ import { runTool, stopMediaProcesses, type ToolResolver } from '../../src/main/m
 import type { MediaContext } from '../../src/main/media/cache';
 import { MediaService } from '../../src/main/media/service';
 import type { MediaProbe } from '../../src/shared/schema/media';
+import { contract } from '../../src/shared/ipc/contract';
 
 const temporary: string[] = [];
 afterEach(async () => { await stopMediaProcesses(); await Promise.all(temporary.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -40,6 +41,33 @@ describe('media pure logic', () => {
     const accumulator = new PeakAccumulator(); accumulator.add(pcm.subarray(0, 1)); accumulator.add(pcm.subarray(1, 103)); accumulator.add(pcm.subarray(103));
     expect(accumulator.finish()).toEqual([{ min: -1, max: 32767 / 32768 }, { min: -0.5, max: 0.5 }]); expect(accumulator.samples).toBe(258);
     const truncated = new PeakAccumulator(); truncated.add(Buffer.from([0])); expect(() => truncated.finish()).toThrow('Truncated');
+  });
+});
+describe('literal media listing and probing', () => {
+  it('keeps percent/space files distinct through readdir, probing, URLs and IPC validation', async () => {
+    const root = await realpath(await folder()); await mkdir(path.join(root, 'raw/100% folder'), { recursive: true });
+    const rels = ['raw/100% done.mp4', 'raw/take%20one.mp4', 'raw/take one.mp4', 'raw/100% folder/%2e%2e.mp4'];
+    for (const [index, rel] of rels.entries()) await writeFile(path.join(root, rel), JSON.stringify({ format: { duration: String(index + 1) }, streams: [{ codec_type: 'video', codec_name: 'h264', width: 320 + index, height: 180, avg_frame_rate: '30/1' }] }));
+    const runner = vi.spyOn(mediaProcesses, 'runTool').mockImplementation(async (_resolve: ToolResolver, name: 'ffmpeg' | 'ffprobe', args: readonly string[]) => {
+      expect(name).toBe('ffprobe');
+      const file = args[args.length - 1]; if (!file) throw new Error('Missing probe file');
+      return readFile(file);
+    });
+    const media = new MediaService({ resolveTool: async () => process.execPath, url: (id, rel) => `http://127.0.0.1:12345/k/test/p/${id}/${rel.split('/').map(encodeURIComponent).join('/')}` });
+    try {
+      await media.selectFolder(root);
+      const files = await media.list();
+      expect(files.map((file) => file.rel)).toEqual([...rels].sort());
+      expect(contract.invoke['media.list'].res.parse(files)).toEqual(files);
+      for (const [index, rel] of rels.entries()) {
+        const file = files.find((entry) => entry.rel === rel);
+        expect(file).toMatchObject({ name: path.basename(rel), probe: { duration: index + 1, width: 320 + index, size: (await stat(path.join(root, rel))).size } });
+        expect(file?.error).toBeUndefined();
+        expect(file?.url.endsWith(rel.split('/').map(encodeURIComponent).join('/'))).toBe(true);
+        expect(runner.mock.calls.some((call: Parameters<typeof runTool>) => call[2].at(-1) === path.join(root, rel))).toBe(true);
+        expect(await media.revealPath(rel)).toBe(path.join(root, rel));
+      }
+    } finally { media.close(); runner.mockRestore(); }
   });
 });
 describe('explicit source-preserving imports', () => {
@@ -111,13 +139,18 @@ describe.skipIf(!ffmpeg || !ffprobe)('real media integration (ffmpeg not availab
       expect(runner).not.toHaveBeenCalled();
     } finally { runner.mockRestore(); }
     await mkdir(path.join(root, 'final')); await copyFile(source, path.join(root, 'final/result-v1.mp4'));
+    const literalRels = ['raw/100% done.mp4', 'raw/take%20one.mp4', 'raw/take one.mp4'];
+    for (const rel of literalRels) await copyFile(source, path.join(root, rel));
     const media = new MediaService({ resolveTool: resolver, url: (_id, rel) => context.url(rel) });
+    const probeRunner = vi.spyOn(mediaProcesses, 'runTool');
     try {
       await expect(media.list()).rejects.toMatchObject({ code: 'not_found' });
       await media.selectFolder(root);
-      const files = await media.list(); expect(files.map((file) => file.rel)).toEqual(['final/result-v1.mp4', 'raw/fixture.mp4']);
+      const files = await media.list(); expect(files.map((file) => file.rel)).toEqual(['final/result-v1.mp4', 'raw/fixture.mp4', ...literalRels].sort());
+      expect(contract.invoke['media.list'].res.parse(files)).toEqual(files);
       for (const file of files) expect(file.probe).toMatchObject({ duration: 2, width: 320, height: 180, fps: 30, vcodec: 'h264', acodec: 'aac' });
-    } finally { media.close(); }
+      for (const rel of literalRels) expect(probeRunner.mock.calls.some((call: Parameters<typeof runTool>) => call[1] === 'ffprobe' && call[2].at(-1) === path.join(root, rel))).toBe(true);
+    } finally { media.close(); probeRunner.mockRestore(); }
     expect(await hash()).toBe(before); expect((await stat(source)).mtimeMs).toBe(originalMtime);
   }, 60_000);
 });
