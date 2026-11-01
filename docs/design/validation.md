@@ -40,6 +40,32 @@ All measured normal-text pairs exceed AA 4.5:1; measured focus indicator pairs e
 
 The final comparison confirmed custom-property declarations in `docs/design/tokens.css` and `src/renderer/styles/tokens.css` are equivalent, including `--timeline-height: 396px`; comments/whitespace differ.
 
+## Accounts/tools repair design review (2026-11-01)
+
+New references consume the actual renderer tokens and `app.css`, rather than a divergent mockup-only component theme:
+
+- `mockups/accounts.html`: screenshot-reviewed at 1440×960 and 390×844, with an additional layout snapshot at 1024×768; three provider states (disconnected, saved key, temporarily unreachable). The narrow layout keeps the password input and Connect usable without horizontal page/card overflow.
+- `mockups/accounts-signin.html`: screenshot-reviewed at 1440×960 in both waiting-in-Terminal and `#detected` states. Clicking the reference link changes the static state. Detected sign-in retains Not connected until the explicit Use this sign-in action; mockup controls never launch Terminal.
+- `mockups/tools.html`: screenshot-reviewed at 1440×960 and 1024×768, including verified tool, indeterminate verification, failed download/Retry, build-only whisper-cli and determinate base-model progress. Lower model/default/Remotion content scrolls within Settings; at compact desktop widths the table has its own horizontal scroll region.
+- Accounts light theme screenshot-reviewed by applying existing light token declarations in-browser, not by changing macOS appearance.
+
+Iterations: corrected inline SVG viewBoxes (the neutral circle was clipped); restored left-aligned settings links when the global sidebar becomes a rail; separated wrapping compact navigation from reference notes; added zero minimum content width and bounded compact rows; darkened progress tracks from border-strong to bg-hover so fill/track contrast exceeds 3:1. Final screenshot confirmed the lighter filled portion is clearly distinguished from its track.
+
+Browser measurements (WCAG luminance formula):
+
+| Pair | Dark | Light |
+|---|---:|---:|
+| Connected text / status background | 7.26:1 | 6.05:1 |
+| Unreachable text / status background | 7.09:1 | 5.55:1 |
+| Invalid text / status background | 7.00:1 | 5.54:1 |
+| Supporting text / card background | 6.13:1 | 5.62:1 |
+| Progress fill / track | 6.62:1 | 5.59:1 |
+| Focus ring / card background | 9.99:1 | 6.51:1 |
+
+Keyboard Tab inspection confirmed Connect has a 2 px focus ring and 2 px offset. At 390 px, document width remained 390 px, content scroll width matched client width (334 px), and no card overflowed. Tool progress elements measured 4 px high: verifying omitted aria-valuenow, while base download exposed value 64 plus phase/byte description. The reviewed browser console had no new errors.
+
+These are static design and CSS checks only. No real provider keys were entered, no Terminal login or Keychain operation was run, no binaries/models were downloaded, and no npm/typecheck/runtime suite was run in this design step. The existing Electron app status was failed (exit 134 from an earlier backend-dev launch); the local static-reference server was used for visual review. Functional account/installer acceptance belongs to frontend/backend/QA, not these mockups.
+
 ## Limits and implementation follow-through
 
 - Mockups are static HTML/CSS, with real links between the four references and CSS-target switching for Export. Many controls illustrate appearance and intentionally do not edit media or run jobs. Sample usage, amounts, times and completed checks are fictional design content.

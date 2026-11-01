@@ -239,9 +239,9 @@ Import from URL is a 640 px dialog. Initial URL field (full width, paste friendl
 
 Fetched state: thumbnail120×68, title, uploader, duration. Quality radio table: Best (recommended), then resolution/fps, container/codecs and approximate size (Unknown if unavailable). Combined audio/video choice described simply; do not expose shell flags. Destination Footage/References/Assets, with actual mapped directory as secondary text. First download rights checkbox, initially unchecked: **“I own this content or have permission to use it.”** Recorded confirmation date available in details; never treat as a guarantee of legality. **Download** disabled until confirmed. Also explain that the URL is sent to the source site. No downloads on paste or on Fetch alone.
 
-Downloading shows filename, bytes/total when available, rate, phase, ETA and Cancel. Keep modal dismissible to background. Complete: **Show in Media**, destination, sidecars/subtitle count. Unsupported site, network interruption, disk full and format unavailable are distinct messages; retry reuses URL/destination but can re-fetch formats. Weekly yt-dlp update is visible under Tools; checksum mismatch blocks use and points to repair, never “Run anyway”.
+Downloading shows filename, bytes/total when available, rate, phase, ETA and Cancel. Keep modal dismissible to background. Complete: **Show in Media**, destination, sidecars/subtitle count. Unsupported site, network interruption, disk full and format unavailable are distinct messages; retry reuses URL/destination but can re-fetch formats. A daily yt-dlp update check and a manual update action are visible under Tools; checksum mismatch blocks use and points to repair, never “Run anyway”.
 
-Settings → Tools: name/version/source/status/update row for each bundled tool. Installed vs bundled is explicit. Missing or checksum mismatch uses icon+text+error tone. Tool logs collapse behind Details and are redacted. Whisper models section lists base/small installed, medium/large-v3-turbo download size and disk requirement, progress/cancel, default selector. Model stays loaded is informational, not an endless running-job badge. Remotion acknowledgement date shown here after first use.
+Settings → Tools follows [settings-connections.md](settings-connections.md): automatic checksum-verified downloads, source and verification columns, live phase/byte progress, cancel/retry, and yt-dlp update actions. Whisper models report actual installed state, size, progress and default selection; do not assume base/small are installed. whisper-cli's local build prerequisite is separate from model downloads. Model stays loaded is informational, not an endless running-job badge. The existing Remotion licence section is unchanged by the accounts/tools repair.
 
 ## 10. Transcript, captions, editable elements and audio
 
@@ -275,7 +275,7 @@ Clone flow: Add samples (drop/record/extract selected range) → Review samples 
 
 Effects/music duration and mood explicit; insertion playhead/track previewed. Isolator/voice changer retain originals and create generated audio. Dubbing language list creates new version filenames; never overwrites source cut. Large credit confirmation gives estimate, current balance and explicit **Generate using approximately N credits**; no exact promise for an estimate.
 
-ElevenLabs Accounts page shows OAuth and API key as independent connections, capability badges (“Agent tools” / “Audio panel”), masked saved key, account/plan/credits if API permits. OAuth-only connection must not imply REST audio-panel access unless backend actually supports it. Connect/Disconnect and scopes visible, tokens never visible. No credits display when unknown: “Balance unavailable”, not 0.
+ElevenLabs Accounts uses an API key stored in macOS Keychain, a last-four-only saved preview, Verify/Disconnect and the plan/usage detail actually returned by its API. No OAuth flow or capability badges are offered in this implementation. Connection alone does not enable unbuilt audio-generation features. No credits display when unknown: “Balance unavailable”, not 0. See [settings-connections.md](settings-connections.md).
 
 ## 11. Ask, agent chat and approval
 
@@ -337,7 +337,7 @@ Workflow graph: nodes min200×96, left-to-right main steps, visibly bounded para
 
 ### Settings
 
-Left section list: Accounts (Claude, ElevenLabs), Tools, Sandbox, Voice input, Render presets, Storage/snapshots, Extensions. Narrow version one settings column and section selector. Claude subscription default, API key optional masked input; explanation of `claude login` should offer app-driven connection guidance, not tell users to install Node. Keys sent straight to secure storage, cleared from field/state after save, never displayed in raw form later. Connection test names active mode, no credentials. Snapshot cleanup previews size and affected recovery points, requires confirmation. Extensions install shows command, destination domains, scopes and sandbox before **Install**. No blind execution from pasted JSON.
+Left section list: Accounts (Claude, OpenAI, ElevenLabs), Tools, Sandbox, Voice input, Render presets, Storage/snapshots, Extensions. Narrow version one settings column and section selector. Accounts and tool setup follow [settings-connections.md](settings-connections.md): Claude Console API key is recommended, or the user's own Claude Code sign-in completed in Terminal. Cutroom does not offer embedded claude.ai login or handle its tokens. API keys are validated in main before Keychain storage, cleared immediately from renderer inputs on submission (including failures), and never shown later except the main-provided last-four preview. Connection test names active mode, no credentials. Snapshot cleanup previews size and affected recovery points, requires confirmation. Extensions install shows command, destination domains, scopes and sandbox before **Install**. No blind execution from pasted JSON.
 
 ### Feedback
 

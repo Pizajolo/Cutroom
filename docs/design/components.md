@@ -12,7 +12,7 @@ Use with `spec.md` and `tokens.css`. Dimensions are CSS px at 100% scale. Neutra
 | Pressed | bg-active or accent-pressed; `aria-pressed` for toggles |
 | Selected | bg-selected + selection outline/check/active underline; selection is not keyboard focus |
 | Disabled | native disabled / aria-disabled, disabled text and no hover; nearby reason for unavailable key action |
-| Error | danger boundary and icon, inline explanation; preserve entered value; aria-invalid/describedby |
+| Error | danger boundary and icon, inline explanation; preserve entered value except secret inputs (clear on submission); aria-invalid/describedby |
 | Busy | original label becomes phase/action label with spinner; preserve width and prevent duplicate submit |
 
 Pointer targets 28×28 minimum for dense desktop controls; 24×24 permitted for secondary toolbar controls with ≥4 px separation. Timeline trim handles have8 px hit width and equivalent keyboard field actions. Do not style a 12 px glyph as a 12 px target.
@@ -103,6 +103,6 @@ Outline1 blue, corner handles6 with≥16 targets, white/dark backing for video c
 - Run: Running / Waiting for answer / Paused / Needs your input / Finished / Stopped / Failed.
 - Change review: Changed / Kept / Reverted / Conflict.
 - Persistence: Saving… / Saved / Couldn't save.
-- Account: Connected / Not connected / Connection expired / Balance unavailable.
+- Account: Connected / Not connected / Key rejected / Can't reach service. Unknown usage is “Balance unavailable”, not zero. See settings-connections.md for secure forms and Terminal handoff.
 
 Every status has text and icon, not dot colour alone. Use ellipsis only for incomplete activity or actions that open a required input dialog, not decoration.

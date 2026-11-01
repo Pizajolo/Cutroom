@@ -20,6 +20,10 @@ Preview sits above an eight-track timeline. Media/Transcript share the left dock
 | [mockups/timeline.html](mockups/timeline.html) | Transcript, word timing, marked range and caption trim gesture |
 | [mockups/assistant.html](mockups/assistant.html) | Selection context, live request changes, Keep/Revert and chat composer |
 | [mockups/export.html](mockups/export.html) | Export setup; choose Export video or Progress to see static rendering state |
+| [settings-connections.md](settings-connections.md) | Accounts, secure key forms, Claude Terminal sign-in, automatic tool/model downloads and live status; supersedes older auth/install wording |
+| [mockups/accounts.html](mockups/accounts.html) | Accounts form, saved key and unreachable provider states |
+| [mockups/accounts-signin.html](mockups/accounts-signin.html) | Claude Terminal handoff, waiting and detected sign-in states |
+| [mockups/tools.html](mockups/tools.html) | Tool verification, retry, build prerequisite and model download states |
 | [validation.md](validation.md) | Browser review, iterations, measured token contrast and limitations |
 
 Frontend first milestone: spec §§1–8. Later screen details: §§9–14. Keyboard map: §15. Do not use the mockup markup or sample values as production data/state logic.
