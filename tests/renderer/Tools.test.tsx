@@ -96,6 +96,32 @@ it('downloads/cancels models, confirms deletion and changes default only to an i
   fireEvent.click(within(dialog).getByRole('button', { name: 'Delete model' }));
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('models.delete', { name: 'small' }));
 });
+it('does not restart a deliberately deleted default download or silently choose another model on remount', async () => {
+  models = [model(), model({ name: 'small', isDefault: false })];
+  mocks.invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'tools.list') return tools;
+    if (channel === 'models.list') return models;
+    if (channel === 'models.delete') {
+      models = [model({ status: 'missing' }), model({ name: 'small', isDefault: false })];
+      mocks.listeners.get('models.changed')?.(models);
+    }
+    return { ok: true };
+  });
+  const { unmount } = render(<Tools />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete base model' }));
+  const dialog = screen.getByRole('dialog', { name: 'Delete base model?' });
+  expect(within(dialog).getByText('This is your default model. Transcription will need an installed model.')).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete model' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getByRole('button', { name: 'Download base model' })).toBeTruthy();
+  expect(screen.getByText('Current default: base (not installed).')).toBeTruthy();
+  unmount(); render(<Tools />);
+  await screen.findByRole('button', { name: 'Download base model' });
+  const select = screen.getByRole('combobox', { name: 'Default transcription model' }) as HTMLSelectElement;
+  expect(select.value).toBe(''); expect([...select.options].map((option) => option.value)).toEqual(['', 'small']);
+  expect(mocks.invoke).toHaveBeenCalledWith('models.delete', { name: 'base' });
+  expect(mocks.invoke.mock.calls.filter(([channel]) => channel === 'models.download' || channel === 'models.setDefault')).toEqual([]);
+});
 it('does not let a late fetch overwrite a newer event', async () => {
   let resolve!: (value: ToolInfo[]) => void;
   mocks.invoke.mockImplementation((channel: string) => channel === 'tools.list' ? new Promise<ToolInfo[]>((done) => { resolve = done; }) : Promise.resolve(models));

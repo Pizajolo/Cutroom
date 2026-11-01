@@ -133,6 +133,53 @@ it('opens Terminal only on request, polls status and requires explicit Use this 
   expect(mocks.invoke).toHaveBeenCalledWith('accounts.claude.setMethod', { method: 'claude-code' });
   expect(screen.getByText('Signed in with Claude Code (editor@example.test)')).toBeTruthy();
 });
+it.each(['accounts.claudeCode.status', 'accounts.verify'] as const)('preserves a connected Claude sign-in when %s rejects and permits retry', async (failedChannel) => {
+  accounts = [account('anthropic', { status: 'connected', method: 'claude-code', detail: 'Signed in with Claude Code · editor@example.test' })];
+  let fail = false;
+  mocks.invoke.mockImplementation(async (channel: string) => {
+    if (fail && channel === failedChannel) throw new IpcFailure({ code: 'unavailable', message: 'Claude Code status could not be checked. Please retry.' });
+    if (channel === 'accounts.list') return accounts;
+    if (channel === 'accounts.claudeCode.status') return cli({ loggedIn: true, email: 'editor@example.test', authMethod: 'claude.ai' });
+    if (channel === 'accounts.verify') return accounts[0];
+    return [];
+  });
+  render(<><Sidebar info={null} /><Accounts /></>);
+  const card = await screen.findByRole('region', { name: 'Claude' });
+  await within(card).findByText('Signed in as editor@example.test');
+  fail = true;
+  const action = failedChannel === 'accounts.verify' ? 'Verify' : 'Check again';
+  fireEvent.click(within(card).getByRole('button', { name: action }));
+  expect((await within(card).findByRole('alert')).textContent).toContain('Claude Code status could not be checked. Please retry.');
+  expect(within(card).getByText('Connected')).toBeTruthy(); expect(within(card).getByText('Signed in as editor@example.test')).toBeTruthy();
+  expect(within(card).queryByText('Not signed in')).toBeNull(); expect(within(card).queryByText('Not connected')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Claude connected · Claude Code sign-in' })).toBeTruthy();
+  expect(mocks.invoke).not.toHaveBeenCalledWith('accounts.disconnect', { provider: 'anthropic' });
+  fail = false;
+  fireEvent.click(within(card).getByRole('button', { name: action }));
+  await waitFor(() => expect(within(card).queryByRole('alert')).toBeNull());
+});
+it('shows a retryable initial CLI-status failure without claiming sign-out or remaining in loading', async () => {
+  accounts = [account('anthropic', { status: 'connected', method: 'claude-code' })];
+  mocks.invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'accounts.list') return accounts;
+    throw new IpcFailure({ code: 'unavailable', message: 'Claude Code status is temporarily unavailable.' });
+  });
+  render(<Accounts />); const card = await screen.findByRole('region', { name: 'Claude' });
+  await within(card).findByRole('alert');
+  expect(within(card).getByText('Sign-in status unavailable')).toBeTruthy(); expect(within(card).getByText('Connected')).toBeTruthy();
+  expect(within(card).queryByText('Not signed in')).toBeNull(); expect(within(card).queryByText('Checking Claude Code…')).toBeNull();
+  const retry = within(card).getByRole('button', { name: 'Check again' }) as HTMLButtonElement; expect(retry.disabled).toBe(false);
+  mocks.invoke.mockResolvedValue(cli({ loggedIn: true, email: 'editor@example.test', authMethod: 'claude.ai' }));
+  fireEvent.click(retry); await within(card).findByText('Signed in as editor@example.test');
+});
+it('keeps Claude saved-account controls when the backend reports a transient unreachable state', async () => {
+  accounts = [account('anthropic', { status: 'connected', method: 'claude-code' })];
+  render(<Accounts />); const card = await screen.findByRole('region', { name: 'Claude' });
+  act(() => mocks.listeners.get('accounts.changed')?.([account('anthropic', { status: 'unreachable', method: 'claude-code', detail: 'Claude Code status could not be checked. Please retry.' })]));
+  expect(within(card).getByText("Can't reach service")).toBeTruthy(); expect(within(card).getByText("Your saved connection hasn't been removed.")).toBeTruthy();
+  expect(within(card).getByRole('button', { name: 'Verify' })).toBeTruthy(); expect(within(card).getByRole('button', { name: 'Disconnect' })).toBeTruthy();
+  expect((within(card).getByRole('radio', { name: 'Use my Claude Code sign-in' }) as HTMLInputElement).checked).toBe(true);
+});
 it('stops polling at two minutes and after unmount', async () => {
   const { unmount } = render(<Accounts />); await screen.findByRole('region', { name: 'Claude' });
   fireEvent.click(screen.getByRole('radio', { name: 'Use my Claude Code sign-in' }));

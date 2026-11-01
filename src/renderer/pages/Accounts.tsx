@@ -55,7 +55,7 @@ function ClaudeSignIn({ disabled, onUse }: { disabled: boolean; onUse: () => voi
     finally { setOpening(false); }
   };
   return <div className="account-login-panel">
-    <p><Terminal size={16} aria-hidden="true" /> {status === null ? 'Checking Claude Code…' : !status.available ? 'Claude Code not found' : status.loggedIn ? status.email ? `Signed in as ${status.email}` : 'Claude Code is signed in' : deadline !== null ? 'Finish signing in in Terminal' : 'Not signed in'}</p>
+    <p><Terminal size={16} aria-hidden="true" /> {status === null ? checking ? 'Checking Claude Code…' : 'Sign-in status unavailable' : !status.available ? 'Claude Code not found' : status.loggedIn ? status.email ? `Signed in as ${status.email}` : 'Claude Code is signed in' : deadline !== null ? 'Finish signing in in Terminal' : 'Not signed in'}</p>
     <p>Sign-in happens in Claude Code in Terminal. Cutroom never sees your Claude password or tokens.</p>
     {status?.cliVersion && <p className="field-note">Claude Code {status.cliVersion}</p>}
     {status && !status.available && <p className="field-note">Use an API key, or install Claude Code and check again.</p>}
