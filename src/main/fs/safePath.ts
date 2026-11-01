@@ -1,6 +1,6 @@
 import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { READ_ONLY_DIRS } from '@shared/schema/timeline';
+import { READ_ONLY_DIRS } from '../../shared/project/constants';
 
 export class PathError extends Error {
   readonly code = 'forbidden';

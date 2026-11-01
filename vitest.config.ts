@@ -21,10 +21,11 @@ export default defineConfig({
       },
       {
         resolve: { alias },
+        esbuild: { jsx: 'automatic' },
         test: {
           name: 'web',
           environment: 'jsdom',
-          include: ['src/{renderer,compositions}/**/*.test.{ts,tsx}'],
+          include: ['src/{renderer,compositions}/**/*.test.{ts,tsx}', 'tests/renderer/**/*.test.{ts,tsx}'],
         },
       },
     ],

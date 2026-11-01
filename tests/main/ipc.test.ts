@@ -70,6 +70,27 @@ describe('sandboxed preload bridge', () => {
     wire.invoke = async () => { throw new Error('secret path'); };
     await expect(bridge.invoke('app.ping', {})).resolves.toEqual({ ok: false, error: { code: 'internal', message: 'The app connection is unavailable.' } });
   });
+  it('only imports paths granted by a real File handoff, once', async () => {
+    const wire = transport(); wire.invoke = vi.fn(async () => ({ ok: true, data: [] }));
+    const bridge = createBridge(wire, allowed);
+    const request = { paths: ['/selected/file'], destination: 'raw' as const };
+    expect(await bridge.invoke('media.importPaths', request)).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+    expect(wire.invoke).not.toHaveBeenCalled();
+    bridge.getPathForFile({} as File);
+    expect(await bridge.invoke('media.importPaths', request)).toEqual({ ok: true, data: [] });
+    expect(await bridge.invoke('media.importPaths', request)).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+    expect(wire.invoke).toHaveBeenCalledOnce();
+  });
+  it('expires File handoffs and rejects malformed import payloads before transport', async () => {
+    const wire = transport(); const bridge = createBridge(wire, allowed);
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    try {
+      bridge.getPathForFile({} as File); now.mockReturnValue(1000 + 10 * 60_000 + 1);
+      expect(await bridge.invoke('media.importPaths', { paths: ['/selected/file'], destination: 'raw' })).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+      expect(await bridge.invoke('media.importPaths', { paths: [], destination: 'raw' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } });
+      expect(wire.invoke).not.toHaveBeenCalled();
+    } finally { now.mockRestore(); }
+  });
   it('filters invalid events and unsubscribes', () => {
     const wire = transport(); let deliver: (payload: unknown) => void = () => {};
     const unsubscribe = vi.fn(); wire.subscribe = (_event, cb) => { deliver = cb; return unsubscribe; };

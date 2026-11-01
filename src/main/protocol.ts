@@ -8,8 +8,17 @@ export const APP_CSP = [
 ].join('; ');
 const mime: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 
-export async function appResponse(request: Request, rendererRoot: string): Promise<Response> {
-  const headers = { 'Content-Security-Policy': APP_CSP, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' };
+export function appCsp(mediaBaseUrl?: string): string {
+  if (!mediaBaseUrl) return APP_CSP;
+  const url = new URL(mediaBaseUrl);
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.username || url.password) throw new Error('Invalid media origin');
+  const origin = url.origin;
+  return APP_CSP.replace("img-src 'self' data: blob:", `img-src 'self' data: blob: ${origin}`)
+    .replace("media-src 'self' blob:", `media-src 'self' blob: ${origin}`)
+    .replace("connect-src 'self'", `connect-src 'self' ${origin}`);
+}
+export async function appResponse(request: Request, rendererRoot: string, mediaBaseUrl?: string): Promise<Response> {
+  const headers = { 'Content-Security-Policy': appCsp(mediaBaseUrl), 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' };
   if (!['GET', 'HEAD'].includes(request.method)) return new Response(null, { status: 405, headers });
   const url = new URL(request.url);
   if (url.protocol !== 'app:' || url.hostname !== 'cutroom' || url.port || url.username || url.password) return new Response(null, { status: 403, headers });

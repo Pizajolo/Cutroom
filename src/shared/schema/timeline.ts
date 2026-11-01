@@ -4,8 +4,7 @@ import { actorSchema, formatSchema, positiveSchema, projectPathSchema, secondsSc
 export const TRACK_KINDS = ['overlay', 'text', 'captions', 'video', 'broll', 'voiceover', 'music', 'sfx'] as const;
 export const COMPOSITING_ORDER = ['overlay', 'text', 'captions', 'broll', 'video'] as const;
 export const NO_OVERLAP_TRACKS = ['video', 'voiceover'] as const;
-export const PROJECT_DIRS = ['raw', 'references', 'assets', 'compositions', 'audio', 'work', 'final'] as const;
-export const READ_ONLY_DIRS = ['raw', 'references', 'assets'] as const;
+export { PROJECT_DIRS, READ_ONLY_DIRS } from '../project/constants';
 export const itemIdSchema = z.string().regex(/^(clip|composition|text|caption|audio)_[A-Za-z0-9_-]{10}$/);
 const idFor = (type: string) => z.string().regex(new RegExp(`^${type}_[A-Za-z0-9_-]{10}$`));
 const base = {
