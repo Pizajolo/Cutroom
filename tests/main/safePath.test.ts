@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { resolveInProject } from '@main/fs/safePath';
 
 let temp: string; let root: string;
 beforeEach(async () => {
-  temp = await mkdtemp(path.join(tmpdir(), 'cutroom-path-test-'));
+  temp = await realpath(await mkdtemp(path.join(tmpdir(), 'cutroom-path-test-')));
   root = path.join(temp, 'project');
   await mkdir(root); await mkdir(path.join(root, 'raw')); await mkdir(path.join(root, 'work'));
   await writeFile(path.join(root, 'raw', 'source.mp4'), 'unchanged');

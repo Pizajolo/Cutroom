@@ -22,7 +22,9 @@ export function createRequestHandler<Req extends z.ZodTypeAny, Res extends z.Zod
   return async (sender, request) => {
     if (!isAppSender(sender, options.devUrl)) throw new IpcFailure({ code: 'forbidden', message: 'IPC sender is not the app top frame.' });
     const parsed = schema.req.safeParse(request);
-    if (!parsed.success) throw new IpcFailure({ code: 'invalid_request', message: 'Invalid request.', details: { issues: parsed.error.issues.map(({ path, message }) => ({ path, message })) } });
+    // Zod messages can quote input (including unknown property names). Never log the
+    // request or return Zod's raw issues: credentials may be malformed objects too.
+    if (!parsed.success) throw new IpcFailure({ code: 'invalid_request', message: 'Invalid request.', details: { issues: parsed.error.issues.map(({ path }) => ({ path: path.map((part) => typeof part === 'number' ? part : part === 'apiKey' ? 'apiKey' : '[field]'), message: 'Invalid request field.' })) } });
     const result: unknown = await impl(parsed.data);
     if (options.validateResponse) {
       const response = schema.res.safeParse(result);

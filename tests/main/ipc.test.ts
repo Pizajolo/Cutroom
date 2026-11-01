@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v3';
-import { contract, type InvokeChannel } from '@shared/ipc/contract';
+import { contract, type InvokeChannel, type InvokeReq } from '@shared/ipc/contract';
+import { stubChannels, notImplemented, registerStubIpc } from '@main/ipc/stubs';
 import { createRequestHandler, reply, validatedEmit, isAppSender } from '@main/ipc/validation';
 import { createBridge, type BridgeTransport } from '../../src/preload/bridge';
 
@@ -39,12 +40,57 @@ describe('main IPC validation', () => {
   it('does not leak internal error messages or stacks', async () => {
     expect(await reply(async () => { throw new Error('secret path'); })).toEqual({ ok: false, error: { code: 'internal', message: 'An internal error occurred.' } });
   });
+  it('redacts invalid API key requests from errors and never logs credentials', async () => {
+    const log = vi.spyOn(console, 'log'); const warn = vi.spyOn(console, 'warn'); const error = vi.spyOn(console, 'error');
+    try {
+      const impl = vi.fn(notImplemented);
+      const run = createRequestHandler(contract.invoke['accounts.connectKey'], impl, options);
+      for (const request of [{ provider: 'openai', apiKey: 'xyz' }, { provider: 'openai', apiKey: { 'nested-secret': true } }, { provider: 'openai', apiKey: 'key-with-secret', 'key-with-secret': true }]) {
+        const result = await reply(() => run(sender, request));
+        expect(result).toMatchObject({ ok: false, error: { code: 'invalid_request' } });
+        expect(JSON.stringify(result)).not.toContain('xyz');
+        expect(JSON.stringify(result)).not.toContain('nested-secret');
+        expect(JSON.stringify(result)).not.toContain('key-with-secret');
+      }
+      expect(impl).not.toHaveBeenCalled();
+      expect(log).not.toHaveBeenCalled(); expect(warn).not.toHaveBeenCalled(); expect(error).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); warn.mockRestore(); error.mockRestore(); }
+  });
   it('never emits malformed event payloads', () => {
     const send = vi.fn();
     expect(validatedEmit(contract.events['app.ready'], { version: 42 }, send)).toBe(false);
     expect(send).not.toHaveBeenCalled();
     expect(validatedEmit(contract.events['app.ready'], { version: '0.1.0' }, send)).toBe(true);
     expect(send).toHaveBeenCalledWith({ version: '0.1.0' });
+  });
+});
+
+describe('scaffold IPC handlers', () => {
+  const requests = {
+    'tools.install': { name: 'ffmpeg' }, 'tools.cancelInstall': { name: 'ffmpeg' },
+    'tools.checkUpdate': { name: 'ffmpeg' }, 'tools.update': { name: 'ffmpeg' },
+    'models.list': {}, 'models.download': { name: 'base' }, 'models.cancel': { name: 'base' },
+    'models.delete': { name: 'base' }, 'models.setDefault': { name: 'base' },
+    'accounts.list': {}, 'accounts.connectKey': { provider: 'openai', apiKey: 'test-key-1234' },
+    'accounts.disconnect': { provider: 'openai' }, 'accounts.verify': { provider: 'openai' },
+    'accounts.claude.setMethod': { method: 'claude-code' }, 'accounts.claudeCode.status': {}, 'accounts.claudeCode.openLogin': {},
+  } as const satisfies Record<(typeof stubChannels)[number], InvokeReq<(typeof stubChannels)[number]>>;
+  it('registers every new channel exactly once', () => {
+    const handle = vi.fn(); registerStubIpc(handle);
+    expect(handle.mock.calls.map(([channel]) => channel)).toEqual([...stubChannels]);
+  });
+  it.each(stubChannels)('%s resolves an unavailable envelope through the preload', async (channel) => {
+    const wire = transport();
+    wire.invoke = async (_channel, request) => reply(() => createRequestHandler<(typeof contract.invoke)[typeof channel]['req'], (typeof contract.invoke)[typeof channel]['res']>(contract.invoke[channel], notImplemented, options)(sender, request));
+    const bridge = createBridge(wire, allowed);
+    await expect(bridge.invoke(channel, requests[channel])).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Not implemented yet' } });
+  });
+  it.each(['models.changed', 'accounts.changed'] as const)('allows and validates %s events', (event) => {
+    const wire = transport(); let deliver: (payload: unknown) => void = () => {};
+    wire.subscribe = (_event, callback) => { deliver = callback; return () => {}; };
+    const callback = vi.fn(); createBridge(wire, allowed).on(event, callback);
+    deliver([{ unexpected: true }]); expect(callback).not.toHaveBeenCalled();
+    deliver([]); expect(callback).toHaveBeenCalledWith([]);
   });
 });
 

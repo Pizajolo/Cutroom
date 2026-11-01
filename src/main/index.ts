@@ -10,6 +10,8 @@ import { startMediaServer } from './server/mediaServer';
 import { MediaService } from './media/service';
 import { registerMediaIpc } from './media/ipc';
 import { stopMediaProcesses } from './media/process';
+import { registerStubIpc } from './ipc/stubs';
+import { SettingsStore } from './settings/store';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +43,7 @@ else {
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     const homeDir = path.resolve(process.env.CUTROOM_HOME ?? path.join(homedir(), '.cutroom'));
+    await SettingsStore.load(homeDir);
     const resources = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'resources');
     const registry = new ToolRegistry({
       home: homeDir, arch: process.arch,
@@ -49,17 +52,19 @@ else {
       onChanged: (tools) => emit('tools.changed', tools),
     });
     await registry.initialize();
-    let media: MediaService | undefined;
+    const mediaRef: { current?: MediaService } = {};
     const server = await startMediaServer({
-      projectRoot: (id) => media?.rootFor(id),
+      projectRoot: (id) => mediaRef.current?.rootFor(id),
       devOrigin: !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined,
     });
-    media = new MediaService({
+    const media = new MediaService({
       resolveTool: (name) => registry.resolve(name), url: server.url,
       onChanged: (projectId, rels) => emit('media.changed', { projectId, rels }),
       onProgress: (progress) => emit('media.progress', progress),
     });
+    mediaRef.current = media;
     registerMediaIpc(registry, media);
+    registerStubIpc(handle);
     protocol.handle('app', (request) => appResponse(request, path.join(here, '../renderer'), server.baseUrl));
     handle('app.ping', () => ({ pong: true }));
     handle('app.getInfo', () => ({

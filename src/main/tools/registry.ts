@@ -84,11 +84,12 @@ export class ToolRegistry {
         if (compareVersions(pin.version, bundledPin.version) <= 0) continue;
         const file = path.join(updates, name, pin.version, name);
         const status = await this.verify(file, updates, pin);
-        if (status === 'ok') { chosen = { name, version: pin.version, path: file, source: 'updated', status }; break; }
+        if (status === 'ok') { chosen = { name, version: pin.version, path: file, source: 'updated', status, verification: 'pinned', install: null, updatable: false, latestVersion: null, hint: null }; break; }
       }
       if (!chosen) {
         const file = path.join(root, name);
-        chosen = { name, version: bundledPin.version, path: file, source: 'bundled', status: await this.verify(file, root, bundledPin) };
+        const status = await this.verify(file, root, bundledPin);
+        chosen = { name, version: bundledPin.version, path: file, source: 'bundled', status, verification: status === 'ok' ? 'pinned' : null, install: null, updatable: false, latestVersion: null, hint: null };
       }
       result.push(chosen);
       if (chosen.status === 'ok') await this.link(chosen).catch(() => { /* PATH shortcuts are optional, never a reason to trust another executable. */ });
