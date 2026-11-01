@@ -64,6 +64,14 @@
   --focus-width: 2px;
   --focus-offset: 2px;
   --resize-hit-width: 8px;
+  --settings-accounts-max-width: 880px;
+  --settings-tools-max-width: 1080px;
+  --account-card-padding: 20px;
+  --account-card-gap: 16px;
+  --account-method-gap: 12px;
+  --install-progress-height: 4px;
+  --install-status-min-width: 180px;
+  --model-row-min-height: 64px;
   --timeline-height: 396px;
   --timeline-toolbar-height: 36px;
   --timeline-ruler-height: 28px;
