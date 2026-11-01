@@ -62,7 +62,7 @@ describe('media folder browser', () => {
     ];
     const { container } = render(<MediaBrowser folder={folder} />);
     for (const file of files) {
-      const card = await screen.findByRole('button', { name: `Preview ${file.name}`, exact: true });
+      const card = await screen.findByRole('button', { name: `Preview ${file.name}` });
       expect(within(card).getByText(file.name, { exact: true })).toBeTruthy();
       await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('media.thumbnails', { rel: file.rel }));
       fireEvent.click(card);
@@ -72,11 +72,11 @@ describe('media folder browser', () => {
       expect(setData).toHaveBeenCalledExactlyOnceWith(MEDIA_DRAG_TYPE, JSON.stringify({ rel: file.rel }));
     }
     expect(screen.getAllByRole('button', { name: /^Preview / })).toHaveLength(3);
-    expect(screen.getByRole('button', { name: 'Preview take%20one.mp4', exact: true })).not.toBe(screen.getByRole('button', { name: 'Preview take one.mp4', exact: true }));
+    expect(screen.getByRole('button', { name: 'Preview take%20one.mp4' })).not.toBe(screen.getByRole('button', { name: 'Preview take one.mp4' }));
   });
   it('imports into raw by default and refreshes without remounting', async () => {
     render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Import files', exact: true })[0]!);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Import files' })[0]!);
     expect((screen.getByRole('combobox', { name: 'Destination' }) as HTMLSelectElement).value).toBe('raw');
     fireEvent.click(screen.getByRole('button', { name: 'Choose files' }));
     await screen.findByRole('button', { name: 'Preview new.mp4' });
@@ -103,8 +103,8 @@ describe('media folder browser', () => {
   it('discards a cancelled drop before a later native import', async () => {
     render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
     fireEvent.drop(screen.getByRole('region', { name: 'Footage' }), { dataTransfer: { types: ['Files'], files: [new File(['video'], 'unused.mp4')] } });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel', exact: true }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Import files', exact: true })[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Import files' })[0]!);
     fireEvent.click(screen.getByRole('button', { name: 'Choose files' }));
     await screen.findByRole('button', { name: 'Preview new.mp4' });
     expect(mocks.path).not.toHaveBeenCalled();

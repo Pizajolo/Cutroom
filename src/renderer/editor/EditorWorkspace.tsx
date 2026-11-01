@@ -4,6 +4,7 @@ import type { ProjectDoc } from '@shared/schema/project';
 import { Tabs } from '../components/Tabs';
 import { useNavigation } from '../state/navigation';
 import { Timeline } from './timeline/Timeline';
+import { useAccounts } from '../lib/useAccounts';
 import { ScrubBar, Transport } from './preview/Transport';
 
 const DOCK_TABS = ['Inspector', 'Audio', 'Assistant'] as const;
@@ -11,6 +12,8 @@ export function EditorWorkspace({ project }: { project: ProjectDoc }) {
   const [safeAreas, setSafeAreas] = useState(false);
   const [dock, setDock] = useState<typeof DOCK_TABS[number]>('Inspector');
   const focusGoal = useNavigation((state) => state.focusGoal);
+  const { data: accounts } = useAccounts();
+  const elevenlabsConnected = accounts?.some((account) => account.provider === 'elevenlabs' && account.status === 'connected');
   return <div className="editor-workspace">
     <div className="editor-upper">
       <aside className="media-bin" aria-label="Media bin" data-workspace-region tabIndex={-1}>
@@ -32,7 +35,7 @@ export function EditorWorkspace({ project }: { project: ProjectDoc }) {
           {dock === 'Inspector' ? <div className="inspector-content"><div className="panel-heading"><SlidersHorizontal size={16} /><h2>Project</h2></div>
             <dl className="property-list"><div><dt>Format</dt><dd>{project.format.aspect}</dd></div><div><dt>Resolution</dt><dd>{project.format.width} × {project.format.height}</dd></div><div><dt>Frame rate</dt><dd>{project.format.fps} fps</dd></div><div><dt>Motion engine</dt><dd>{project.defaultEngine === 'hyperframes' ? 'HyperFrames' : 'Remotion'}</dd></div></dl>
             <p className="field-note">Select a clip or an element to see its editable properties.</p>
-          </div> : <div className="dock-placeholder"><h3>{dock === 'Audio' ? 'Make the soundtrack' : 'Work with your team'}</h3><p>{dock === 'Audio' ? 'Audio generation is not connected in this build. Connect ElevenLabs when Accounts becomes available.' : 'Ask, live chat and reviewable agent changes will appear here. Agent sessions are not connected in this build.'}</p></div>}
+          </div> : <div className="dock-placeholder"><h3>{dock === 'Audio' ? 'Make the soundtrack' : 'Work with your team'}</h3>{dock === 'Audio' ? elevenlabsConnected ? <p>ElevenLabs connected. Audio generation arrives in a later update.</p> : <><p>Connect ElevenLabs for voice and audio services.</p><button type="button" className="button" onClick={() => { useNavigation.getState().setSettingsSection('Accounts'); useNavigation.getState().navigate('settings'); }}>Connect ElevenLabs</button></> : <p>Ask, live chat and reviewable agent changes will appear here. Agent sessions are not connected in this build.</p>}</div>}
         </Tabs>
       </aside>
     </div>

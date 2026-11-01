@@ -1,4 +1,7 @@
-import { Bell, Film, FolderOpen, House, PanelLeftClose, PanelLeftOpen, Settings2, Users } from 'lucide-react';
+import { Bell, CircleAlert, Download, Film, FolderOpen, House, KeyRound, PanelLeftClose, PanelLeftOpen, Settings2, Users } from 'lucide-react';
+import { accountMethodLabel, useAccounts } from '../lib/useAccounts';
+import { setupProgress, useModels, useTools } from '../lib/useTools';
+import { ProgressBar } from './InstallProgress';
 import type { AppInfo } from '../lib/useAppInfo';
 import { useNavigation, type Destination } from '../state/navigation';
 
@@ -16,6 +19,14 @@ export function Sidebar({ info }: { info: AppInfo | null }) {
   const navigate = useNavigation((state) => state.navigate);
   const openProject = useNavigation((state) => state.openProject);
   const toggleSidebar = useNavigation((state) => state.toggleSidebar);
+  const { data: accounts, error: accountsError } = useAccounts();
+  const { data: tools } = useTools();
+  const { data: models } = useModels();
+  const claude = accounts?.find((account) => account.provider === 'anthropic');
+  const setup = setupProgress(tools, models);
+  const openSettings = (section: 'Accounts' | 'Tools') => { useNavigation.getState().setSettingsSection(section); navigate('settings'); };
+  const connectionLabel = claude?.status === 'connected' ? `Claude connected · ${accountMethodLabel(claude)}` : claude?.status === 'invalid' ? 'Claude: key rejected' : claude?.status === 'unreachable' ? "Claude: can't reach service" : accountsError ? 'Check Claude connection' : accounts ? 'Connect Claude' : 'Checking connections…';
+  const downloadLabel = setup.failed ? 'Tool setup needs attention' : `Downloading tools…${setup.percent === undefined ? '' : ` ${setup.percent}%`}`;
   const active = (target: Destination) => destination === target || target === 'projects' && (destination === 'project' || destination === 'media');
   return <aside className={`sidebar${collapsed ? ' sidebar-collapsed' : ''}`} aria-label="Main navigation">
     <div className="brand"><Film size={20} strokeWidth={1.75} aria-hidden="true" /><strong className="sidebar-label">Cutroom</strong></div>
@@ -36,7 +47,11 @@ export function Sidebar({ info }: { info: AppInfo | null }) {
       <button type="button" className="nav-link" title="Settings" aria-current={destination === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}>
         <Settings2 size={18} strokeWidth={1.75} aria-hidden="true" /><span className="sidebar-label">Settings</span>
       </button>
-      <div className="sidebar-usage sidebar-label"><span>Plan usage unavailable</span><small>Connect Claude to see usage when supported.</small></div>
+      <div className="sidebar-connection"><button type="button" className="nav-link" title={connectionLabel} aria-label={connectionLabel} onClick={() => openSettings('Accounts')}><KeyRound size={16} aria-hidden="true" /><span className="sidebar-label">{connectionLabel}</span></button></div>
+      {(setup.busy || setup.failed) && <button type="button" className="nav-link sidebar-download" title={downloadLabel} aria-label={downloadLabel} onClick={() => openSettings('Tools')}>
+        {setup.failed ? <CircleAlert size={16} aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}<span className="sidebar-label">{downloadLabel}</span>
+        {setup.busy && !setup.failed && <span className="sidebar-label"><ProgressBar name="Tool setup download" percent={setup.percent} text={downloadLabel} /></span>}
+      </button>}
       <div className="sidebar-utility">
         <button type="button" className="icon-button" title={collapsed ? 'Expand sidebar (⌘B)' : 'Collapse sidebar (⌘B)'} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleSidebar}>
           {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
