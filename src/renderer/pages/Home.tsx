@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ArrowUp, FolderOpen, Mic, Paperclip, Plus } from 'lucide-react';
 import { useNavigation } from '../state/navigation';
 import { BrowseMediaButton } from '../media/MediaBrowser';
+import { accountMethodLabel, useAccounts } from '../lib/useAccounts';
 
 export function ProjectActions() {
   return <div className="project-actions" aria-describedby="project-service-note">
@@ -15,6 +16,10 @@ export function Home() {
   const draft = useNavigation((state) => state.goalDraft);
   const setDraft = useNavigation((state) => state.setGoalDraft);
   const focusRequest = useNavigation((state) => state.goalFocusRequest);
+  const { data: accounts, error: accountsError } = useAccounts();
+  const claude = accounts?.find((account) => account.provider === 'anthropic');
+  const elevenlabs = accounts?.find((account) => account.provider === 'elevenlabs');
+  const connectionFallback = accountsError ? 'Connection status unavailable' : accounts ? 'Not connected' : 'Checking connections…';
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (focusRequest > 0) ref.current?.focus(); }, [focusRequest]);
   return <div className="page home-page" data-workspace-region tabIndex={-1}>
@@ -41,7 +46,7 @@ export function Home() {
     <div className="home-details">
       <section aria-labelledby="recent-runs-title"><div className="section-heading"><h2 id="recent-runs-title">Recent runs</h2><span className="quiet">Not connected</span></div><div className="home-empty"><p>Your team's work will appear here.</p><p className="quiet">No runs are loaded in this build.</p></div></section>
       <section aria-labelledby="usage-title"><div className="section-heading"><h2 id="usage-title">Usage</h2><span className="quiet">API-equivalent estimate</span></div>
-        <dl className="usage-list"><div><dt>Today</dt><dd>Unavailable</dd></div><div><dt>This week</dt><dd>Unavailable</dd></div><div><dt>Claude plan</dt><dd>Not connected</dd></div><div><dt>ElevenLabs credits</dt><dd>Not connected</dd></div></dl>
+        <dl className="usage-list"><div><dt>Today</dt><dd>Unavailable</dd></div><div><dt>This week</dt><dd>Unavailable</dd></div><div><dt>Claude plan</dt><dd>{claude?.status === 'connected' ? `${accountMethodLabel(claude)}${claude.detail ? ` · ${claude.detail}` : ''}` : connectionFallback}</dd></div><div><dt>ElevenLabs credits</dt><dd>{elevenlabs?.status === 'connected' ? elevenlabs.detail ?? 'Connected · Usage unavailable' : connectionFallback}</dd></div></dl>
         <p className="field-note">Usage appears only when the connected account provides it.</p>
       </section>
     </div>

@@ -11,6 +11,7 @@ import { keymap, type Shortcut } from './lib/keymap';
 import { useAppInfo } from './lib/useAppInfo';
 import { Home, ProjectActions } from './pages/Home';
 import { Tools } from './pages/Tools';
+import { Accounts } from './pages/Accounts';
 import { MediaBrowser } from './media/MediaBrowser';
 import { PROJECT_TABS, SETTINGS_SECTIONS, useNavigation } from './state/navigation';
 
@@ -35,9 +36,9 @@ function Settings() {
   const section = useNavigation((state) => state.settingsSection);
   const setSection = useNavigation((state) => state.setSettingsSection);
   return <div className="settings-page"><nav className="settings-nav" aria-label="Settings sections"><h1>Settings</h1>{SETTINGS_SECTIONS.map((name) => <button type="button" key={name} aria-current={section === name ? 'page' : undefined} onClick={() => setSection(name)}>{name}</button>)}</nav>
-    <div className="settings-content" data-workspace-region tabIndex={-1}><h2>{section}</h2>
-      {section === 'Tools' ? <Tools /> : <Unavailable title={section === 'Accounts' ? 'Connect your team’s accounts' : `${section} not connected`}>
-        {section === 'Accounts' ? 'Claude uses your Claude Code sign-in by default. ElevenLabs connects independently for voice and audio. Account setup and secure key storage are not connected in this build.' : `The ${section.toLowerCase()} service is not available in this build. No settings have been changed.`}
+    <div key={section} className="settings-content" data-workspace-region tabIndex={-1}><h2>{section}</h2>
+      {section === 'Accounts' ? <Accounts /> : section === 'Tools' ? <Tools /> : <Unavailable title={`${section} not connected`}>
+        {`The ${section.toLowerCase()} service is not available in this build. No settings have been changed.`}
       </Unavailable>}
     </div>
   </div>;
