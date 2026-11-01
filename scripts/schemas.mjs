@@ -17,7 +17,7 @@ try {
   const schemas = await import(pathToFileURL(path.join(temp, 'schemas.mjs')).href);
   const output = path.join(root, 'docs/schemas');
   await mkdir(output, { recursive: true });
-  for (const [name, schema] of Object.entries({ timeline: schemas.timelineDocSchema, props: schemas.propsDocSchema, project: schemas.projectDocSchema, events: schemas.eventEnvelopeSchema, jobs: schemas.jobInfoSchema, settings: schemas.globalSettingsSchema })) {
+  for (const [name, schema] of Object.entries({ timeline: schemas.timelineDocSchema, props: schemas.propsDocSchema, project: schemas.projectDocSchema, events: schemas.eventEnvelopeSchema, jobs: schemas.jobInfoSchema, settings: schemas.globalSettingsSchema, tools: schemas.toolInfoSchema, install: schemas.installStateSchema, models: schemas.whisperModelInfoSchema, accounts: schemas.accountInfoSchema, claudeCodeStatus: schemas.claudeCodeStatusSchema })) {
     const file = path.join(output, `${name}.schema.json`);
     const generated = `${JSON.stringify(zodToJsonSchema(schema, { name, target: 'jsonSchema7', $refStrategy: 'none' }), null, 2)}\n`;
     // Generated schema artifacts only, never project/user files.
