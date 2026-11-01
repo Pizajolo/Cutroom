@@ -53,6 +53,27 @@ describe('media folder browser', () => {
     const video = container.querySelector('video'); expect(video?.getAttribute('src')).toBe(files[0]?.url); expect(video?.hasAttribute('controls')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Close source player' })); expect(container.querySelector('video')).toBeNull();
   });
+  it('preserves literal percent filenames through display, thumbnails, playback and timeline drag', async () => {
+    // Renderer-only passthrough coverage; filesystem/HTTP round trips belong to tests/main.
+    files = [
+      { ...clip('raw/100% done.mp4'), url: 'http://127.0.0.1:1234/k/test/p/folder-1/raw/100%25%20done.mp4' },
+      { ...clip('raw/take%20one.mp4'), url: 'http://127.0.0.1:1234/k/test/p/folder-1/raw/take%2520one.mp4' },
+      { ...clip('raw/take one.mp4'), url: 'http://127.0.0.1:1234/k/test/p/folder-1/raw/take%20one.mp4' },
+    ];
+    const { container } = render(<MediaBrowser folder={folder} />);
+    for (const file of files) {
+      const card = await screen.findByRole('button', { name: `Preview ${file.name}`, exact: true });
+      expect(within(card).getByText(file.name, { exact: true })).toBeTruthy();
+      await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('media.thumbnails', { rel: file.rel }));
+      fireEvent.click(card);
+      expect(container.querySelector('video')?.getAttribute('src')).toBe(file.url);
+      const setData = vi.fn();
+      fireEvent.dragStart(card, { dataTransfer: { setData } });
+      expect(setData).toHaveBeenCalledExactlyOnceWith(MEDIA_DRAG_TYPE, JSON.stringify({ rel: file.rel }));
+    }
+    expect(screen.getAllByRole('button', { name: /^Preview / })).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Preview take%20one.mp4', exact: true })).not.toBe(screen.getByRole('button', { name: 'Preview take one.mp4', exact: true }));
+  });
   it('imports into raw by default and refreshes without remounting', async () => {
     render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
     fireEvent.click(screen.getAllByRole('button', { name: 'Import files', exact: true })[0]!);
