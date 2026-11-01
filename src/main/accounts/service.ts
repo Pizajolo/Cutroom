@@ -90,7 +90,15 @@ export class AccountsService {
   private async verifyUnlocked(provider: Provider): Promise<AccountInfo> {
     const settings = this.options.settings.get();
     if (provider === 'anthropic' && settings.claude.auth === 'claude-code') {
-      const status = await this.options.claudeCode.status();
+      let status: ClaudeCodeStatus;
+      try {
+        status = await this.options.claudeCode.status();
+        if (!status.available) throw new IpcFailure({ code: 'unavailable', message: 'Claude Code is unavailable.' });
+      } catch {
+        await this.options.settings.update((draft) => { draft.accounts.anthropic.status = 'unreachable'; draft.accounts.anthropic.checkedAt = new Date().toISOString(); });
+        this.details.set(provider, 'Could not check Claude Code sign-in. Retry verification; your saved connection has not been removed.');
+        this.emit(); return this.info(provider);
+      }
       const detail = status.loggedIn ? `Signed in with Claude Code${status.email ? ` · ${status.email}` : ''}` : 'Sign in with Claude Code in Terminal.';
       await this.options.settings.update((draft) => { draft.accounts.anthropic = { status: status.loggedIn ? 'connected' : 'not_connected', keyPreview: null, checkedAt: new Date().toISOString() }; });
       this.details.set(provider, detail); this.emit(); return this.info(provider);
@@ -121,7 +129,7 @@ export class AccountsService {
       this.details.delete('anthropic'); this.emit(); return this.info('anthropic');
     });
   }
-  async verifyConnected(): Promise<void> { await Promise.all(this.list().filter((account) => account.status === 'connected').map((account) => this.verify(account.provider).catch(() => undefined))); }
+  async verifyConnected(): Promise<void> { await Promise.all(this.list().filter((account) => account.status === 'connected' || account.status === 'unreachable').map((account) => this.verify(account.provider).catch(() => undefined))); }
   async getApiKey(provider: Provider): Promise<string | null> { providerSchema.parse(provider); return this.options.secrets.get(provider); }
   async close(): Promise<void> { this.closed = true; for (const controller of this.active) controller.abort(); await Promise.all([...this.queues.values()]); }
 }
