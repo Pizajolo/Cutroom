@@ -1,34 +1,36 @@
 import { readFile } from 'node:fs/promises';
+import { z } from 'zod/v3';
+import { whisperModelNameSchema } from '@shared/schema/models';
 
-export interface ToolPin {
-  name: string;
-  version: string;
-  arch: 'arm64' | 'x64';
-  bundled: boolean;
-  sourceUrl: string;
-  checksumUrl: string;
-  archiveSha256: string | null;
-  sha256: string | null;
-}
-export interface ToolsManifest { schemaVersion: 1; tools: ToolPin[] }
-const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
-const digest = (value: unknown): value is string | null => value === null || (typeof value === 'string' && /^[a-f0-9]{64}$/.test(value));
+const digest = z.string().regex(/^[a-f0-9]{64}$/);
+export const toolNameSchema = z.string().regex(/^[a-z][a-z0-9-]*$/);
+export const versionSchema = z.string().regex(/^\d+\.\d+\.\d+$/);
+const entry = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((value) => !value.split('/').some((part) => part === '..' || part === '.' || !part));
+const https = z.string().url().refine((value) => { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password && (!url.port || url.port === '443'); });
+const host = z.string().regex(/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/);
+const hosts = { allowedHosts: z.array(host).min(1), allowedHostSuffixes: z.array(z.string().regex(/^\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/)).optional() };
+export const toolPinSchema = z.object({
+  name: toolNameSchema, version: versionSchema, arch: z.enum(['arm64', 'x64', 'universal']), bundled: z.boolean(),
+  source: z.object({ url: https.optional(), format: z.enum(['zip', 'raw', 'build']), entry: entry.optional() }).strict(),
+  checksum: z.object({ url: https, format: z.enum(['single', 'sums']), entry: entry.optional() }).strict().nullable(),
+  ...hosts, archiveSha256: digest.nullable(), sha256: digest.nullable(), sourceSha256: digest.nullable().optional(), updatable: z.boolean(), license: z.string().min(1),
+}).strict().superRefine((pin, ctx) => {
+  if (pin.source.format !== 'build' && (!pin.source.url || !pin.checksum)) ctx.addIssue({ code: 'custom', message: 'Download source and checksum are required.' });
+  if (pin.source.format === 'zip' && !pin.source.entry) ctx.addIssue({ code: 'custom', message: 'ZIP entry is required.' });
+  if (pin.checksum?.format === 'sums' && !pin.checksum.entry) ctx.addIssue({ code: 'custom', message: 'Checksum entry is required.' });
+});
+export type ToolPin = z.infer<typeof toolPinSchema>;
+export const modelPinSchema = z.object({ name: whisperModelNameSchema, url: https, sizeBytes: z.number().int().positive(), sha256: digest, ...hosts }).strict();
+export type ModelPin = z.infer<typeof modelPinSchema>;
+const manifestSchema = z.object({ schemaVersion: z.literal(2), tools: z.array(toolPinSchema), models: z.array(modelPinSchema).default([]) }).strict();
+export type ToolsManifest = z.infer<typeof manifestSchema>;
 export function parseManifest(value: unknown): ToolsManifest {
-  if (!record(value) || value.schemaVersion !== 1 || !Array.isArray(value.tools)) throw new Error('Invalid tools manifest');
-  const seen = new Set<string>();
-  const tools = value.tools.map((entry: unknown): ToolPin => {
-    if (!record(entry) || typeof entry.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(entry.name) || typeof entry.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(entry.version) || (entry.arch !== 'arm64' && entry.arch !== 'x64') || typeof entry.sourceUrl !== 'string' || typeof entry.checksumUrl !== 'string' || !digest(entry.archiveSha256) || !digest(entry.sha256)) throw new Error('Invalid tool pin');
-    if (new URL(entry.sourceUrl).protocol !== 'https:' || new URL(entry.checksumUrl).protocol !== 'https:') throw new Error('Tool sources must use HTTPS');
-    const key = `${entry.name}/${entry.version}/${entry.arch}`;
-    if (seen.has(key)) throw new Error('Duplicate tool pin');
-    seen.add(key);
-    return { name: entry.name, version: entry.version, arch: entry.arch, bundled: entry.bundled !== false, sourceUrl: entry.sourceUrl, checksumUrl: entry.checksumUrl, archiveSha256: entry.archiveSha256, sha256: entry.sha256 };
-  });
-  return { schemaVersion: 1, tools };
+  const manifest = manifestSchema.parse(value);
+  const keys = manifest.tools.map((pin) => `${pin.name}/${pin.version}/${pin.arch}`);
+  if (new Set(keys).size !== keys.length || new Set(manifest.models.map((pin) => pin.name)).size !== manifest.models.length) throw new Error('Duplicate manifest pin.');
+  return manifest;
 }
-export async function readManifest(file: string): Promise<ToolsManifest> {
-  return parseManifest(JSON.parse(await readFile(file, 'utf8')) as unknown);
-}
+export async function readManifest(file: string): Promise<ToolsManifest> { return parseManifest(JSON.parse(await readFile(file, 'utf8')) as unknown); }
 export function compareVersions(left: string, right: string): number {
   const a = left.split('.').map(Number); const b = right.split('.').map(Number);
   for (let i = 0; i < 3; i++) { const difference = (a[i] ?? 0) - (b[i] ?? 0); if (difference) return difference; }

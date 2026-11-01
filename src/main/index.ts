@@ -10,8 +10,14 @@ import { startMediaServer } from './server/mediaServer';
 import { MediaService } from './media/service';
 import { registerMediaIpc } from './media/ipc';
 import { stopMediaProcesses } from './media/process';
-import { registerStubIpc } from './ipc/stubs';
+import { registerSettingsIpc } from './ipc/settings';
 import { SettingsStore } from './settings/store';
+import { ToolInstaller } from './tools/installer';
+import { WhisperModels } from './whisper/models';
+import { AccountsService } from './accounts/service';
+import { KeychainSecrets } from './secrets/keychain';
+import { ClaudeCodeService } from './claude/service';
+import { configureClaudeAgentEnv } from './claude/env';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -43,15 +49,22 @@ else {
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     const homeDir = path.resolve(process.env.CUTROOM_HOME ?? path.join(homedir(), '.cutroom'));
-    await SettingsStore.load(homeDir);
+    const settings = await SettingsStore.load(homeDir);
     const resources = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'resources');
+    const manifest = await readManifest(path.join(resources, 'tools-manifest.json'));
     const registry = new ToolRegistry({
       home: homeDir, arch: process.arch,
       bundledRoot: app.isPackaged ? path.join(resources, 'bin') : path.join(resources, 'bin', process.arch),
-      manifest: await readManifest(path.join(resources, 'tools-manifest.json')),
+      manifest,
       onChanged: (tools) => emit('tools.changed', tools),
     });
     await registry.initialize();
+    const installer = new ToolInstaller({ registry });
+    const models = new WhisperModels({ home: homeDir, pins: manifest.models, settings, onChanged: (models) => emit('models.changed', models) });
+    await models.initialize();
+    const claude = new ClaudeCodeService();
+    const accounts = new AccountsService({ settings, secrets: new KeychainSecrets(), claudeCode: claude, onChanged: (accounts) => emit('accounts.changed', accounts) });
+    configureClaudeAgentEnv(accounts);
     const mediaRef: { current?: MediaService } = {};
     const server = await startMediaServer({
       projectRoot: (id) => mediaRef.current?.rootFor(id),
@@ -64,7 +77,7 @@ else {
     });
     mediaRef.current = media;
     registerMediaIpc(registry, media);
-    registerStubIpc(handle);
+    registerSettingsIpc(installer, models, accounts, claude);
     protocol.handle('app', (request) => appResponse(request, path.join(here, '../renderer'), server.baseUrl));
     handle('app.ping', () => ({ pong: true }));
     handle('app.getInfo', () => ({
@@ -76,9 +89,18 @@ else {
       if (closed) return;
       event.preventDefault(); if (closing) return; closing = true;
       media?.close();
-      void Promise.all([server.close().catch(() => undefined), stopMediaProcesses()]).finally(() => { closed = true; app.quit(); });
+      void Promise.allSettled([server.close(), stopMediaProcesses(), installer.close(), models.close(), accounts.close()]).finally(() => { closed = true; app.quit(); });
     });
     createWindow();
+    void accounts.verifyConnected();
+    if (process.env.CUTROOM_NO_AUTO_DOWNLOAD !== '1') {
+      void (async () => {
+        await installer.ensureAll();
+        if (closing) return;
+        await models.ensureDefault();
+        if (!closing) await installer.checkUpdate('yt-dlp', true).catch(() => undefined);
+      })().catch(() => undefined);
+    }
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   }).catch(() => {
     dialog.showErrorBox('Cutroom could not start', 'The local media service or tools directory could not be initialized. Check directory permissions and local network binding permissions.');
