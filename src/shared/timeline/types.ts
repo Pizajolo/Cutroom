@@ -1,6 +1,6 @@
 import { z } from 'zod/v3';
 import { formatSchema, positiveSchema, secondsSchema } from '../schema/common';
-import { itemIdSchema, itemSchema, markerSchema, trackSchema } from '../schema/timeline';
+import { itemIdSchema, itemSchema, markerSchema, trackSchema, timelineDocSchema } from '../schema/timeline';
 
 const trackId = z.string().min(1);
 export const opSchema = z.discriminatedUnion('type', [
@@ -25,6 +25,8 @@ export type Op = z.infer<typeof opSchema>;
 export const trackMetadataSchema = trackSchema.omit({ items: true });
 export const historyOpSchema = z.union([
   opSchema,
+  // Only project-wide history entries (e.g. snapshot restore), never normal edit inverses.
+  z.object({ type: z.literal('restoreTimeline'), doc: timelineDocSchema }).strict(),
   z.object({ type: z.literal('restoreItem'), itemId: itemIdSchema, trackId, index: z.number().int().nonnegative(), item: itemSchema.nullable() }).strict()
     .refine((op) => op.item === null || op.item.id === op.itemId, 'Restored item id must match'),
   z.object({ type: z.literal('restoreTrack'), track: trackMetadataSchema }).strict(),

@@ -22,5 +22,8 @@ export default defineConfig({
     },
     build: { rollupOptions: { output: { format: 'cjs', entryFileNames: 'index.cjs' } } },
   },
-  renderer: { resolve: { alias }, plugins: [react()] },
+  renderer: {
+    resolve: { alias }, plugins: [react()],
+    server: { host: '127.0.0.1', ...(process.env.PORT ? { port: Number(process.env.PORT), strictPort: true } : {}) },
+  },
 });

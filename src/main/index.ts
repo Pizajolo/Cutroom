@@ -2,15 +2,14 @@ import { app, BrowserWindow, dialog, protocol, session } from 'electron';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { emit, handle } from './ipc';
+import { emit } from './ipc';
+import { registerStartupIpc } from './ipc/startup';
 import { appResponse } from './protocol';
 import { readManifest } from './tools/manifest';
 import { ToolRegistry } from './tools/registry';
 import { startMediaServer } from './server/mediaServer';
 import { MediaService } from './media/service';
-import { registerMediaIpc } from './media/ipc';
 import { stopMediaProcesses } from './media/process';
-import { registerSettingsIpc } from './ipc/settings';
 import { SettingsStore } from './settings/store';
 import { ToolInstaller } from './tools/installer';
 import { WhisperModels } from './whisper/models';
@@ -76,14 +75,11 @@ else {
       onProgress: (progress) => emit('media.progress', progress),
     });
     mediaRef.current = media;
-    registerMediaIpc(registry, media);
-    registerSettingsIpc(installer, models, accounts, claude);
-    protocol.handle('app', (request) => appResponse(request, path.join(here, '../renderer'), server.baseUrl));
-    handle('app.ping', () => ({ pong: true }));
-    handle('app.getInfo', () => ({
+    registerStartupIpc({ registry, media, installer, models, accounts, claude, getInfo: () => ({
       version: app.getVersion(), platform: process.platform, arch: process.arch,
       homeDir, mediaBaseUrl: server.baseUrl, compBaseUrl: null,
-    }));
+    }) });
+    protocol.handle('app', (request) => appResponse(request, path.join(here, '../renderer'), server.baseUrl));
     let closing = false; let closed = false;
     app.on('before-quit', (event) => {
       if (closed) return;

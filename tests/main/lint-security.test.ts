@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Linter } from 'eslint';
+import { ESLint, Linter } from 'eslint';
 import noShell from '../../scripts/eslint-no-shell.mjs';
 
 const lint = (code: string) => new Linter().verify(code, {
@@ -9,6 +9,10 @@ const lint = (code: string) => new Linter().verify(code, {
 });
 
 describe('shell execution lint guard', () => {
+  it('applies the real project no-shell rule to the reserved engine directory', async () => {
+    const results = await new ESLint().lintText("import {spawn} from 'node:child_process'; spawn('tool', [], {shell: true});", { filePath: 'src/engine/guard-probe.ts' });
+    expect(results[0]?.messages.some((message) => message.ruleId === 'security/no-shell')).toBe(true);
+  });
   it.each([
     "import { exec as run } from 'node:child_process'; run('ls');",
     "import * as cp from 'node:child_process'; cp.exec('ls');",

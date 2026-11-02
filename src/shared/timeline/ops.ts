@@ -86,6 +86,12 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
   const history = historyOpSchema.safeParse(input);
   if (!history.success) return fail('invalid', 'Invalid timeline or history operation');
   const record = history.data;
+  if (record.type === 'restoreTimeline') {
+    return {
+      doc: structuredClone(record.doc), inverse: [{ type: 'restoreTimeline', doc: structuredClone(original) }],
+      changed: { itemIds: [...new Set([...original.tracks, ...record.doc.tracks].flatMap((track) => track.items.map((item) => item.id)))], paths: ['*'] },
+    };
+  }
   if (record.type === 'restoreItem' || record.type === 'restoreTrack' || record.type === 'restoreFormat' || record.type === 'restoreMarker') {
     const doc = structuredClone(original);
     let inverse: HistoryOp;

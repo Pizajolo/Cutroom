@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/v3';
-import { contract, type InvokeChannel, type InvokeReq } from '@shared/ipc/contract';
+import { contract, type InvokeChannel } from '@shared/ipc/contract';
+import { scaffoldRequests } from './scaffoldRequests';
 import { stubChannels, notImplemented, registerStubIpc } from '@main/ipc/stubs';
 import { createRequestHandler, reply, validatedEmit, isAppSender } from '@main/ipc/validation';
 import { createBridge, type BridgeTransport } from '../../src/preload/bridge';
@@ -66,15 +67,7 @@ describe('main IPC validation', () => {
 });
 
 describe('scaffold IPC handlers', () => {
-  const requests = {
-    'tools.install': { name: 'ffmpeg' }, 'tools.cancelInstall': { name: 'ffmpeg' },
-    'tools.checkUpdate': { name: 'ffmpeg' }, 'tools.update': { name: 'ffmpeg' },
-    'models.list': {}, 'models.download': { name: 'base' }, 'models.cancel': { name: 'base' },
-    'models.delete': { name: 'base' }, 'models.setDefault': { name: 'base' },
-    'accounts.list': {}, 'accounts.connectKey': { provider: 'openai', apiKey: 'test-key-1234' },
-    'accounts.disconnect': { provider: 'openai' }, 'accounts.verify': { provider: 'openai' },
-    'accounts.claude.setMethod': { method: 'claude-code' }, 'accounts.claudeCode.status': {}, 'accounts.claudeCode.openLogin': {},
-  } as const satisfies Record<(typeof stubChannels)[number], InvokeReq<(typeof stubChannels)[number]>>;
+  const requests = scaffoldRequests;
   it('registers every new channel exactly once', () => {
     const handle = vi.fn(); registerStubIpc(handle);
     expect(handle.mock.calls.map(([channel]) => channel)).toEqual([...stubChannels]);
