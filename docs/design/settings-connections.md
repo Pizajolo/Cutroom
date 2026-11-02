@@ -2,6 +2,8 @@
 
 Implementation supplement for the 2026-11-01 accounts/tools repair. This document supersedes older account-auth and tool-install wording in `spec.md`; editor, timeline, assistant and export designs are unchanged. Reference screens use fictional statuses, not successful live connections.
 
+**2026-11-02 continuation:** [round5.md](round5.md) adds the five remaining Settings sections, OpenAI's Codex Terminal sign-in method, Projects/New project/create-in-place/Folder root and Home Start. Its availability and Audio/hosted-MCP wording supersedes the future-only copy here as those services become implemented; account secrecy and automatic tool-install rules still apply.
+
 ## Direction and layout
 
 Keep the editing desk identity, not a separate onboarding wizard. Core palette: graphite `#191c20`, slate `#23272d`, primary ink `#e8edf2`, secondary ink `#b4bec9`, steel-blue action `#9cc8ef`, muted mint success `#a4d3b4`. Amber indicates waiting/network trouble; rose indicates rejected credentials or failed verification. System sans for all settings; tabular numerals for byte counts/times, monospace only for commands. Existing Lucide outline icons, 16 px, work offline.
