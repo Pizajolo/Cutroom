@@ -275,7 +275,7 @@ Clone flow: Add samples (drop/record/extract selected range) → Review samples 
 
 Effects/music duration and mood explicit; insertion playhead/track previewed. Isolator/voice changer retain originals and create generated audio. Dubbing language list creates new version filenames; never overwrites source cut. Large credit confirmation gives estimate, current balance and explicit **Generate using approximately N credits**; no exact promise for an estimate.
 
-ElevenLabs Accounts uses an API key stored in macOS Keychain, a last-four-only saved preview, Verify/Disconnect and the plan/usage detail actually returned by its API. No OAuth flow or capability badges are offered in this implementation. Connection alone does not enable unbuilt audio-generation features. No credits display when unknown: “Balance unavailable”, not 0. See [settings-connections.md](settings-connections.md).
+ElevenLabs Accounts uses an API key stored in macOS Keychain, a last-four-only saved preview, Verify/Disconnect and the plan/usage detail actually returned by its API. The built-in ElevenLabs MCP server and Audio dock use this same connection. An optional, separate hosted MCP connection is experimental; it never inherits API-key status and offers no invented OAuth flow when the runtime lacks an approved handoff. Connection alone does not enable unbuilt audio-generation features. No credits display when unknown: “Balance unavailable”, not 0. See [settings-connections.md](settings-connections.md) and [round5.md](round5.md).
 
 ## 11. Ask, agent chat and approval
 
@@ -313,6 +313,8 @@ Undo run dialog summarises snapshot, files affected, preserved renders moved asi
 
 ## 13. Home, wizard, backlog and notes
 
+**Current implementation:** [round5.md](round5.md) supersedes the team/run wizard below with a single New project dialog, persistent recents, create-in-place for footage folders and Home Start into the Assistant. Teams/Runs/Backlog/Notes remain unavailable in this round; do not implement mock workflow states from this longer-term specification.
+
 Home gives the next action first: 24 px “What do you want to make?” above goal field, attachment/mic, project selector, Start. No marketing hero. Below: live/recent runs, today's/week's API-equivalent estimate and tokens, plan5-hour/weekly usage/reset countdown if available, ElevenLabs balance, run outcome/gate pass rate and spend/member. Small usage table instead of many identical cards. Sidebar shows a compact usage meter only when data exists. ⌘N opens/focuses global goal composer; starting requires project/team choice if none selected.
 
 ### New project wizard
@@ -336,6 +338,8 @@ Template picker → team with Members / Workflow / Settings / YAML / Files / Cha
 Workflow graph: nodes min200×96, left-to-right main steps, visibly bounded parallel group, gate decision badge and loop handle. Drag ↺ handle to named prior step, then max-loops field; keyboard alternative **Set fix destination** dropdown and max-loops input. Selected edge has label and delete action. Graph is editing a deterministic configuration, not model-generated control flow. Invalid cycles/unknown targets block save with real validator errors. Raw YAML validation inline by line after200 ms; form changes preserve comments/formatting. Save disabled while invalid; error summary links fields/lines. Files advanced editor scoped to team prompts/schemas. Chat is the architect, save only after validation succeeds.
 
 ### Settings
+
+See [round5.md](round5.md) for the implementable Sandbox, Voice input, Render presets, Storage / snapshots and Extensions sections, including Codex CLI sign-in and optional experimental hosted MCP. It also defines the record-then-transcribe voice flow for this round rather than continuous automatic chunks.
 
 Left section list: Accounts (Claude, OpenAI, ElevenLabs), Tools, Sandbox, Voice input, Render presets, Storage/snapshots, Extensions. Narrow version one settings column and section selector. Accounts and tool setup follow [settings-connections.md](settings-connections.md): Claude Console API key is recommended, or the user's own Claude Code sign-in completed in Terminal. Cutroom does not offer embedded claude.ai login or handle its tokens. API keys are validated in main before Keychain storage, cleared immediately from renderer inputs on submission (including failures), and never shown later except the main-provided last-four preview. Connection test names active mode, no credentials. Snapshot cleanup previews size and affected recovery points, requires confirmation. Extensions install shows command, destination domains, scopes and sandbox before **Install**. No blind execution from pasted JSON.
 

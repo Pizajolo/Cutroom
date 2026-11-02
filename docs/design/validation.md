@@ -66,6 +66,23 @@ Keyboard Tab inspection confirmed Connect has a 2 px focus ring and 2 px offset.
 
 These are static design and CSS checks only. No real provider keys were entered, no Terminal login or Keychain operation was run, no binaries/models were downloaded, and no npm/typecheck/runtime suite was run in this design step. The existing Electron app status was failed (exit 134 from an earlier backend-dev launch); the local static-reference server was used for visual review. Functional account/installer acceptance belongs to frontend/backend/QA, not these mockups.
 
+## Usable-project/settings supplement review (2026-11-02)
+
+Added `round5.md` and three new offline HTML references sharing existing renderer tokens and component CSS. No production application logic, account credentials or token values changed.
+
+Browser screenshots reviewed:
+
+- `mockups/settings-workspace.html`: Sandbox and Extensions at 1280×800; MCP edit → review link flow and review screenshot at 1280×800; Voice input and Render presets at 1024×768; exact-file cleanup confirmation at 1024×768. Storage and Voice input also reviewed at 390×844. All five sections are switchable through fragment links.
+- MCP review and the plain-folder project confirmation at 390×844: text/commands wrap, safe actions remain visible. The MCP dialog measured 356 px client/scroll width, with footer bottom 741 px inside an 844 px viewport.
+- `mockups/projects.html`: recent/missing/current projects, New project and Create a project in this folder at 1280×800; Folder root and Home composer excerpts at 1440×960. Home and Folder root are explicitly labelled excerpts, not additional production modal designs. No native folder dialog or filesystem write occurs.
+- `mockups/codex-signin.html`: waiting-in-Terminal and detected-but-not-enabled states at 1440×960; separate Claude primary-connection and OpenAI API-key statuses remain visible. The static Use this sign-in button doesn't enable anything.
+
+Iterations from review: corrected the settings-fragment selector specificity so selected sections actually appear; kept the relevant settings page behind its review modal; preserved the 24 px inset when navigating to a section anchor; corrected a missing icon reference; made the custom-server summary match its command review; restored the stacked Whisper model label/select after a more specific radio-label flex rule overrode it. Final narrow Voice screenshot confirms the stacked model field.
+
+Geometry check at 390×844 for all five settings sections plus extension edit/review, cleanup, restore and preset dialogs: document scroll width 390 px; settings client/scroll widths both 334 px. No horizontal page/content overflow in those states. Automated DOM checks found no missing local fragment targets or icon symbols across the three new HTML files. Browser console reported no new errors. Existing semantic colour tokens/contrast measurements above continue to apply; this is not a new comprehensive accessibility audit. Native modal focus trapping, IPC correctness, provider status, keyboard shortcuts and live services remain implementation/QA checks, not claims made by static mockups.
+
+Attempted `app_start` before review. The app exited 127: `sh: electron-vite: command not found` in this designer worktree. Used the tool's working-folder HTTP server for the static references instead. No dependency installation, npm/typecheck/lint/unit suite, native login, microphone capture, Keychain change, media operation or live MCP connection was performed in this design step.
+
 ## Limits and implementation follow-through
 
 - Mockups are static HTML/CSS, with real links between the four references and CSS-target switching for Export. Many controls illustrate appearance and intentionally do not edit media or run jobs. Sample usage, amounts, times and completed checks are fictional design content.

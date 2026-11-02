@@ -21,6 +21,10 @@ Preview sits above an eight-track timeline. Media/Transcript share the left dock
 | [mockups/assistant.html](mockups/assistant.html) | Selection context, live request changes, Keep/Revert and chat composer |
 | [mockups/export.html](mockups/export.html) | Export setup; choose Export video or Progress to see static rendering state |
 | [settings-connections.md](settings-connections.md) | Accounts, secure key forms, Claude Terminal sign-in, automatic tool/model downloads and live status; supersedes older auth/install wording |
+| [round5.md](round5.md) | Usable-project supplement: five settings sections, Codex read-only CLI connection, new/create-in-place projects, Folder root and Home Start; supersedes the team wizard for this round |
+| [mockups/settings-workspace.html](mockups/settings-workspace.html) | Five settings pages, MCP edit/review, exact-file cleanup, snapshot restore and preset form |
+| [mockups/projects.html](mockups/projects.html) | Recents, new project, plain-folder confirmation, Folder root and Home composer excerpts |
+| [mockups/codex-signin.html](mockups/codex-signin.html) | OpenAI method selection, Codex Terminal waiting/detected states and read-only scope |
 | [mockups/accounts.html](mockups/accounts.html) | Accounts form, saved key and unreachable provider states |
 | [mockups/accounts-signin.html](mockups/accounts-signin.html) | Claude Terminal handoff, waiting and detected sign-in states |
 | [mockups/tools.html](mockups/tools.html) | Tool verification, retry, build prerequisite and model download states |
