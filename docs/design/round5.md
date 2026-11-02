@@ -24,6 +24,8 @@ Home: 176 navigation | centred column max 760, contents left aligned
 
 At <1280 px the app sidebar becomes a 56 px rail. At ≤700 px Settings section navigation wraps above the content; compound form rows stack. Dialogs use max-width `calc(100vw - 48px)`, max-height `calc(100dvh - 48px)` with scrolling body and pinned actions. No horizontal document scrolling. Dense desktop controls are 28 px high; use ≥36 px for touch-oriented narrow screens. Plain-language labels are always visible, not placeholder-only.
 
+**Compact editor accessibility:** follow [spec §2, Compact mode](spec.md#compact-mode), clarified 2026-11-02. Sources / Editor tools disclosures must preserve access to Media/Transcript and Inspector/Audio/Assistant when their desktop docks are hidden. Only one compact dock opens, beside the preview at supported desktop sizes; this is a nonmodal region, not a canvas-covering sheet. Focus restoration, draft preservation and the narrow reading fallback are defined there.
+
 ## 2. Shared settings behaviour
 
 Seven sections, in order: Accounts, Tools, Sandbox, Voice input, Render presets, Storage / snapshots, Extensions. Preserve the existing two navigation columns and section scroll position when practical. None of the five new sections is an Unavailable placeholder. Individual unavailable prerequisites show their specific reason and a link to the relevant section; unrelated controls stay usable.
