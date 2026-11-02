@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { defaultGlobalSettings, globalSettingsSchema, type GlobalSettings } from '@shared/schema/settings';
+import { defaultGlobalSettings, globalSettingsSchema, migrateGlobalSettings, type GlobalSettings } from '@shared/schema/settings';
 
 const missing = (error: unknown): boolean => error instanceof Error && 'code' in error && error.code === 'ENOENT';
 export class SettingsStore {
@@ -13,18 +13,19 @@ export class SettingsStore {
   static async load(home = path.join(homedir(), '.cutroom')): Promise<SettingsStore> {
     const root = path.resolve(home);
     let settings = defaultGlobalSettings();
+    let migrated = false;
     try {
       const file = await open(path.join(root, 'settings.json'), constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
         if (!(await file.stat()).isFile()) return new SettingsStore(root, settings);
         const value: unknown = JSON.parse(await file.readFile('utf8'));
-        // Previous v1 settings used "subscription" for the Claude Code login.
-        if (value && typeof value === 'object' && 'claude' in value && value.claude && typeof value.claude === 'object' && 'auth' in value.claude && value.claude.auth === 'subscription') value.claude.auth = 'claude-code';
-        const parsed = globalSettingsSchema.safeParse(value);
-        if (parsed.success) settings = parsed.data;
+        settings = migrateGlobalSettings(value);
+        migrated = !globalSettingsSchema.safeParse(value).success;
       } finally { await file.close(); }
     } catch { /* Missing, unreadable or malformed settings must not prevent startup. */ }
-    return new SettingsStore(root, settings);
+    const store = new SettingsStore(root, settings);
+    if (migrated) await store.update(() => settings);
+    return store;
   }
 
   get(): GlobalSettings { return structuredClone(this.settings); }

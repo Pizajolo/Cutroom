@@ -3,7 +3,17 @@ import { lstat, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { SettingsStore } from '@main/settings/store';
-import { defaultGlobalSettings, globalSettingsSchema } from '@shared/schema/settings';
+import { defaultGlobalSettings, globalSettingsSchema, globalSettingsV1Schema } from '@shared/schema/settings';
+
+function legacySettings() {
+  const { voiceInput, sandbox, snapshots, renderPresets, extensions: _extensions, ...rest } = defaultGlobalSettings();
+  void _extensions;
+  return globalSettingsV1Schema.parse({
+    ...rest, version: 1, voiceInput: voiceInput.engine, renderPreset: renderPresets.defaultId,
+    sandbox: { networkByDefault: sandbox.networkByDefault, allowedDomains: sandbox.allowedDomains },
+    snapshots: { retainDays: snapshots.retainDays, maxBytes: snapshots.maxBytes },
+  });
+}
 
 let home: string;
 beforeEach(async () => { home = await mkdtemp(path.join(tmpdir(), 'cutroom-settings-test-')); });
@@ -31,12 +41,35 @@ describe('settings store', () => {
     expect(await readFile(path.join(home, 'settings.json'), 'utf8')).toBe(raw);
   });
   it('migrates subscription auth and absent account metadata from older v1 settings', async () => {
-    const old = { ...defaultGlobalSettings(), claude: { auth: 'subscription', credentialRef: 'keychain-ref' }, openai: undefined, accounts: undefined, whisperAutoDownloadSuppressed: undefined };
+    const old = { ...legacySettings(), claude: { auth: 'subscription', credentialRef: 'keychain-ref' }, openai: undefined, accounts: undefined, whisperAutoDownloadSuppressed: undefined };
     await writeFile(path.join(home, 'settings.json'), JSON.stringify(old));
     const settings = (await SettingsStore.load(home)).get();
     expect(settings.claude).toEqual({ auth: 'claude-code', credentialRef: 'keychain-ref' });
     expect(settings.accounts.anthropic.status).toBe('not_connected');
     expect(settings.whisperAutoDownloadSuppressed).toEqual([]);
+  });
+  it.each(['whisper', 'scribe'] as const)('persists a lossless v1 to v2 migration with private permissions (%s)', async (engine) => {
+    const old = legacySettings();
+    old.appearance = 'dark'; old.defaultEngine = 'remotion'; old.voiceInput = engine; old.whisperModel = 'small';
+    old.whisperAutoDownloadSuppressed = ['base']; old.claude = { auth: 'api-key', credentialRef: 'keychain:anthropic' };
+    old.openai.apiKeyRef = 'keychain:openai'; old.elevenLabs = { apiKeyRef: 'keychain:elevenlabs', oauthRef: 'keychain:eleven-oauth' };
+    old.accounts.openai = { keyPreview: '…1234', status: 'connected', checkedAt: '2026-11-01T12:00:00.000Z' };
+    old.sandbox.allowedDomains = ['example.com', '*.example.org']; old.snapshots = { retainDays: 90, maxBytes: 123456789 }; old.renderPreset = 'final';
+    old.remotionLicenseAcknowledgedAt = '2026-10-01T12:00:00.000Z';
+    const file = path.join(home, 'settings.json'); await writeFile(file, JSON.stringify(old), { mode: 0o644 });
+    const settings = (await SettingsStore.load(home)).get();
+    expect(settings).toMatchObject({
+      version: 2, appearance: old.appearance, defaultEngine: old.defaultEngine, accounts: old.accounts,
+      claude: old.claude, openai: old.openai, elevenLabs: old.elevenLabs, whisperModel: old.whisperModel,
+      whisperAutoDownloadSuppressed: old.whisperAutoDownloadSuppressed, remotionLicenseAcknowledgedAt: old.remotionLicenseAcknowledgedAt,
+      voiceInput: { engine, model: engine === 'whisper' ? 'small' : 'scribe_v1' },
+      sandbox: { ...old.sandbox, allowShell: false, allowWeb: false },
+      snapshots: { ...old.snapshots, autoBeforeAgent: true, autoBeforeExport: true }, renderPresets: { defaultId: 'final', custom: [] }, extensions: [],
+    });
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(settings);
+    expect((await lstat(file)).mode & 0o777).toBe(0o600);
+    expect((await SettingsStore.load(home)).get()).toEqual(settings);
+    expect(await readdir(home)).toEqual(['settings.json']);
   });
   it('serializes concurrent updates and recovers after a rejected update', async () => {
     const store = await SettingsStore.load(home);
@@ -45,8 +78,8 @@ describe('settings store', () => {
     const before = await readFile(path.join(home, 'settings.json'), 'utf8');
     await expect(store.update((draft) => { draft.snapshots.retainDays = -1; })).rejects.toThrow();
     expect(await readFile(path.join(home, 'settings.json'), 'utf8')).toBe(before);
-    await store.update((draft) => { draft.renderPreset = 'final'; });
-    expect(store.get().renderPreset).toBe('final');
+    await store.update((draft) => { draft.renderPresets.defaultId = 'final'; });
+    expect(store.get().renderPresets.defaultId).toBe('final');
   });
   it('refuses a settings symlink without mutating its target', async () => {
     const target = path.join(home, 'foreign.json'); await writeFile(target, 'do not overwrite');

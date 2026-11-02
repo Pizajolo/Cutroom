@@ -9,15 +9,15 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 // Bundle to a fresh temporary folder so Node 22 needs no TS loader or version-specific stripping.
 const temp = await mkdtemp(path.join(tmpdir(), 'cutroom-schemas-'));
 try {
-  const entry = path.join(root, 'src/shared/schema/index.ts');
+  const entry = path.join(root, 'src/shared/schema/catalog.ts');
   await build({
     configFile: false,
     build: { outDir: temp, emptyOutDir: false, lib: { entry, formats: ['es'], fileName: () => 'schemas.mjs' }, rollupOptions: { external: ['nanoid'] } },
   });
   const schemas = await import(pathToFileURL(path.join(temp, 'schemas.mjs')).href);
-  const output = path.join(root, 'docs/schemas');
+  const output = process.env.CUTROOM_SCHEMA_OUTPUT ? path.resolve(process.env.CUTROOM_SCHEMA_OUTPUT) : path.join(root, 'docs/schemas');
   await mkdir(output, { recursive: true });
-  for (const [name, schema] of Object.entries({ timeline: schemas.timelineDocSchema, props: schemas.propsDocSchema, project: schemas.projectDocSchema, events: schemas.eventEnvelopeSchema, jobs: schemas.jobInfoSchema, settings: schemas.globalSettingsSchema, tools: schemas.toolInfoSchema, install: schemas.installStateSchema, models: schemas.whisperModelInfoSchema, accounts: schemas.accountInfoSchema, claudeCodeStatus: schemas.claudeCodeStatusSchema })) {
+  for (const [name, schema] of Object.entries(schemas.schemaCatalog)) {
     const file = path.join(output, `${name}.schema.json`);
     const generated = `${JSON.stringify(zodToJsonSchema(schema, { name, target: 'jsonSchema7', $refStrategy: 'none' }), null, 2)}\n`;
     // Generated schema artifacts only, never project/user files.

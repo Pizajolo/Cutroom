@@ -22,7 +22,7 @@ describe('npm dependency lock', () => {
     expect(lock.packages['']?.dependencies).toEqual(manifest.dependencies);
     expect(lock.packages['']?.devDependencies).toEqual(manifest.devDependencies);
   });
-  it.each(['@anthropic-ai/claude-agent-sdk', '@napi-rs/keyring', '@testing-library/dom'])('records a resolved version and integrity for %s', async (name) => {
+  it.each(['@anthropic-ai/claude-agent-sdk', '@napi-rs/keyring', '@testing-library/dom', 'remotion', '@remotion/bundler', '@remotion/renderer', '@remotion/zod-types', 'hyperframes', 'gsap'])('records a resolved version and integrity for %s', async (name) => {
     const { manifest, lock } = await dependencyFiles(); const entry = lock.packages[`node_modules/${name}`];
     expect(entry?.version).toBe(manifest.dependencies[name] ?? manifest.devDependencies[name]);
     expect(entry?.resolved).toMatch(/^https:\/\/registry\.npmjs\.org\//);
