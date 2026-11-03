@@ -7,6 +7,7 @@ import { accountMethodLabel, accountRevision, receiveAccount, useAccounts } from
 import { Dialog } from '../components/Dialog';
 import { Notice } from '../components/Notice';
 import { ProgressBar } from '../components/InstallProgress';
+import { CodexSignIn } from './CodexSignIn';
 
 const PROVIDERS = { anthropic: 'Claude', openai: 'OpenAI', elevenlabs: 'ElevenLabs' } as const;
 const STATUS = {
@@ -76,6 +77,7 @@ function AccountCard({ account }: { account: AccountInfo }) {
   const [candidate, setCandidate] = useState<AccountInfo['method']>(null);
   const method = candidate ?? (account.status === 'not_connected' ? 'api-key' : account.method) ?? 'api-key';
   const [key, setKey] = useState('');
+  const [codexMethod, setCodexMethod] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -118,7 +120,7 @@ function AccountCard({ account }: { account: AccountInfo }) {
     <p className="field-note">Create an API key at <span className="settings-text-link">{account.provider === 'anthropic' ? 'platform.claude.com' : account.provider === 'openai' ? 'platform.openai.com' : 'elevenlabs.io'}</span>.</p>
   </>;
   return <section className="account-card" aria-labelledby={`${id}-title`}>
-    <div className="account-card-header"><div><h3 className="account-provider" id={`${id}-title`}>{name}</h3><p className="account-description">{account.provider === 'anthropic' ? 'Choose how Cutroom connects to Claude.' : account.provider === 'openai' ? 'Connect your OpenAI account with an API key.' : 'Connect voice and audio services with an API key.'}</p></div><ConnectionBadge status={account.status} /></div>
+    <div className="account-card-header"><div><h3 className="account-provider" id={`${id}-title`}>{name}</h3><p className="account-description">{account.provider === 'anthropic' ? 'Choose how Cutroom connects to Claude.' : account.provider === 'openai' ? 'Use an API key, or let Claude consult your signed-in Codex CLI.' : 'Connect voice and audio services with an API key.'}</p></div><ConnectionBadge status={account.status} /></div>
     {saved && <div className="account-saved"><span>{accountMethodLabel(account)}</span>{account.keyPreview && <span>{account.keyPreview}</span>}<div className="account-actions"><button ref={verify} type="button" className="button" disabled={pending !== null} onClick={() => void run('verify', () => api.invoke('accounts.verify', { provider: account.provider }))}>{pending === 'verify' ? 'Checking…' : 'Verify'}</button><button type="button" className="button" disabled={pending !== null} onClick={() => { setError(null); setDisconnecting(true); }}>Disconnect</button></div></div>}
     {account.detail && <p className="account-description">{account.detail}</p>}
     {account.status === 'unreachable' && <p className="field-note">Your saved connection hasn't been removed.</p>}
@@ -129,7 +131,7 @@ function AccountCard({ account }: { account: AccountInfo }) {
       <label className="account-method"><input type="radio" name={`${id}-method`} value="claude-code" checked={method === 'claude-code'} onChange={() => { setCandidate('claude-code'); setKey(''); setError(null); }} />Use my Claude Code sign-in</label>
       {method === 'claude-code' && <div className="account-method-body"><ClaudeSignIn disabled={pending !== null} onUse={() => void run('connect', () => api.invoke('accounts.claude.setMethod', { method: 'claude-code' }))} /></div>}
       {saved && method !== account.method && <p className="field-note">Current connection stays active until you connect another method.</p>}
-    </fieldset> : keyForm}
+    </fieldset> : account.provider === 'openai' ? <fieldset className="account-methods"><legend>Connection method</legend><label className="account-method"><input type="radio" name={`${id}-openai-method`} checked={!codexMethod} onChange={() => { setCodexMethod(false); setKey(''); }} />API key</label>{!codexMethod && keyForm}<label className="account-method"><input type="radio" name={`${id}-openai-method`} checked={codexMethod} onChange={() => { setCodexMethod(true); setKey(''); }} />Use my Codex sign-in (ChatGPT)</label><p className="field-note">Claude uses Codex for read-only tasks. Connect Claude separately to start the assistant.</p>{codexMethod && <CodexSignIn />}</fieldset> : keyForm}
     {error && !disconnecting && <div id={`${id}-error`}><Notice danger>{error}</Notice></div>}
     <span className="sr-only" role="status">{announcement}</span>
     {disconnecting && <Dialog title={`Disconnect ${name}?`} onClose={() => { if (!pending) setDisconnecting(false); }} footer={<><button type="button" className="button" autoFocus disabled={pending !== null} onClick={() => setDisconnecting(false)}>Cancel</button><button type="button" className="button danger" disabled={pending !== null} onClick={() => void run('disconnect', () => api.invoke('accounts.disconnect', { provider: account.provider }))}>{pending === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}</button></>}><p>{account.method === 'claude-code' ? "This removes the connection from Cutroom. It won't sign you out of Claude Code." : 'Cutroom will remove this API key from your macOS Keychain. You can reconnect later.'}</p>{error && <Notice danger>{error}</Notice>}</Dialog>}

@@ -7,6 +7,7 @@ import { Sidebar } from '../../src/renderer/components/Sidebar';
 import { Home } from '../../src/renderer/pages/Home';
 import { useNavigation } from '../../src/renderer/state/navigation';
 import { EditorWorkspace } from '../../src/renderer/editor/EditorWorkspace';
+import { defaultReply } from './fixtures';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listeners: new Map<string, (payload: unknown) => void>() }));
 vi.mock('../../src/renderer/lib/api', () => ({ api: { invoke: mocks.invoke, on: (event: string, listener: (payload: unknown) => void) => { mocks.listeners.set(event, listener); return () => mocks.listeners.delete(event); } } }));
@@ -16,7 +17,7 @@ let accounts: AccountInfo[];
 beforeEach(() => {
   accounts = [account('anthropic'), account('openai'), account('elevenlabs')];
   mocks.invoke.mockReset(); mocks.listeners.clear();
-  mocks.invoke.mockImplementation(async (channel: string) => channel === 'accounts.list' ? accounts : channel === 'accounts.claudeCode.status' ? cli() : channel === 'tools.list' || channel === 'models.list' ? [] : { ok: true });
+  mocks.invoke.mockImplementation(async (channel: string) => channel === 'accounts.list' ? accounts : channel === 'accounts.claudeCode.status' ? cli() : defaultReply(channel));
   useNavigation.setState({ destination: 'home', settingsSection: 'Accounts', goalDraft: '', goalFocusRequest: 0, project: null, recentProjects: [], sidebarCollapsed: false });
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
@@ -97,7 +98,7 @@ it('subscribes once across Sidebar, Home and Accounts and updates them live', as
   act(() => mocks.listeners.get('accounts.changed')?.([account('anthropic', { status: 'connected', method: 'claude-code', detail: 'Signed in with Claude Code (editor@example.test)' }), account('openai'), account('elevenlabs', { status: 'connected', method: 'api-key', keyPreview: '…5678', detail: 'Creator · 100 / 10,000 characters' })]));
   expect(screen.getByRole('button', { name: 'Claude connected · Claude Code sign-in' })).toBeTruthy();
   expect(screen.getAllByText(/Creator · 100 \/ 10,000 characters/)).toHaveLength(2);
-  expect(screen.getByText('Claude Code sign-in · Signed in with Claude Code (editor@example.test)')).toBeTruthy();
+  expect(screen.getAllByText('Signed in with Claude Code (editor@example.test)').length).toBeGreaterThan(0);
 });
 it('links live sidebar download progress to Tools and removes it after installation', async () => {
   render(<Sidebar info={null} />); await screen.findByRole('button', { name: 'Connect Claude' });
@@ -109,13 +110,13 @@ it('links live sidebar download progress to Tools and removes it after installat
   act(() => mocks.listeners.get('tools.changed')?.([{ ...tool, install: null, status: 'ok', verification: 'pinned' }]));
   expect(screen.queryByRole('button', { name: /Downloading tools/ })).toBeNull();
 });
-it('links Audio to Accounts until ElevenLabs connects, then updates the future-feature explanation', async () => {
+it('links Audio to Accounts until ElevenLabs connects, then enables the real generation controls', async () => {
   render(<EditorWorkspace project={{ id: 'fixture', name: 'Fixture', format: { aspect: '16:9', width: 1920, height: 1080, fps: 30 }, defaultEngine: 'hyperframes', createdAt: '2026-11-01T00:00:00.000Z', folderMap: { raw: 'raw', references: 'references', assets: 'assets', compositions: 'compositions', audio: 'audio', work: 'work', final: 'final' } }} />);
   fireEvent.click(screen.getByRole('tab', { name: 'Audio' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Connect ElevenLabs' }));
   expect(useNavigation.getState().settingsSection).toBe('Accounts'); expect(useNavigation.getState().destination).toBe('settings');
   act(() => mocks.listeners.get('accounts.changed')?.([account('elevenlabs', { status: 'connected', method: 'api-key', keyPreview: '…1234' })]));
-  expect(screen.getByText('ElevenLabs connected. Audio generation arrives in a later update.')).toBeTruthy();
+  expect(screen.getByRole('textbox', { name: 'Script' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Connect ElevenLabs' })).toBeNull();
 });
 it('opens Terminal only on request, polls status and requires explicit Use this sign-in', async () => {

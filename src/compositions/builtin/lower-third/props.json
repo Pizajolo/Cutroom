@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "elements": [
+    {
+      "id": "speaker",
+      "name": "Speaker",
+      "kind": "text",
+      "props": {
+        "content": {
+          "type": "text",
+          "bind": "text",
+          "default": "Speaker name"
+        },
+        "color": {
+          "type": "color",
+          "bind": "css:--color",
+          "default": "#ffffff"
+        },
+        "fontSize": {
+          "type": "number",
+          "bind": "css:--font-size",
+          "default": 64,
+          "min": 1,
+          "max": 200
+        }
+      }
+    },
+    {
+      "id": "role",
+      "name": "Role",
+      "kind": "text",
+      "props": {
+        "content": {
+          "type": "text",
+          "bind": "text",
+          "default": "Role or location"
+        },
+        "color": {
+          "type": "color",
+          "bind": "css:--color",
+          "default": "#c6d7e8"
+        }
+      }
+    }
+  ]
+}

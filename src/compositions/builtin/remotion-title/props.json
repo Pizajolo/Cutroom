@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "elements": [
+    { "id": "title", "name": "Title", "kind": "text", "props": {
+      "content": { "type": "text", "bind": "text", "default": "Your title" },
+      "color": { "type": "color", "bind": "css:--color", "default": "#ffffff" },
+      "fontSize": { "type": "number", "bind": "css:--font-size", "default": 96, "min": 12, "max": 240 }
+    } },
+    { "id": "subtitle", "name": "Subtitle", "kind": "text", "props": {
+      "content": { "type": "text", "bind": "text", "default": "A story worth sharing" }
+    } }
+  ]
+}

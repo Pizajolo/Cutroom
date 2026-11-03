@@ -2,6 +2,7 @@ import { Bell, CircleAlert, Download, Film, FolderOpen, House, KeyRound, PanelLe
 import { accountMethodLabel, useAccounts } from '../lib/useAccounts';
 import { setupProgress, useModels, useTools } from '../lib/useTools';
 import { ProgressBar } from './InstallProgress';
+import { JobsIndicator } from './Jobs';
 import type { AppInfo } from '../lib/useAppInfo';
 import { useNavigation, type Destination } from '../state/navigation';
 
@@ -15,9 +16,9 @@ export function Sidebar({ info }: { info: AppInfo | null }) {
   const collapsed = useNavigation((state) => state.sidebarCollapsed);
   const recent = useNavigation((state) => state.recentProjects);
   const current = useNavigation((state) => state.project);
-  const mediaFolder = useNavigation((state) => state.mediaFolder);
+  const tab = useNavigation((state) => state.tab);
   const navigate = useNavigation((state) => state.navigate);
-  const openProject = useNavigation((state) => state.openProject);
+  const openRecent = useNavigation((state) => state.openRecent);
   const toggleSidebar = useNavigation((state) => state.toggleSidebar);
   const { data: accounts, error: accountsError } = useAccounts();
   const { data: tools } = useTools();
@@ -35,11 +36,11 @@ export function Sidebar({ info }: { info: AppInfo | null }) {
         <button type="button" className="nav-link" aria-current={active(target) ? 'page' : undefined} title={label} onClick={() => navigate(target)}>
           <Icon size={18} strokeWidth={1.75} aria-hidden="true" /><span className="sidebar-label">{label}</span>
         </button>
-        {target === 'projects' && mediaFolder && <div className="recent-projects sidebar-label"><button type="button" className="recent-project" aria-current={destination === 'media' ? 'page' : undefined} title={mediaFolder.root} onClick={() => navigate('media')}>Folder media</button></div>}
+        {target === 'projects' && <div className="recent-projects sidebar-label"><button type="button" className="recent-project" aria-current={destination === 'project' && tab === 'Media' ? 'page' : undefined} title={current?.rootPath ?? 'Open a project media folder'} onClick={() => navigate('media')}>Folder media</button></div>}
         {target === 'projects' && recent.length > 0 && <div className="recent-projects sidebar-label">
-          {recent.slice(0, 5).map((entry) => <button type="button" key={entry.project.id} title={entry.project.name}
-            className="recent-project" aria-current={destination === 'project' && current?.project.id === entry.project.id ? 'page' : undefined}
-            onClick={() => openProject(entry)}>{entry.project.name}</button>)}
+          {recent.slice(0, 5).map((entry) => <button type="button" key={entry.id} title={entry.missing ? `${entry.name} · Folder not found` : entry.rootPath} disabled={entry.missing}
+            className="recent-project" aria-current={destination === 'project' && current?.project.id === entry.id ? 'page' : undefined}
+            onClick={() => { void openRecent(entry.id); }}>{entry.name}</button>)}
         </div>}
       </div>)}
     </nav>
@@ -59,7 +60,7 @@ export function Sidebar({ info }: { info: AppInfo | null }) {
         <button type="button" className="icon-button" aria-label="Notifications unavailable" title="Notifications are not connected in this build" disabled><Bell size={16} /></button>
         <small className="version sidebar-label">{info ? `v${info.version}` : 'Connecting…'}</small>
       </div>
-      <div className="jobs-slot sidebar-label" aria-label="Jobs status">Background jobs not connected</div>
+      <div className="jobs-slot sidebar-label" aria-label="Jobs status"><JobsIndicator /></div>
     </div>
   </aside>;
 }

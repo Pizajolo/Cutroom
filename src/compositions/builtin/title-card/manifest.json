@@ -1,0 +1,8 @@
+{
+  "id": "title-card",
+  "name": "Title card",
+  "engine": "hyperframes",
+  "description": "An animated title and subtitle",
+  "durationSec": 5,
+  "entry": "index.html"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "remotion-title",
+  "name": "Remotion title",
+  "engine": "remotion",
+  "description": "A frame-driven title and subtitle with editable properties",
+  "durationSec": 5,
+  "entry": "index.tsx",
+  "compositionId": "Title"
+}

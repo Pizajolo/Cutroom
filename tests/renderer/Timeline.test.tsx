@@ -28,6 +28,12 @@ beforeEach(() => {
 afterEach(() => { cleanup(); previewClock.pause(); keymap.setScopes([]); vi.restoreAllMocks(); });
 
 describe('timeline foundation', () => {
+  it('toggles snapping by button and the scoped N shortcut', () => {
+    render(<Timeline doc={fixture()} />); const snapping = screen.getByRole('button', { name: 'Snapping' });
+    expect(snapping.getAttribute('aria-pressed')).toBe('true'); fireEvent.click(snapping); expect(snapping.getAttribute('aria-pressed')).toBe('false');
+    const detach = keymap.attach(); keymap.setScopes(['editor']);
+    try { fireEvent.keyDown(document.body, { key: 'n' }); expect(snapping.getAttribute('aria-pressed')).toBe('true'); } finally { detach(); }
+  });
   it('renders eight fixed tracks and disables edits without an operation callback', () => {
     const { container } = render(<Timeline doc={null} />);
     expect([...container.querySelectorAll('[data-track-kind]')].map((element) => element.getAttribute('data-track-kind'))).toEqual([...TRACK_KINDS]);
@@ -35,7 +41,7 @@ describe('timeline foundation', () => {
       expect((screen.getByRole('button', { name: `Mute ${TRACK_NAMES[kind]}` }) as HTMLButtonElement).disabled).toBe(true);
       expect((screen.getByRole('button', { name: `Solo ${TRACK_NAMES[kind]}` }) as HTMLButtonElement).disabled).toBe(true);
     }
-    expect(screen.getByText('Timeline not connected')).toBeTruthy();
+    expect(screen.getByText('Loading timeline…')).toBeTruthy();
   });
   it('shares selection, supports Shift-click toggles and clears with Escape', async () => {
     render(<Timeline doc={fixture()} />);

@@ -124,10 +124,13 @@ describe('media folder browser', () => {
     await waitFor(() => expect(mocks.invoke.mock.calls.filter(([channel]) => channel === 'media.list').length).toBe(before + 1));
     unmount(); expect(mocks.listeners.size).toBe(0);
   });
-  it('keeps browsing separate from project creation', async () => {
+  it('uses the real open flow and preserves a plain folder grant for explicit creation', async () => {
+    mocks.invoke.mockImplementation(async (channel) => channel === 'dialog.pickFolder' ? { grantId: 'opaque-grant', displayPath: folder.root } : { status: 'needsCreate', grantId: 'opaque-grant', displayPath: folder.root, looseMediaCount: 2 });
+    useNavigation.setState({ projectBusy: false, projectDialog: null });
     render(<BrowseMediaButton />); fireEvent.click(screen.getByRole('button', { name: 'Browse media folder' }));
-    await waitFor(() => expect(useNavigation.getState().mediaFolder).toEqual(folder));
-    expect(useNavigation.getState().destination).toBe('media');
-    expect(mocks.invoke).toHaveBeenCalledWith('media.selectProjectFolder', {});
+    await waitFor(() => expect(useNavigation.getState().projectDialog).toMatchObject({ status: 'needsCreate', grantId: 'opaque-grant', looseMediaCount: 2 }));
+    expect(mocks.invoke).toHaveBeenCalledWith('dialog.pickFolder', { purpose: 'openProject' });
+    expect(mocks.invoke).toHaveBeenCalledWith('project.open', { grantId: 'opaque-grant' });
+    expect(mocks.invoke.mock.calls.some(([channel]) => channel === 'project.createInPlace')).toBe(false);
   });
 });

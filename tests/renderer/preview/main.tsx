@@ -6,7 +6,9 @@ import type { AccountInfo, ClaudeCodeStatus } from '../../../src/shared/schema/a
 import type { ToolInfo } from '../../../src/shared/schema/media';
 import type { WhisperModelInfo } from '../../../src/shared/schema/models';
 import { App } from '../../../src/renderer/App';
-import { useNavigation } from '../../../src/renderer/state/navigation';
+import { useNavigation, SETTINGS_SECTIONS } from '../../../src/renderer/state/navigation';
+import { defaultGlobalSettings } from '../../../src/shared/schema/settings';
+import { session, timelineDoc, preset } from '../fixtures';
 import '../../../src/renderer/styles/tokens.css';
 import '../../../src/renderer/styles/app.css';
 
@@ -20,13 +22,33 @@ let models: WhisperModelInfo[] = [
   { name: 'medium', sizeBytes: 1_530_000_000, status: 'checksum_mismatch', install: null, isDefault: false },
   { name: 'large-v3-turbo', sizeBytes: 1_620_000_000, status: 'missing', install: null, isDefault: false },
 ];
+let settings = defaultGlobalSettings();
+const project = new URLSearchParams(location.search).has('project') ? session : null;
+const extensions = ['cutroom', 'elevenlabs', 'codex', 'elevenlabs-hosted'].map((id) => ({ config: { id, name: id === 'cutroom' ? 'Cutroom editor' : id === 'elevenlabs' ? 'ElevenLabs' : id === 'codex' ? 'Codex' : 'ElevenLabs hosted MCP', enabled: id === 'cutroom', transport: 'stdio', command: '/fixture/builtin', args: [] }, builtin: true, secretEnvNames: [], status: id === 'cutroom' ? 'ready' : 'disabled', detail: null }));
 let loggedIn = false;
 const status = (): ClaudeCodeStatus => ({ available: true, loggedIn, email: loggedIn ? 'editor@example.test' : null, organization: null, cliVersion: '2.1', binarySource: 'installed', authMethod: loggedIn ? 'claude.ai' : 'none' });
 window.cutroom = {
   async invoke<C extends InvokeChannel>(channel: C, request: unknown) {
-    const req = request as { provider?: AccountInfo['provider']; name?: string };
+    contract.invoke[channel].req.parse(request);
+    const req = request as { provider?: AccountInfo['provider']; name?: string; patch?: Record<string, unknown>; config?: unknown; id?: string; enabled?: boolean };
     let response: unknown;
     if (channel === 'app.getInfo') response = { version: '0.1.0-fixture', platform: 'darwin', arch: 'arm64', homeDir: '/fixture', mediaBaseUrl: null, compBaseUrl: null };
+    else if (channel === 'project.current') response = project;
+    else if (channel === 'project.listRecent') response = project ? [{ id: session.project.id, name: session.project.name, rootPath: session.rootPath, format: session.project.format, lastOpenedAt: session.project.createdAt, missing: false }] : [];
+    else if (channel === 'settings.get') response = settings;
+    else if (channel === 'settings.update') { settings = { ...settings, ...req.patch }; response = settings; emit('settings.changed', settings); }
+    else if (['jobs.list', 'snapshots.list', 'media.list', 'audio.voices', 'compositions.templates'].includes(channel)) response = [];
+    else if (channel === 'timeline.get') response = { doc: timelineDoc(), revision: 1, canUndo: false, canRedo: false };
+    else if (channel === 'export.presets') response = [preset];
+    else if (channel === 'export.preflight') response = { canExport: false, blockers: ['This browser fixture has no playable media.'], unsupportedItems: [] };
+    else if (channel === 'storage.usage') response = { totalBytes: 4000000, categories: [{ category: 'thumbnails', bytes: 4000000, items: 2 }] };
+    else if (channel === 'storage.cleanPreview') response = { token: 'fixture-preview', bytes: 4000000, items: [{ rel: 'work/.cutroom-media/thumbs.jpg', bytes: 4000000, category: 'thumbnails' }] };
+    else if (channel === 'storage.clean') response = { ok: true };
+    else if (channel === 'extensions.list') response = extensions;
+    else if (channel === 'extensions.validate') response = { commandPreview: JSON.stringify(req.config), domains: [], scopes: ['Runs as your user. Browser fixture only; never executed.'] };
+    else if (channel === 'extensions.setEnabled') { const extension = extensions.find((e) => e.config.id === req.id); if (extension) { extension.config.enabled = !!req.enabled; extension.status = req.enabled ? 'ready' : 'disabled'; } response = extension; }
+    else if (channel === 'accounts.codex.status') response = { available: true, loggedIn, mode: loggedIn ? 'chatgpt' : null };
+    else if (channel === 'accounts.codex.openLogin') { window.setTimeout(() => { loggedIn = true; }, 4000); response = { ok: true }; }
     else if (channel === 'accounts.list') response = accounts;
     else if (channel === 'tools.list') response = tools;
     else if (channel === 'models.list') response = models;
@@ -62,5 +84,6 @@ window.setInterval(() => {
   models = models.map((model) => !model.install ? model : model.install.received >= (model.install.total ?? Infinity) ? { ...model, install: null, status: 'installed' } : { ...model, install: { ...model.install, received: model.install.received + 12_000_000 } });
   emit('tools.changed', tools); emit('models.changed', models);
 }, 1000);
-useNavigation.setState({ destination: 'settings', settingsSection: new URLSearchParams(location.search).get('section') === 'Tools' ? 'Tools' : 'Accounts' });
+const requested = new URLSearchParams(location.search).get('section');
+useNavigation.setState({ destination: new URLSearchParams(location.search).has('editor') ? 'project' : new URLSearchParams(location.search).has('home') ? 'home' : 'settings', project, settingsSection: SETTINGS_SECTIONS.find((section) => section === requested) ?? 'Accounts' });
 createRoot(document.getElementById('root')!).render(<App />);

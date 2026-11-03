@@ -1,54 +1,39 @@
-import { useEffect, useRef } from 'react';
-import { ArrowUp, FolderOpen, Mic, Paperclip, Plus } from 'lucide-react';
-import { useNavigation } from '../state/navigation';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowUp } from 'lucide-react';
+import { errorMessage, useNavigation } from '../state/navigation';
 import { BrowseMediaButton } from '../media/MediaBrowser';
 import { accountMethodLabel, useAccounts } from '../lib/useAccounts';
-
-export function ProjectActions() {
-  return <div className="project-actions" aria-describedby="project-service-note">
-    <button type="button" className="button" disabled><FolderOpen size={16} />Open project</button>
-    <button type="button" className="button primary" disabled><Plus size={16} />New project</button>
-    <BrowseMediaButton />
-  </div>;
-}
+import { VoiceButton } from '../components/VoiceButton';
+import { Notice } from '../components/Notice';
+import { ProjectActions } from './Projects';
+import { useAssistant } from '../editor/assistantStore';
+export { ProjectActions } from './Projects';
 
 export function Home() {
-  const draft = useNavigation((state) => state.goalDraft);
-  const setDraft = useNavigation((state) => state.setGoalDraft);
-  const focusRequest = useNavigation((state) => state.goalFocusRequest);
+  const draft = useNavigation((s) => s.goalDraft);
+  const current = useNavigation((s) => s.project);
+  const recents = useNavigation((s) => s.recentProjects);
+  const focusRequest = useNavigation((s) => s.goalFocusRequest);
   const { data: accounts, error: accountsError } = useAccounts();
-  const claude = accounts?.find((account) => account.provider === 'anthropic');
-  const elevenlabs = accounts?.find((account) => account.provider === 'elevenlabs');
-  const connectionFallback = accountsError ? 'Connection status unavailable' : accounts ? 'Not connected' : 'Checking connections…';
+  const [selected, setSelected] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const chosen = selected ?? current?.project.id ?? '';
+  const claude = accounts?.find((a) => a.provider === 'anthropic');
+  const elevenlabs = accounts?.find((a) => a.provider === 'elevenlabs');
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (focusRequest > 0) ref.current?.focus(); }, [focusRequest]);
-  return <div className="page home-page" data-workspace-region tabIndex={-1}>
-    <div className="page-heading"><h1>What do you want to make?</h1></div>
-    <section className="goal-section" aria-label="New goal">
-      <label htmlFor="home-goal" className="sr-only">Describe your video</label>
-      <div className="goal-composer">
-        <textarea id="home-goal" ref={ref} value={draft} onChange={(event) => setDraft(event.target.value)}
-          placeholder="Cut a 60-second teaser from my footage, with animated titles and a voiceover…" />
-        <div className="composer-toolbar">
-          <button type="button" className="icon-button" aria-label="Attach files unavailable" title="Attachments are not connected in this build" disabled><Paperclip size={16} /></button>
-          <button type="button" className="icon-button" aria-label="Voice input unavailable" title="Voice input is not connected in this build" disabled><Mic size={16} /></button>
-          <span className="composer-hint">New goal <kbd>⌘N</kbd></span>
-          <button type="button" className="button primary" disabled aria-describedby="goal-service-note"><ArrowUp size={16} />Start</button>
-        </div>
-      </div>
-      <p id="goal-service-note" className="field-note">Your draft stays here while you explore. Starting a team isn't connected in this build.</p>
-    </section>
-    <section className="home-start" aria-labelledby="home-projects-title">
-      <div><h2 id="home-projects-title">Make a video with your team.</h2><p>Bring in a folder of footage, or start with an idea.</p></div>
-      <ProjectActions />
-      <p className="field-note" id="project-service-note">Opening and creating project folders isn't connected in this build.</p>
-    </section>
-    <div className="home-details">
-      <section aria-labelledby="recent-runs-title"><div className="section-heading"><h2 id="recent-runs-title">Recent runs</h2><span className="quiet">Not connected</span></div><div className="home-empty"><p>Your team's work will appear here.</p><p className="quiet">No runs are loaded in this build.</p></div></section>
-      <section aria-labelledby="usage-title"><div className="section-heading"><h2 id="usage-title">Usage</h2><span className="quiet">API-equivalent estimate</span></div>
-        <dl className="usage-list"><div><dt>Today</dt><dd>Unavailable</dd></div><div><dt>This week</dt><dd>Unavailable</dd></div><div><dt>Claude plan</dt><dd>{claude?.status === 'connected' ? `${accountMethodLabel(claude)}${claude.detail ? ` · ${claude.detail}` : ''}` : connectionFallback}</dd></div><div><dt>ElevenLabs credits</dt><dd>{elevenlabs?.status === 'connected' ? elevenlabs.detail ?? 'Connected · Usage unavailable' : connectionFallback}</dd></div></dl>
-        <p className="field-note">Usage appears only when the connected account provides it.</p>
-      </section>
-    </div>
-  </div>;
+  const reason = !chosen ? 'Choose or create a project to start.' : claude?.status !== 'connected' ? accountsError ?? 'Connect Claude to start the assistant. You can edit manually.' : !draft.trim() ? 'Describe what you want to make.' : '';
+  const start = async () => {
+    if (reason || busy) return;
+    const goal = draft; setBusy(true); setError('');
+    try {
+      if (current?.project.id !== chosen) { await useNavigation.getState().openRecent(chosen); if (useNavigation.getState().project?.project.id !== chosen) throw new Error(useNavigation.getState().projectError ?? 'The project could not be opened.'); }
+      useNavigation.setState({ destination: 'project', tab: 'Editor', dock: 'Assistant' });
+      if (await useAssistant.getState().send(goal)) { if (useNavigation.getState().goalDraft === goal) useNavigation.getState().setGoalDraft(''); }
+    } catch (r) { setError(errorMessage(r)); } finally { setBusy(false); }
+  };
+  return <div className="page home-page" data-workspace-region tabIndex={-1}><div className="page-heading"><h1>What do you want to make?</h1></div><section className="goal-section" aria-label="New goal"><label htmlFor="home-goal" className="sr-only">Describe your video</label><div className="goal-composer"><textarea id="home-goal" ref={ref} value={draft} onChange={(e) => useNavigation.getState().setGoalDraft(e.target.value)} placeholder="Cut a 60-second teaser from my footage, with animated titles and a voiceover…" /><div className="composer-toolbar"><VoiceButton onText={(text) => { const s = useNavigation.getState(); s.setGoalDraft(`${s.goalDraft}${s.goalDraft ? ' ' : ''}${text}`); }} /><span className="composer-hint">New goal <kbd>⌘N</kbd></span></div></div>
+    <div className="home-project-row"><label className="form-field">Project<select value={chosen} onChange={(e) => { if (e.target.value === '__new') useNavigation.getState().newProject(); else if (e.target.value === '__open') void useNavigation.getState().pickProject(); else setSelected(e.target.value); }}><option value="">Choose a project</option>{current && !recents.some((r) => r.id === current.project.id) && <option value={current.project.id}>{current.project.name}</option>}{recents.map((r) => <option key={r.id} value={r.id} disabled={r.missing}>{r.name} · {r.missing ? 'Folder not found' : r.rootPath}</option>)}<option value="__new">New project…</option><option value="__open">Open project…</option></select></label><button className="button primary" disabled={!!reason || busy} aria-describedby="goal-service-note" onClick={() => { void start(); }}><ArrowUp size={16} />{busy ? 'Starting…' : 'Start'}</button></div><p className="field-note" id="goal-service-note">{reason || 'Claude will work in this project. You review changes before keeping them.'}</p>{chosen && claude?.status !== 'connected' && <button className="button" onClick={() => { useNavigation.getState().setSettingsSection('Accounts'); useNavigation.getState().navigate('settings'); }}>Connect Claude</button>}{chosen && <button className="button quiet-button" onClick={() => { if (current?.project.id === chosen) useNavigation.getState().setTab('Editor'); else void useNavigation.getState().openRecent(chosen); }}>Open editor</button>}{error && <Notice danger>{error}</Notice>}</section>
+    <section className="home-start"><div><h2>Bring your footage.</h2><p>Open an edit, or create a project from a folder.</p></div><ProjectActions /><BrowseMediaButton /></section><div className="home-details"><section><div className="section-heading"><h2>Recent runs</h2><span className="quiet">Not available in this build</span></div><p className="field-note">Manual editing and the assistant are available in your project's Editor.</p></section><section><div className="section-heading"><h2>Connections</h2><span className="quiet">API-equivalent estimate</span></div><dl className="usage-list"><div><dt>Claude</dt><dd>{claude?.status === 'connected' ? accountMethodLabel(claude) : accountsError ?? 'Not connected'}</dd></div><div><dt>ElevenLabs</dt><dd>{elevenlabs?.status === 'connected' ? elevenlabs.detail ?? 'Connected · Balance unavailable' : 'Not connected'}</dd></div></dl></section></div></div>;
 }

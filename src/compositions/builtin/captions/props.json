@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "elements": [
+    {
+      "id": "captions",
+      "name": "Captions",
+      "kind": "caption",
+      "props": {
+        "words": {
+          "type": "text",
+          "bind": "attr:data-prop-words",
+          "default": "[]"
+        },
+        "preset": {
+          "type": "enum",
+          "bind": "attr:data-prop-preset",
+          "default": "Clean",
+          "options": [
+            "Clean",
+            "Bold pop",
+            "Karaoke",
+            "Boxed"
+          ]
+        },
+        "highlight": {
+          "type": "color",
+          "bind": "css:--highlight",
+          "default": "#f6d36d"
+        }
+      }
+    }
+  ]
+}
