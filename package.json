@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.316",
+    "@anthropic-ai/sdk": "1.4.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@napi-rs/keyring": "2.1.2",
     "@remotion/bundler": "4.0.540",
     "@remotion/player": "4.0.540",
@@ -56,6 +58,7 @@
     "ajv": "8.20.0",
     "electron": "44.7.0",
     "electron-builder": "26.17.0",
+    "electron-builder-squirrel-windows": "26.17.0",
     "electron-vite": "4.0.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
@@ -68,5 +71,8 @@
     "vite": "7.3.7",
     "vitest": "4.1.11",
     "zod-to-json-schema": "3.25.2"
+  },
+  "overrides": {
+    "webpack": "5.105.0"
   }
 }
