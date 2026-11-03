@@ -30,7 +30,7 @@ const exportRequest = { presetId: z.string().min(1), range: timeRangeSchema.opti
 const reviewRequest = { requestId: z.string().min(1), itemIds: z.array(itemIdSchema).min(1).optional() };
 
 export const ipcErrorSchema = z.object({
-  code: z.enum(['invalid_request', 'not_found', 'forbidden', 'conflict', 'user_edited', 'internal', 'unavailable']),
+  code: z.enum(['invalid_request', 'not_found', 'forbidden', 'conflict', 'user_edited', 'internal', 'unavailable', 'unsupported_site', 'network', 'invalid_url']),
   message: z.string(), details: z.record(z.unknown()).optional(),
 }).strict();
 export type IpcError = z.infer<typeof ipcErrorSchema>;

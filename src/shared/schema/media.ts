@@ -25,6 +25,7 @@ export type MediaProbe = z.infer<typeof mediaProbeSchema>;
 export const mediaFileSchema = z.object({
   rel: projectPathSchema, name: z.string(), kind: z.enum(['video', 'audio', 'image', 'other']),
   url: z.string().url(), probe: mediaProbeSchema.nullable(),
+  section: z.enum(['root', 'raw', 'references', 'assets', 'audio', 'final']).optional(),
   error: z.object({ code: z.string(), message: z.string() }).strict().optional(),
 }).strict();
 export type MediaFile = z.infer<typeof mediaFileSchema>;

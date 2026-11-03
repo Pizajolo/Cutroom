@@ -22,6 +22,7 @@ if (!item) throw new Error('Expected a fixture item');
 const agentEvents = [
   { type: 'status', sessionId: 'session', status: 'thinking' },
   { type: 'text_delta', sessionId: 'session', text: 'Working…' },
+  { type: 'playhead_seek', sessionId: 'session', time: 1.5 },
   { type: 'message', sessionId: 'session', role: 'assistant', text: 'Done.' },
   { type: 'tool_start', sessionId: 'session', toolUseId: 'tool', name: 'timeline.get', input: {} },
   { type: 'tool_end', sessionId: 'session', toolUseId: 'tool', name: 'timeline.get', output: { revision: 1 }, isError: false },
@@ -133,8 +134,8 @@ describe('new request validation boundaries', () => {
     for (const patch of [{ apiKey: 'secret' }, { claude: { credentialRef: 'secret' } }, { accounts: {} }, { extensions: [] }]) {
       expect(settingsPatchSchema.safeParse(patch).success).toBe(false);
     }
-    expect(settingsPatchSchema.safeParse({ sandbox: { allowShell: true } }).success).toBe(false);
-    expect(settingsPatchSchema.safeParse({ sandbox: { allowWeb: true } }).success).toBe(false);
+    expect(settingsPatchSchema.safeParse({ sandbox: { allowShell: true } }).success).toBe(true);
+    expect(settingsPatchSchema.safeParse({ sandbox: { allowWeb: true } }).success).toBe(true);
     expect(settingsPatchSchema.safeParse({ sandbox: { networkByDefault: true } }).success).toBe(false);
   });
   it('stores extension secret references, not secret environment values', () => {

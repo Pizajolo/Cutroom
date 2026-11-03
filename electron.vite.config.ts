@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url';
+import { access, cp, mkdir } from 'node:fs/promises';
+import { build } from 'esbuild';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import { contract } from './src/shared/ipc/contract';
@@ -12,7 +14,12 @@ const alias = {
 };
 
 export default defineConfig({
-  main: { plugins: [externalizeDepsPlugin()], resolve: { alias } },
+  main: { plugins: [externalizeDepsPlugin(), { name: 'cutroom-composition-assets', async closeBundle() {
+    await build({ entryPoints: [at('./src/main/render/remotionWorker.ts')], outfile: at('./out/main/remotionWorker.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node22', packages: 'external' });
+    const source = at('./src/compositions'); const output = at('./out/compositions'); await mkdir(output, { recursive: true }); await cp(source, output, { recursive: true });
+    const entry = at('./src/compositions/bridge/host.ts');
+    if (await access(entry).then(() => true, () => false)) await build({ entryPoints: [entry], outfile: at('./out/compositions/runtime/bridge.js'), bundle: true, platform: 'browser', format: 'iife', target: 'chrome130', alias: { '@shared': at('./src/shared') } });
+  } }], resolve: { alias } },
   preload: {
     // A sandboxed preload cannot require arbitrary packages. Bundle all but Electron.
     resolve: { alias },

@@ -13,9 +13,12 @@ function inside(root: string, target: string): boolean {
   const rel = path.relative(root, target);
   return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));
 }
-function readonlyPath(root: string, target: string): boolean {
-  const first = path.relative(root, target).split(path.sep)[0]?.toLowerCase();
-  return (READ_ONLY_DIRS as readonly string[]).includes(first ?? '');
+async function readonlyPath(root: string, target: string): Promise<boolean> {
+  const parts = path.relative(root, target).split(path.sep);
+  const first = parts[0]?.toLowerCase();
+  if ((READ_ONLY_DIRS as readonly string[]).includes(first ?? '')) return true;
+  // Loose top-level files are source material too, including aliases resolving to them.
+  return parts.length === 1 && !!(await lstat(target).catch(() => null))?.isFile();
 }
 
 export async function resolveInProject(root: string, rel: string, options: ResolveOptions = {}): Promise<string> {
@@ -23,7 +26,7 @@ export async function resolveInProject(root: string, rel: string, options: Resol
   const realRoot = await realpath(root);
   const target = path.resolve(realRoot, rel);
   if (!inside(realRoot, target)) reject('Path leaves the project');
-  if (options.write && !options.allowReadOnlyWrite && readonlyPath(realRoot, target)) reject('Source folders are read-only');
+  if (options.write && !options.allowReadOnlyWrite && await readonlyPath(realRoot, target)) reject('Source folders are read-only');
 
   let ancestor = target;
   const suffix: string[] = [];
@@ -42,7 +45,7 @@ export async function resolveInProject(root: string, rel: string, options: Resol
   const realAncestor = await realpath(ancestor);
   const resolved = path.resolve(realAncestor, ...suffix);
   if (!inside(realRoot, realAncestor) || !inside(realRoot, resolved)) reject('Symlink leaves the project');
-  if (options.write && !options.allowReadOnlyWrite && readonlyPath(realRoot, resolved)) reject('Source folders are read-only');
+  if (options.write && !options.allowReadOnlyWrite && await readonlyPath(realRoot, resolved)) reject('Source folders are read-only');
   // Callers must not replace symlinks between resolution and I/O (TOCTOU).
   return resolved;
 }
