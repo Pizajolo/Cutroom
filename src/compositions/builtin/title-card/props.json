@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "elements": [
+    {
+      "id": "title",
+      "name": "Title",
+      "kind": "text",
+      "props": {
+        "content": {
+          "type": "text",
+          "bind": "text",
+          "default": "Your title"
+        },
+        "fontFamily": {
+          "type": "font",
+          "bind": "css:--font",
+          "default": "Arial, sans-serif"
+        },
+        "fontSize": {
+          "type": "number",
+          "bind": "css:--font-size",
+          "default": 96,
+          "min": 1,
+          "max": 500
+        },
+        "fontWeight": {
+          "type": "number",
+          "bind": "css:--weight",
+          "default": 600,
+          "min": 100,
+          "max": 1000
+        },
+        "color": {
+          "type": "color",
+          "bind": "css:--color",
+          "default": "#ffffff"
+        },
+        "align": {
+          "type": "enum",
+          "bind": "css:--align",
+          "default": "center",
+          "options": [
+            "left",
+            "center",
+            "right"
+          ]
+        },
+        "x": {
+          "type": "number",
+          "bind": "css:--x",
+          "default": 0.1,
+          "min": -2,
+          "max": 3
+        },
+        "y": {
+          "type": "number",
+          "bind": "css:--y",
+          "default": 0.38,
+          "min": -2,
+          "max": 3
+        },
+        "w": {
+          "type": "number",
+          "bind": "css:--w",
+          "default": 0.8,
+          "min": 0,
+          "max": 3
+        },
+        "h": {
+          "type": "number",
+          "bind": "css:--h",
+          "default": 0.3,
+          "min": 0,
+          "max": 3
+        }
+      }
+    },
+    {
+      "id": "subtitle",
+      "name": "Subtitle",
+      "kind": "text",
+      "props": {
+        "content": {
+          "type": "text",
+          "bind": "text",
+          "default": "A story worth sharing"
+        },
+        "fontSize": {
+          "type": "number",
+          "bind": "css:--font-size",
+          "default": 42,
+          "min": 1,
+          "max": 200
+        },
+        "color": {
+          "type": "color",
+          "bind": "css:--color",
+          "default": "#c6d7e8"
+        }
+      }
+    }
+  ]
+}

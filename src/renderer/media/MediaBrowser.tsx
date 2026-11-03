@@ -10,6 +10,8 @@ import { useNavigation } from '../state/navigation';
 import { MediaThumbnail } from './MediaThumbnail';
 import { IMPORT_DESTINATIONS, MEDIA_DRAG_TYPE, MEDIA_SECTIONS, type ImportDestination, type MediaFolder } from './types';
 
+import { addMedia, useEditor } from '../editor/store';
+import { UrlImportDialog } from './UrlImportDialog';
 const messageOf = (reason: unknown) => reason instanceof Error ? reason.message : 'The media folder could not be read.';
 export function BrowseMediaButton() {
   const [busy, setBusy] = useState(false);
@@ -17,13 +19,14 @@ export function BrowseMediaButton() {
   const select = async () => {
     setBusy(true); setError(null);
     try {
-      const folder = await api.invoke('media.selectProjectFolder', {});
-      if (folder) useNavigation.getState().setMediaFolder(folder);
+      await useNavigation.getState().pickProject();
     } catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(false); }
   };
   return <div className="browse-folder-action"><button type="button" className="button" disabled={busy} onClick={() => { void select(); }}><FolderOpen size={16} />{busy ? 'Choosing folder…' : 'Browse media folder'}</button>{error && <p className="field-error" role="alert">{error}</p>}</div>;
 }
+
+const isRoot = (file: MediaFile) => ('section' in file && file.section === 'root') || !file.rel.includes('/');
 
 function InlinePlayer({ file, onClose }: { file: MediaFile; onClose: () => void }) {
   const [error, setError] = useState(false);
@@ -51,6 +54,9 @@ function MediaCard({ file, selected, highlighted, onSelect }: { file: MediaFile;
 
 export function MediaBrowser({ folder }: { folder: MediaFolder }) {
   const [files, setFiles] = useState<MediaFile[]>([]);
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [copyNote, setCopyNote] = useState('');
+  const fileActions = (file: MediaFile) => <div className="media-card-actions"><button className="button" disabled={file.kind === 'other'} onClick={() => { void addMedia(file).then((added) => { if (added) useNavigation.getState().setTab('Editor'); else setError(useEditor.getState().error ?? 'This media could not be added to the edit.'); }).catch((r: unknown) => setError(messageOf(r))); }}>Add to timeline</button><button className="button" disabled={file.kind === 'other'} onClick={() => { useNavigation.setState({ sourceRel: file.rel }); useNavigation.getState().setTab('Editor'); }}>Open in editor</button>{isRoot(file) && <button className="button" onClick={() => { void api.invoke('project.adoptLooseMedia', { rels: [file.rel] }).then((added) => { setHighlighted(added.map((f) => f.rel)); setSelected(added[0]?.rel ?? null); setCopyNote('Copied to Footage. Original kept.'); reload(); }).catch((r: unknown) => setError(messageOf(r))); }}>Copy into Footage</button>}{file.kind === 'other' && <small>Unsupported media type</small>}</div>;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -116,14 +122,17 @@ export function MediaBrowser({ folder }: { folder: MediaFolder }) {
     <header className="media-toolbar"><div className="media-search"><Search size={14} aria-hidden="true" /><input aria-label="Search media" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search media" />{query && <button type="button" className="icon-button" aria-label="Clear search" onClick={() => setQuery('')}><X size={14} /></button>}</div>
       <span className="media-count">{loading ? 'Loading media…' : `${files.length} files`}</span>
       <button type="button" className="button" onClick={() => showImport()} disabled={importing}><Import size={16} />Import files</button>
-      <button type="button" className="button" disabled aria-describedby="url-import-note"><Link size={16} />Import from URL</button>
+      <button type="button" className="button" onClick={() => setUrlOpen(true)}><Link size={16} />Import from URL</button>
     </header>
-    <div className="media-folder-note"><span title={folder.root}>{folder.root}</span><span id="url-import-note">URL downloads are not connected in this build.</span></div>
+    <div className="media-folder-note"><span title={folder.root}>{folder.root}</span><span>Sources remain unchanged</span></div>
+    {urlOpen && <UrlImportDialog onClose={() => setUrlOpen(false)} />}
+    {copyNote && <Notice>{copyNote}</Notice>}
     {error && <Notice danger action={<button type="button" className="button" onClick={reload}>Refresh</button>}>{error}</Notice>}
     {importing && !importOpen && <Notice action={<button type="button" className="button" onClick={() => setImportOpen(true)}>Show import</button>}>Importing files in this folder…</Notice>}
     {!importOpen && importError && <Notice danger>{importError}</Notice>}
     {selectedFile && <InlinePlayer key={selectedFile.rel} file={selectedFile} onClose={() => setSelected(null)} />}
     <div className="media-sections" aria-busy={loading}>
+      {filtered.some(isRoot) && <section className="media-section" aria-label="Folder root"><div className="media-section-heading"><h2>Folder root</h2><span>{filtered.filter(isRoot).length}</span><span className="source-guarantee"><LockKeyhole size={13} />Files stay in this folder. Agents can't change them.</span></div><div className="media-grid">{filtered.filter(isRoot).map((file) => <div key={file.rel}><MediaCard file={file} selected={selected === file.rel} highlighted={highlighted.includes(file.rel)} onSelect={() => setSelected(file.rel)} />{fileActions(file)}</div>)}</div></section>}
       {MEDIA_SECTIONS.map((section) => {
         const sectionFiles = filtered.filter((file) => file.rel.startsWith(`${section.directory}/`));
         const canImport = IMPORT_DESTINATIONS.some((name) => name === section.directory);
@@ -132,7 +141,7 @@ export function MediaBrowser({ folder }: { folder: MediaFolder }) {
           <div className="media-section-heading"><h2>{section.name}<small>{section.directory}/</small></h2><span className="quiet">{sectionFiles.length}</span>
             {section.readOnly && <span className="source-guarantee"><LockKeyhole size={13} />Read-only for agents</span>}
           </div>
-          {loading ? <p className="media-section-empty">Loading {section.name.toLowerCase()}…</p> : sectionFiles.length ? <div className="media-grid">{sectionFiles.map((file) => <MediaCard key={file.rel} file={file} selected={selected === file.rel} highlighted={highlighted.includes(file.rel)} onSelect={() => setSelected(file.rel)} />)}</div> :
+          {loading ? <p className="media-section-empty">Loading {section.name.toLowerCase()}…</p> : sectionFiles.length ? <div className="media-grid">{sectionFiles.map((file) => <div key={file.rel}><MediaCard file={file} selected={selected === file.rel} highlighted={highlighted.includes(file.rel)} onSelect={() => setSelected(file.rel)} />{fileActions(file)}</div>)}</div> :
             <div className="media-section-empty"><p>{error ? 'This section could not be loaded. Refresh to try again.' : query ? 'No matching files in this section.' : `No ${section.name.toLowerCase()} yet.`}</p>{canImport && !query && <button type="button" className="button quiet-button" disabled={importing} onClick={() => showImport(target)}>Import files</button>}</div>}
         </section>;
       })}
