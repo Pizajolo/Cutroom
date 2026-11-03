@@ -4,6 +4,7 @@ import { itemIdSchema } from './timeline';
 
 export const timeRangeSchema = z.object({ start: secondsSchema, end: positiveSchema }).strict()
   .refine((range) => range.end > range.start, 'Range end must be after start');
+export type TimeRange = z.infer<typeof timeRangeSchema>;
 export const exportPresetSchema = z.object({
   id: z.string().min(1), name: z.string().trim().min(1).max(120), builtin: z.boolean(),
   container: z.enum(['mp4', 'mov']), vcodec: z.enum(['h264', 'hevc', 'prores']),

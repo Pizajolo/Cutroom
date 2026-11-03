@@ -17,9 +17,10 @@ function register<C extends InvokeChannel>(channel: C, action: (request: InvokeR
     }
   });
 }
-export function registerMediaIpc(registry: ToolRegistry, media: MediaService): void {
+export function registerMediaIpc(registry: ToolRegistry, media: MediaService, selectProject?: () => Promise<InvokeRes<'media.selectProjectFolder'>>): void {
   register('tools.list', () => registry.list());
   register('media.selectProjectFolder', async () => {
+    if (selectProject) return selectProject();
     const result = await dialog.showOpenDialog({ title: 'Browse an existing media project folder', properties: ['openDirectory'] });
     const folder = result.filePaths[0];
     return result.canceled || !folder ? null : media.selectFolder(folder);

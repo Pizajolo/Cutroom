@@ -15,4 +15,4 @@ export type Format = z.infer<typeof formatSchema>;
 
 const agentActorSchema = z.string().regex(/^agent:[A-Za-z0-9_-]+$/)
   .refine((value): value is `agent:${string}` => value.startsWith('agent:'));
-export const actorSchema = z.union([z.literal('user'), agentActorSchema]);
+export const actorSchema = z.union([z.literal('user'), z.literal('system'), agentActorSchema]);

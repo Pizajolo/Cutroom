@@ -126,6 +126,11 @@ export class WhisperModels {
       delete this.cache[name]; this.state(name, null); await this.list();
     } finally { this.deleting.delete(name); }
   }
+  async resolve(name: string): Promise<string> {
+    const pin = this.pin(name);
+    if (this.deleting.has(name) || await this.status(pin) !== 'installed') throw new IpcFailure({ code: 'unavailable', message: 'Install or repair the selected Whisper model in Settings → Tools.' });
+    return path.join(await realpath(this.options.home), 'models', `ggml-${pin.name}.bin`);
+  }
   async setDefault(name: string): Promise<WhisperModelInfo[]> { const pin = this.pin(name); await this.options.settings.update((draft) => { draft.whisperModel = pin.name as WhisperModelName; }); return this.list(); }
   async close(): Promise<void> { this.closed = true; if (this.timer) clearTimeout(this.timer); for (const job of this.jobs.values()) job.controller.abort(); await Promise.all([...this.jobs.values()].map((job) => job.done.catch(() => undefined))); }
 }

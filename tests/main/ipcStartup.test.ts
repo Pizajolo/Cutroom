@@ -21,7 +21,7 @@ const getInfo = () => ({ version: '0.1.0', platform: 'darwin', arch: 'arm64', ho
 const unused = new Proxy({}, { get: () => { throw new Error('Registration must not run service actions'); } });
 function startup(): void {
   registered.clear();
-  registerStartupIpc({ registry: unused, media: unused, installer: unused, models: unused, accounts: unused, claude: unused, getInfo } as StartupIpcServices);
+  registerStartupIpc({ registry: unused, media: unused, installer: unused, models: unused, accounts: unused, claude: unused, workflows: unused, getInfo } as StartupIpcServices);
 }
 
 describe('production startup IPC wiring', () => {

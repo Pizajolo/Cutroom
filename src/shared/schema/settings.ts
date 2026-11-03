@@ -27,7 +27,7 @@ export const globalSettingsV1Schema = z.object({
 }).strict();
 export const voiceInputSettingsSchema = z.object({ engine: z.enum(['whisper', 'scribe']), model: z.string().min(1).max(200) }).strict();
 export const sandboxSettingsSchema = z.object({
-  networkByDefault: z.literal(false), allowShell: z.literal(false), allowWeb: z.literal(false), allowedDomains: z.array(z.string()),
+  networkByDefault: z.literal(false), allowShell: z.boolean(), allowWeb: z.boolean(), allowedDomains: z.array(z.string()),
 }).strict();
 export const snapshotSettingsSchema = z.object({
   retainDays: z.number().int().positive(), maxBytes: z.number().int().positive(), autoBeforeAgent: z.boolean(), autoBeforeExport: z.boolean(),

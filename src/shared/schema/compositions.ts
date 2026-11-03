@@ -14,3 +14,4 @@ export type CompositionInfo = z.infer<typeof compositionInfoSchema>;
 export const compositionCheckSchema = z.object({
   ok: z.boolean(), violations: z.array(z.object({ code: z.string(), message: z.string(), rel: projectPathSchema.optional() }).strict()),
 }).strict();
+export type CompositionCheck = z.infer<typeof compositionCheckSchema>;

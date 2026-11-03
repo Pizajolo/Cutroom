@@ -10,7 +10,7 @@ export function importName(file: string): string {
   while (Buffer.byteLength(name) > 220) name = Array.from(name).slice(0, -1).join('');
   return !name || name === '.' || name === '..' ? 'media' : name;
 }
-export async function importPaths(root: string, paths: readonly string[], destination: ImportDestination, options: { signal?: AbortSignal; onProgress?: (completed: number, total: number) => void } = {}): Promise<string[]> {
+export async function importPaths(root: string, paths: readonly string[], destination: ImportDestination, options: { signal?: AbortSignal; onProgress?: (completed: number, total: number) => void; firstSuffix?: number } = {}): Promise<string[]> {
   if (!['raw', 'references', 'assets'].includes(destination) || !paths.length || paths.length > 100) throw mediaFailure('invalid_request', 'Invalid media import request.', 'invalid_import');
   const sources: { handle: FileHandle; name: string; size: number; ctimeMs: number }[] = [];
   const created: { rel: string; ino: number; dev: number }[] = [];
@@ -34,7 +34,7 @@ export async function importPaths(root: string, paths: readonly string[], destin
       if (options.signal?.aborted) throw mediaFailure('invalid_request', 'Import cancelled.', 'cancelled');
       const parsed = path.parse(source.name);
       for (let suffix = 0; ; suffix++) {
-        const name = suffix ? `${parsed.name}-${suffix}${parsed.ext}` : source.name;
+        const name = suffix ? `${parsed.name}-${suffix + (options.firstSuffix ?? 1) - 1}${parsed.ext}` : source.name;
         const rel = `${destination}/${name}`;
         const target = await resolveInProject(root, rel, { write: true, allowReadOnlyWrite: true });
         if (target !== path.join(canonicalRoot, rel)) throw mediaFailure('forbidden', 'Import targets cannot be symlink aliases.', 'invalid_destination');

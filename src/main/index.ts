@@ -8,6 +8,7 @@ import { appResponse } from './protocol';
 import { readManifest } from './tools/manifest';
 import { ToolRegistry } from './tools/registry';
 import { startMediaServer } from './server/mediaServer';
+import { startCompositionServer } from './server/compositionServer';
 import { MediaService } from './media/service';
 import { stopMediaProcesses } from './media/process';
 import { SettingsStore } from './settings/store';
@@ -17,6 +18,8 @@ import { AccountsService } from './accounts/service';
 import { KeychainSecrets } from './secrets/keychain';
 import { ClaudeCodeService } from './claude/service';
 import { configureClaudeAgentEnv } from './claude/env';
+import { WorkflowRuntime } from './projects/runtime';
+import { allowAudioPermission } from './permissions';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -45,7 +48,11 @@ else {
     if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
   });
   void app.whenReady().then(async () => {
-    session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+    const appUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL ? process.env.ELECTRON_RENDERER_URL : 'app://cutroom/';
+    session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+      callback(allowAudioPermission({ permission, origin: details.requestingUrl, mainFrame: details.isMainFrame && BrowserWindow.getAllWindows().some((window) => window.webContents === contents), mediaTypes: 'mediaTypes' in details ? details.mediaTypes : undefined }, appUrl));
+    });
+    // The check API does not specify requested media types; defer to the request handler.
     session.defaultSession.setPermissionCheckHandler(() => false);
     const homeDir = path.resolve(process.env.CUTROOM_HOME ?? path.join(homedir(), '.cutroom'));
     const settings = await SettingsStore.load(homeDir);
@@ -62,7 +69,8 @@ else {
     const models = new WhisperModels({ home: homeDir, pins: manifest.models, settings, onChanged: (models) => emit('models.changed', models) });
     await models.initialize();
     const claude = new ClaudeCodeService();
-    const accounts = new AccountsService({ settings, secrets: new KeychainSecrets(), claudeCode: claude, onChanged: (accounts) => emit('accounts.changed', accounts) });
+    const secrets = new KeychainSecrets();
+    const accounts = new AccountsService({ settings, secrets, claudeCode: claude, onChanged: (accounts) => emit('accounts.changed', accounts) });
     configureClaudeAgentEnv(accounts);
     const mediaRef: { current?: MediaService } = {};
     const server = await startMediaServer({
@@ -75,17 +83,20 @@ else {
       onProgress: (progress) => emit('media.progress', progress),
     });
     mediaRef.current = media;
-    registerStartupIpc({ registry, media, installer, models, accounts, claude, getInfo: () => ({
+    const compositionsRoot = path.join(here, '../compositions');
+    const compositionServer = await startCompositionServer({ projectRoot: (id) => media.rootFor(id), compositionsRoot, mediaBaseUrl: server.baseUrl, devOrigin: !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined });
+    const workflows = new WorkflowRuntime({ home: homeDir, media, store: settings, secrets, compositionsRoot, compositionBaseUrl: compositionServer.baseUrl, resolveModel: (name) => models.resolve(name), resolveTool: (name) => registry.resolve(name), emit });
+    registerStartupIpc({ registry, media, installer, models, accounts, claude, workflows, getInfo: () => ({
       version: app.getVersion(), platform: process.platform, arch: process.arch,
-      homeDir, mediaBaseUrl: server.baseUrl, compBaseUrl: null,
+      homeDir, mediaBaseUrl: server.baseUrl, compBaseUrl: compositionServer.baseUrl,
     }) });
-    protocol.handle('app', (request) => appResponse(request, path.join(here, '../renderer'), server.baseUrl));
+    protocol.handle('app', (request) => appResponse(request, path.join(here, '../renderer'), server.baseUrl, compositionServer.baseUrl));
     let closing = false; let closed = false;
     app.on('before-quit', (event) => {
       if (closed) return;
       event.preventDefault(); if (closing) return; closing = true;
       media?.close();
-      void Promise.allSettled([server.close(), stopMediaProcesses(), installer.close(), models.close(), accounts.close()]).finally(() => { closed = true; app.quit(); });
+      void Promise.allSettled([workflows.close(), server.close(), compositionServer.close(), stopMediaProcesses(), installer.close(), models.close(), accounts.close()]).finally(() => { closed = true; app.quit(); });
     });
     createWindow();
     void accounts.verifyConnected();

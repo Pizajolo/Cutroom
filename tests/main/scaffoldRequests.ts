@@ -1,5 +1,4 @@
-import type { InvokeReq } from '@shared/ipc/contract';
-import type { stubChannels } from '@main/ipc/stubs';
+import type { InvokeChannel, InvokeReq } from '@shared/ipc/contract';
 
 const format = { aspect: '16:9', width: 1920, height: 1080, fps: 30 } as const;
 const creation = { name: 'Example', format, defaultEngine: 'hyperframes' } as const;
@@ -31,4 +30,4 @@ export const scaffoldRequests = {
   'audio.voices': {}, 'audio.estimate': { kind: 'tts', text: 'Hello' }, 'audio.generate': { kind: 'tts', text: 'Hello', voiceId: 'voice' },
   'extensions.list': {}, 'extensions.validate': { config: { ...extension, args: [] } },
   'extensions.add': { config: { ...extension, args: [] } }, 'extensions.remove': { id: 'example' }, 'extensions.setEnabled': { id: 'example', enabled: false },
-} satisfies { [C in (typeof stubChannels)[number]]: InvokeReq<C> };
+} satisfies Partial<{ [C in InvokeChannel]: InvokeReq<C> }>;

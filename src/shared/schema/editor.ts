@@ -13,7 +13,7 @@ export const historyEntrySchema = z.object({
   id: z.string().min(1), label: z.string(), actor: actorSchema, createdAt: z.string().datetime(), revision: z.number().int().nonnegative(),
 }).strict();
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
-export const storageCategorySchema = z.enum(['thumbnails', 'waveforms', 'renders', 'transcripts', 'snapshots']);
+export const storageCategorySchema = z.enum(['thumbnails', 'waveforms', 'renders', 'transcripts', 'snapshots', 'logs', 'tools', 'models', 'final']);
 export const storageItemSchema = z.object({ rel: projectPathSchema, bytes: z.number().int().nonnegative(), category: storageCategorySchema }).strict();
 export const storageUsageSchema = z.object({
   totalBytes: z.number().int().nonnegative(), categories: z.array(z.object({ category: storageCategorySchema, bytes: z.number().int().nonnegative(), items: z.number().int().nonnegative() }).strict()),
