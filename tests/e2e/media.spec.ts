@@ -31,13 +31,17 @@ test.beforeEach(async () => {
   for (const [index, name] of names.entries()) await writeFile(path.join(root, 'raw', name), wave(300 + index * 100));
   const env: NodeJS.ProcessEnv = { ...process.env, CUTROOM_HOME: path.join(temporary, 'home') };
   delete env.ELECTRON_RUN_AS_NODE;
-  app = await electron.launch({ args: [path.resolve('out/main/index.js')], env });
+  app = await electron.launch({ args: [path.resolve('out/main/index.js'), `--user-data-dir=${path.join(temporary, 'electron')}`], env });
   // Only replace the OS file chooser; keep preload, IPC, service and HTTP real.
   await app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
   }, root);
   const page = await app.firstWindow();
   await page.getByRole('button', { name: 'Browse media folder', exact: true }).click();
+  // Browsing a plain media folder now requires explicit in-place project creation.
+  await expect(page.getByRole('dialog', { name: 'Create a project in this folder?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create project here', exact: true }).click();
+  await page.getByRole('button', { name: 'Folder media', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Search media' })).toBeVisible();
 });
 
