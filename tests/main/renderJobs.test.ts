@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
-import { compileRender, atempo, ProgressParser } from '@main/render/compiler';
+import { activeItems, compileRender, atempo, ProgressParser } from '@main/render/compiler';
 import { BUILTIN_PRESETS } from '@main/render/presets';
 import { claimVersion } from '@main/render/service';
 import { emptyTimeline } from '@main/projects/service';
@@ -23,9 +23,27 @@ afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root,
 describe('pure FFmpeg export compiler', () => {
   it('builds bounded inputs, speed, black gaps, crop/reframe, audio mix and frame output', () => {
     const original = doc(); const item = original.tracks[3]!.items[0]!; if (item.type !== 'clip') throw new Error('Expected clip'); item.crop = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }; item.reframe = { mode: 'fill', x: 0.5, y: 0.4, scale: 1.2 };
-    const plan = compileRender(original, preset, { 'raw/clip.mp4': { path: '/project/raw/clip.mp4', hasAudio: true } }, '/project/final/export.mp4');
+    const plan = compileRender(original, preset, { 'raw/clip.mp4': { path: '/project/raw/clip.mp4', hasAudio: true, kind: 'video' } }, '/project/final/export.mp4');
     expect(plan.args).toContain('-n'); expect(plan.args).not.toContain('-y'); expect(plan.filterGraph).toContain('color=c=black:s=320x180'); expect(plan.filterGraph).toContain('trim=start=0:end=2,setpts=(PTS-STARTPTS)/2'); expect(plan.filterGraph).toContain('crop='); expect(plan.filterGraph).toContain('max(320/iw,180/ih)'); expect(plan.filterGraph).toContain('atempo=2'); expect(plan.filterGraph).toContain('loudnorm=I=-14:TP=-1');
     expect(plan.duration).toBe(1); expect(original.tracks[3]!.items[0]).toEqual(item);
+  });
+  it('pads still frames before source trimming without changing normal video inputs', () => {
+    const timeline = doc(); const item = timeline.tracks[3]!.items[0]!; if (item.type !== 'clip') throw new Error('Expected clip');
+    item.src = 'raw/title.png'; item.start = 1; item.duration = 5; item.in = 2; item.out = 12;
+    const plan = compileRender(timeline, preset, { 'raw/title.png': { path: '/project/raw/title.png', kind: 'image', hasAudio: false } }, '/project/final/export.mp4');
+    expect(plan.filterGraph).toContain('[0:v]tpad=stop_mode=clone:stop_duration=12,trim=start=2:end=12,setpts=(PTS-STARTPTS)/2+1/TB');
+    expect(plan.filterGraph).toContain("enable='gte(t,1)*lt(t,6)'");
+    expect(plan.filterGraph).not.toContain('[0:a]');
+    expect(compileRender(timeline, preset, { 'raw/title.png': { path: '/project/raw/title.png', kind: 'video', hasAudio: false } }, '/project/final/video.mp4').filterGraph).not.toContain('tpad=');
+  });
+  it('uses the shared global mute/solo visibility rule for exported picture layers', () => {
+    const timeline = doc(); const video = timeline.tracks[3]!; const overlay = timeline.tracks[0]!;
+    overlay.items.push({ ...structuredClone(clip), id: 'clip_klmnopqrst' });
+    video.muted = true; expect(activeItems(timeline).map(({ track }) => track)).toEqual(['overlay']);
+    video.muted = false; overlay.solo = true; expect(activeItems(timeline).map(({ track }) => track)).toEqual(['overlay']);
+    overlay.muted = true; expect(activeItems(timeline)).toEqual([]);
+    overlay.muted = false; video.solo = true; expect(activeItems(timeline).map(({ track }) => track)).toEqual(['overlay', 'video']);
+    timeline.tracks[6]!.solo = true; video.solo = false; overlay.solo = false; expect(activeItems(timeline)).toEqual([]);
   });
   it('chains extreme tempo values into supported ranges and parses split progress lines monotonically', () => {
     expect(atempo(0.125)).toEqual(['atempo=0.5', 'atempo=0.5', 'atempo=0.5']); expect(atempo(8)).toEqual(['atempo=2', 'atempo=2', 'atempo=2']);
@@ -53,7 +71,7 @@ it('encodes real synthetic media with speed and black gaps, then probes duration
   try { await access(ffmpeg); await access(ffprobe); } catch { context.skip('Verified local FFmpeg/ffprobe tools are not installed; no PATH fallback.'); return; }
   const root = await temporary(); await mkdir(path.join(root, 'raw')); const input = path.join(root, 'raw/clip.mp4');
   const generated = await runCommand(ffmpeg, ['-hide_banner', '-nostdin', '-n', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=2', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', input], { timeoutMs: 30000 }); expect(generated.code).toBe(0);
-  const timeline = doc(); timeline.tracks[3]!.items[0]!.start = 0.5; const output = path.join(root, 'export.mp4'); const plan = compileRender(timeline, preset, { 'raw/clip.mp4': { path: input, hasAudio: true } }, output); let diagnostics = '';
+  const timeline = doc(); timeline.tracks[3]!.items[0]!.start = 0.5; const output = path.join(root, 'export.mp4'); const plan = compileRender(timeline, preset, { 'raw/clip.mp4': { path: input, hasAudio: true, kind: 'video' } }, output); let diagnostics = '';
   const encoded = await runCommand(ffmpeg, plan.args, { timeoutMs: 30000, onStderr: (text) => { diagnostics += text; } }); expect(encoded.code, diagnostics).toBe(0);
   const probed = await runCommand(ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', output]); const metadata = JSON.parse(probed.stdout); expect(Math.abs(Number(metadata.format.duration) - 1.5)).toBeLessThanOrEqual(1 / 30); expect(metadata.streams[0]).toMatchObject({ width: 320, height: 180 });
 }, 60000);

@@ -1,19 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { copyFile, lstat, mkdir, open, readdir, realpath, stat } from 'node:fs/promises';
+import { copyFile, link, lstat, mkdir, mkdtemp, open, readdir, realpath, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod/v3';
 import { IpcFailure } from '@shared/ipc/errors';
 import type { InvokeReq, InvokeRes } from '@shared/ipc/contract';
-import { projectDocSchema, projectSessionSchema, recentProjectSchema, type ProjectSession } from '@shared/schema/project';
+import { FOLDER_GRANT_TTL_MS, projectDocSchema, projectSessionSchema, recentProjectSchema, type ProjectCreateResult, type ProjectSession } from '@shared/schema/project';
 import { timelineDocSchema, TRACK_KINDS } from '@shared/schema/timeline';
 import { PROJECT_DIRS } from '@shared/project/constants';
 import { atomicJson, isMissing, managedPath, readManaged } from '../fs/managed';
 import { importName } from '../media/import';
+import { resolveInProject } from '../fs/safePath';
 import { mediaKind, type MediaService } from '../media/service';
 import { FolderGrants } from './grants';
 
 type Creation = Pick<InvokeReq<'project.create'>, 'name' | 'format' | 'defaultEngine'>;
+interface FootageImport { projectId: string; root: string; footage: string; sources: string[]; next: number }
+interface ImportRetry { state: FootageImport; expiresAt: number }
 export function emptyTimeline(format: Creation['format']) {
   return timelineDocSchema.parse({ version: 1, format, tracks: TRACK_KINDS.map((kind) => ({ id: kind, kind, name: kind, muted: false, solo: false, items: [] })), markers: [] });
 }
@@ -23,7 +26,8 @@ export class ProjectService {
   private session: ProjectSession | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private readonly listeners = new Set<(session: ProjectSession | null) => void | Promise<void>>();
-  constructor(private readonly options: { home: string; media: MediaService; grants?: FolderGrants; onChanged?: (session: ProjectSession | null) => void; onProgress?: (projectId: string, completed: number, total: number, rel: string) => void }) { this.grants = options.grants ?? new FolderGrants(); }
+  private readonly importRetries = new Map<string, ImportRetry>();
+  constructor(private readonly options: { home: string; media: MediaService; grants?: FolderGrants; copyFootage?: typeof copyFile; now?: () => number; onChanged?: (session: ProjectSession | null) => void; onProgress?: (projectId: string, completed: number, total: number, rel: string) => void }) { this.grants = options.grants ?? new FolderGrants(); }
   onChanged(listener: (session: ProjectSession | null) => void | Promise<void>): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   current(): ProjectSession | null { return this.session ? structuredClone(this.session) : null; }
   require(): ProjectSession { if (!this.session) throw new IpcFailure({ code: 'not_found', message: 'Open or create a project first.' }); return structuredClone(this.session); }
@@ -81,14 +85,56 @@ export class ProjectService {
     return { project, rootPath: root, looseMediaCount: (await this.loose(root)).length };
   }
   createInPlace(request: InvokeReq<'project.createInPlace'>): Promise<ProjectSession> { return this.exclusive(async () => this.activate(await this.initialize(this.grants.consume(request.grantId, 'openProject'), request))); }
-  create(request: InvokeReq<'project.create'>): Promise<ProjectSession> {
+  private async copyRemaining(state: FootageImport): Promise<ProjectCreateResult> {
+    const session = this.require();
+    const published: string[] = [];
+    try {
+      while (state.next < state.sources.length) {
+        const source = await resolveInProject(state.footage, path.relative(state.footage, state.sources[state.next]!));
+        const parsed = path.parse(importName(source));
+        const directory = await mkdtemp(path.join(await managedPath(state.root, 'work'), 'footage-'));
+        let imported = '';
+        try {
+          const temporary = path.join(directory, 'copy');
+          await (this.options.copyFootage ?? copyFile)(source, temporary, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+          for (let suffix = 1; ; suffix++) {
+            const rel = `raw/${parsed.name}${suffix === 1 ? '' : `-${suffix}`}${parsed.ext}`;
+            try { await link(temporary, await managedPath(state.root, rel)); imported = rel; break; }
+            catch (error) { if (error instanceof Error && 'code' in error && error.code === 'EEXIST') continue; throw error; }
+          }
+          state.next++; published.push(imported);
+        } finally { await rm(directory, { recursive: true, force: true }); }
+        this.options.onProgress?.(session.project.id, state.next, state.sources.length, imported);
+      }
+      return session;
+    } catch {
+      // The project already exists and is registered. Preserve its identity and
+      // successful imports; a retry continues at the first unpublished source.
+      const now = this.options.now?.() ?? Date.now();
+      for (const [id, retry] of this.importRetries) if (retry.expiresAt <= now) this.importRetries.delete(id);
+      if (this.importRetries.size >= 100) this.importRetries.delete(this.importRetries.keys().next().value!);
+      const retryId = randomUUID(); this.importRetries.set(retryId, { state, expiresAt: now + FOLDER_GRANT_TTL_MS });
+      return { ...session, importWarning: { message: 'Project created, but some footage could not be copied. Check source access and disk space, then retry the remaining import in this project.', completed: state.next, total: state.sources.length, retryId } };
+    } finally { if (published.length) this.options.media.notify(published); }
+  }
+  retryFootageImport(retryId: string): Promise<ProjectCreateResult> {
+    return this.exclusive(async () => {
+      const retry = this.importRetries.get(retryId);
+      if (!retry || retry.expiresAt <= (this.options.now?.() ?? Date.now())) { this.importRetries.delete(retryId); throw new IpcFailure({ code: 'forbidden', message: 'This import retry has expired or was already used. Open the created project and import the remaining footage again.' }); }
+      const session = this.require();
+      if (session.project.id !== retry.state.projectId || session.rootPath !== retry.state.root) throw new IpcFailure({ code: 'conflict', message: 'Open the originally created project before retrying its footage import.' });
+      this.importRetries.delete(retryId);
+      return this.copyRemaining(retry.state);
+    });
+  }
+  create(request: InvokeReq<'project.create'>): Promise<ProjectCreateResult> {
     return this.exclusive(async () => {
       const parent = this.grants.consume(request.parentGrant, 'projectParent');
       const footage = request.footageGrant ? this.grants.consume(request.footageGrant, 'footage') : undefined;
       const sources: string[] = [];
       const walk = async (folder: string, depth = 0): Promise<void> => {
         if (depth > 16 || sources.length > 10000) throw new IpcFailure({ code: 'invalid_request', message: 'The footage folder is too large.' });
-        for (const entry of await readdir(folder, { withFileTypes: true })) {
+        for (const entry of (await readdir(folder, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
           if (entry.name.startsWith('.')) continue;
           if (entry.isDirectory()) await walk(path.join(folder, entry.name), depth + 1);
           else if (entry.isFile() && mediaKind(entry.name) !== 'other') sources.push(path.join(folder, entry.name));
@@ -100,17 +146,8 @@ export class ProjectService {
         root = path.join(parent, suffix === 1 ? base : `${base}-${suffix}`);
         try { await mkdir(root); break; } catch (error) { if (error instanceof Error && 'code' in error && error.code === 'EEXIST') continue; throw error; }
       }
-      const session = await this.initialize(root, request);
-      for (let index = 0; index < sources.length; index++) {
-        const source = sources[index]!; const parsed = path.parse(importName(source)); let imported = '';
-        for (let suffix = 1; ; suffix++) {
-          const rel = `raw/${parsed.name}${suffix === 1 ? '' : `-${suffix}`}${parsed.ext}`;
-          try { await copyFile(source, await managedPath(root, rel), constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE); imported = rel; break; }
-          catch (error) { if (error instanceof Error && 'code' in error && error.code === 'EEXIST') continue; throw error; }
-        }
-        this.options.onProgress?.(session.project.id, index + 1, sources.length, imported);
-      }
-      return this.activate(session);
+      const session = await this.activate(await this.initialize(root, request));
+      return footage && sources.length ? this.copyRemaining({ projectId: session.project.id, root: session.rootPath, footage, sources, next: 0 }) : session;
     });
   }
   adoptLooseMedia(rels: string[]) { return this.exclusive(async () => {

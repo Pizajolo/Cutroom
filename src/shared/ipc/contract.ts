@@ -1,6 +1,6 @@
 import { z } from 'zod/v3';
 import { formatSchema, positiveSchema, projectPathSchema } from '../schema/common';
-import { folderGrantIdSchema, folderGrantSchema, projectNameSchema, projectOpenResultSchema, projectSessionSchema, recentProjectSchema } from '../schema/project';
+import { folderGrantIdSchema, folderGrantSchema, projectCreateResultSchema, projectNameSchema, projectOpenResultSchema, projectSessionSchema, recentProjectSchema } from '../schema/project';
 import { timelineStateSchema, timelineChangedSchema, historyEntrySchema, storageUsageSchema, cleanPreviewSchema, storageCategorySchema, snapshotInfoSchema } from '../schema/editor';
 import { opSchema } from '../timeline/types';
 import { itemIdSchema } from '../schema/timeline';
@@ -63,7 +63,8 @@ export const contract = {
     'accounts.claudeCode.status': { req: z.object({}).strict(), res: claudeCodeStatusSchema },
     'accounts.claudeCode.openLogin': { req: z.object({}).strict(), res: okSchema },
     'dialog.pickFolder': { req: z.object({ purpose: z.enum(['projectParent', 'footage', 'openProject']) }).strict(), res: folderGrantSchema.nullable() },
-    'project.create': { req: z.object({ ...projectCreation, parentGrant: folderGrantIdSchema, footageGrant: folderGrantIdSchema.optional() }).strict(), res: projectSessionSchema },
+    'project.create': { req: z.object({ ...projectCreation, parentGrant: folderGrantIdSchema, footageGrant: folderGrantIdSchema.optional() }).strict(), res: projectCreateResultSchema },
+    'project.retryFootageImport': { req: z.object({ retryId: folderGrantIdSchema }).strict(), res: projectCreateResultSchema },
     'project.open': { req: z.union([z.object({ grantId: folderGrantIdSchema }).strict(), z.object({ recentId: z.string().min(1) }).strict()]), res: projectOpenResultSchema },
     'project.createInPlace': { req: z.object({ ...projectCreation, grantId: folderGrantIdSchema }).strict(), res: projectSessionSchema },
     'project.current': { req: emptySchema, res: projectSessionSchema.nullable() },

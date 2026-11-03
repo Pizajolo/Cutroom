@@ -6,7 +6,7 @@ import { managedPath } from '../fs/managed';
 import { resolveInProject } from '../fs/safePath';
 import type { WorkflowRuntime } from '../projects/runtime';
 import { projectFolderName } from '../projects/service';
-import type { MediaService } from '../media/service';
+import { mediaKind, type MediaService } from '../media/service';
 import { runCommand, type RunCommand } from '../process/run';
 import { activeItems, compileRender, ProgressParser, unsupportedItems, type RenderSource } from './compiler';
 import { exportPresets } from './presets';
@@ -54,7 +54,7 @@ export class ExportService {
     if (!preflight.canExport) throw new IpcFailure({ code: 'unavailable', message: preflight.blockers.join(' ') });
     if (preflight.unsupportedItems.length && !request.acknowledgeUnsupported) throw new IpcFailure({ code: 'invalid_request', message: 'This export contains unsupported overlays or effects. Acknowledge their omission before exporting.', details: { unsupportedItems: preflight.unsupportedItems } });
     const sources: Record<string, RenderSource> = {};
-    for (const rel of new Set(activeItems(state.doc).flatMap(({ item }) => item.type === 'clip' || item.type === 'audio' ? [item.src] : []))) sources[rel] = { path: await resolveInProject(session.rootPath, rel), hasAudio: !!(await this.media.probeFile(rel)).acodec };
+    for (const rel of new Set(activeItems(state.doc).flatMap(({ item }) => item.type === 'clip' || item.type === 'audio' ? [item.src] : []))) sources[rel] = { path: await resolveInProject(session.rootPath, rel), kind: mediaKind(rel), hasAudio: !!(await this.media.probeFile(rel)).acodec };
     if (this.runtime.projects.current()?.project.id !== session.project.id || timeline.state().revision !== state.revision) throw new IpcFailure({ code: 'conflict', message: 'The project or timeline changed during preparation. Try exporting again.' });
     if (this.runtime.settings.get().snapshots.autoBeforeExport) await timeline.createSnapshot('Before export');
     const binary = await this.resolveTool('ffmpeg');

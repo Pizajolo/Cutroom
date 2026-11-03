@@ -35,6 +35,7 @@ export function registerWorkflowIpc(runtime: WorkflowRuntime): void {
     return result.canceled || !result.filePaths[0] ? null : runtime.projects.grants.issue(result.filePaths[0], purpose);
   });
   workflowHandle('project.create', (request) => runtime.projects.create(request));
+  workflowHandle('project.retryFootageImport', ({ retryId }) => runtime.projects.retryFootageImport(retryId));
   workflowHandle('project.createInPlace', (request) => runtime.projects.createInPlace(request));
   workflowHandle('project.open', (request) => runtime.projects.open(request));
   workflowHandle('project.current', () => runtime.projects.current());
