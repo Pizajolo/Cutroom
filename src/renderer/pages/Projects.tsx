@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { FolderOpen, Plus } from 'lucide-react';
-import type { InvokeRes } from '@shared/ipc';
+import { IpcFailure, type InvokeRes } from '@shared/ipc';
+import type { ProjectCreateResult } from '@shared/schema/project';
+import { useEditor } from '../editor/store';
 import { projectNameSchema } from '@shared/schema/project';
 import { api } from '../lib/api';
 import { Dialog } from '../components/Dialog';
@@ -24,7 +26,44 @@ export function Projects() {
 }
 export function ProjectDialog() {
   const dialog = useNavigation((s) => s.projectDialog);
+  const recovery = useNavigation((s) => s.importRecovery);
+  if (recovery?.importWarning) return <ImportRecovery result={recovery} />;
   return dialog ? <ProjectForm key={typeof dialog === 'string' ? dialog : dialog.grantId} /> : null;
+}
+function ImportRecovery({ result }: { result: ProjectCreateResult }) {
+  const warning = result.importWarning!;
+  const currentId = useNavigation((s) => s.project?.project.id);
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const [error, setError] = useState('');
+  const [expired, setExpired] = useState(false);
+  const close = () => { if (!pending.current) useNavigation.setState({ importRecovery: null }); };
+  const retry = async () => {
+    if (pending.current || expired || currentId !== result.project.id) return;
+    pending.current = true; setBusy(true); setError('');
+    try {
+      const next = await api.invoke('project.retryFootageImport', { retryId: warning.retryId });
+      if (useNavigation.getState().importRecovery !== result) return;
+      useNavigation.setState({ importRecovery: next.importWarning ? next : null });
+      if (useNavigation.getState().project?.project.id === result.project.id) void useEditor.getState().loadMedia();
+      void useNavigation.getState().refreshRecent();
+    } catch (reason) {
+      if (reason instanceof IpcFailure && (reason.code === 'forbidden' || reason.code === 'not_found')) {
+        setExpired(true); setError('This import retry expired. Your project and copied files are safe. Continue in the editor and use Import files to select the remaining footage.');
+      } else setError(errorMessage(reason));
+    } finally { pending.current = false; setBusy(false); }
+  };
+  const open = async () => {
+    if (pending.current) return;
+    if (currentId === result.project.id) { close(); return; }
+    pending.current = true; setBusy(true); setError('');
+    try {
+      await useNavigation.getState().openRecent(result.project.id);
+      if (useNavigation.getState().project?.project.id !== result.project.id) setError(useNavigation.getState().projectError ?? 'The created project could not be opened.');
+      else useNavigation.setState({ importRecovery: result });
+    } finally { pending.current = false; setBusy(false); }
+  };
+  return <Dialog title="Project created — footage import incomplete" onClose={close} footer={<><button className="button" autoFocus disabled={busy} onClick={() => { void open(); }}>{currentId === result.project.id ? 'Continue in editor' : 'Open created project'}</button><button className="button primary" disabled={busy || expired || currentId !== result.project.id} onClick={() => { void retry(); }}>{busy ? 'Working…' : 'Retry remaining import'}</button></>}><div className="settings-form"><h3>{result.project.name}</h3><p className="literal-path">{result.rootPath}</p><div className="scope-inset"><p>{warning.completed} of {warning.total} files copied into Footage.</p><p>The project was created and saved in Projects. Copied files are kept; originals stay unchanged. Retry copies only the remaining files and never creates another project.</p></div><Notice danger>{warning.message}</Notice>{currentId !== result.project.id && <p className="field-note">Open this project before retrying its footage import.</p>}{error && <Notice danger>{error}</Notice>}</div></Dialog>;
 }
 function ProjectForm() {
   const dialog = useNavigation.getState().projectDialog;
@@ -51,8 +90,10 @@ function ProjectForm() {
     setBusy(true); setError('');
     try {
       const request = { name: name.trim(), format: { aspect, width: Math.round(dimensions[0]), height: Math.round(dimensions[1]), fps }, defaultEngine: engine };
-      const session = inPlace ? await api.invoke('project.createInPlace', { ...request, grantId: inPlace.grantId }) : await api.invoke('project.create', { ...request, parentGrant: parent!.grantId, ...(footage ? { footageGrant: footage.grantId } : {}) });
+      const result: ProjectCreateResult = inPlace ? await api.invoke('project.createInPlace', { ...request, grantId: inPlace.grantId }) : await api.invoke('project.create', { ...request, parentGrant: parent!.grantId, ...(footage ? { footageGrant: footage.grantId } : {}) });
+      const { importWarning, ...session } = result;
       useNavigation.getState().openProject(session);
+      if (importWarning) useNavigation.setState({ importRecovery: result });
     } catch (error) { setError(errorMessage(error)); }
     finally { setBusy(false); }
   };

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ProjectSession, RecentProject } from '@shared/schema/project';
+import type { ProjectCreateResult, ProjectSession, RecentProject } from '@shared/schema/project';
 import type { InvokeRes } from '@shared/ipc';
 import { api } from '../lib/api';
 import { requestNavigation, useSettingsGuard } from './settingsDraft';
@@ -16,7 +16,7 @@ interface NavigationState {
   destination: Destination; tab: ProjectTab; settingsSection: SettingsSection;
   project: ProjectSession | null; recentProjects: RecentProject[]; mediaFolder: MediaFolder | null;
   loadingProjects: boolean; projectError: string | null; projectBusy: boolean;
-  projectDialog: 'new' | NeedsCreate | null;
+  projectDialog: 'new' | NeedsCreate | null; importRecovery: ProjectCreateResult | null;
   sidebarCollapsed: boolean; goalDraft: string; goalFocusRequest: number;
   dock: 'Inspector' | 'Audio' | 'Assistant'; sourceRel: string | null;
   navigate: (destination: Destination) => void; setTab: (tab: ProjectTab) => void;
@@ -28,14 +28,14 @@ interface NavigationState {
 export const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : 'The request could not be completed.';
 export const useNavigation = create<NavigationState>((set, get) => ({
   destination: 'home', tab: 'Editor', settingsSection: 'Accounts', project: null, recentProjects: [], mediaFolder: null,
-  loadingProjects: true, projectError: null, projectBusy: false, projectDialog: null,
+  loadingProjects: true, projectError: null, projectBusy: false, projectDialog: null, importRecovery: null,
   sidebarCollapsed: false, goalDraft: '', goalFocusRequest: 0, dock: 'Inspector', sourceRel: null,
   navigate: (destination) => requestNavigation(() => {
     if (destination === 'media') { if (get().project) set({ destination: 'project', tab: 'Media' }); else void get().pickProject(); }
     else set({ destination });
   }),
   setTab: (tab) => requestNavigation(() => set({ destination: 'project', tab })), setSettingsSection: (settingsSection) => { if (settingsSection !== get().settingsSection) requestNavigation(() => set({ settingsSection })); },
-  openProject: (project) => { set({ project, mediaFolder: { id: project.project.id, root: project.rootPath }, destination: 'project', tab: 'Editor', projectDialog: null, sourceRel: null }); void get().refreshRecent(); },
+  openProject: (project) => { set({ project, mediaFolder: { id: project.project.id, root: project.rootPath }, destination: 'project', tab: 'Editor', projectDialog: null, importRecovery: null, sourceRel: null }); void get().refreshRecent(); },
   openRecent: async (recentId) => {
     if (useSettingsGuard.getState().guard) { requestNavigation(() => { void get().openRecent(recentId); }); return; }
     if (get().projectBusy) return;

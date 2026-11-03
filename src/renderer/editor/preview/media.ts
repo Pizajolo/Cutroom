@@ -1,13 +1,12 @@
-import type { TimelineItem, Track } from '@shared/schema/timeline';
+import type { TimelineItem } from '@shared/schema/timeline';
+import { isTrackEnabled } from '@shared/timeline/visibility';
 
 export type MediaItem = Extract<TimelineItem, { type: 'clip' | 'audio' }>;
 export const activeAt = (item: TimelineItem, time: number): boolean => time >= item.start && time < item.start + item.duration;
 export function sourceTime(item: MediaItem, time: number): number {
   return item.in + (time - item.start) * (item.type === 'clip' ? item.speed : 1);
 }
-export function isTrackAudible(track: Track, tracks: readonly Track[]): boolean {
-  return !track.muted && (!tracks.some((entry) => entry.solo) || track.solo);
-}
+export const isTrackAudible = isTrackEnabled;
 export function itemVolume(item: MediaItem, time: number): number {
   if (item.type === 'clip') return item.muted ? 0 : Math.min(1, item.volume);
   const elapsed = time - item.start;

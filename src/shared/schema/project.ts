@@ -20,6 +20,11 @@ export const folderGrantIdSchema = z.string().min(1).max(200);
 export const folderGrantSchema = z.object({ grantId: folderGrantIdSchema, displayPath: z.string().min(1) }).strict();
 export const projectSessionSchema = z.object({ project: projectDocSchema, rootPath: z.string().min(1), looseMediaCount: z.number().int().nonnegative() }).strict();
 export type ProjectSession = z.infer<typeof projectSessionSchema>;
+export const projectImportWarningSchema = z.object({
+  message: z.string().min(1), completed: z.number().int().nonnegative(), total: z.number().int().positive(), retryId: folderGrantIdSchema,
+}).strict();
+export const projectCreateResultSchema = projectSessionSchema.extend({ importWarning: projectImportWarningSchema.optional() });
+export type ProjectCreateResult = z.infer<typeof projectCreateResultSchema>;
 export const recentProjectSchema = z.object({
   id: z.string().min(1), name: z.string().min(1), rootPath: z.string().min(1), format: formatSchema,
   lastOpenedAt: z.string().datetime(), missing: z.boolean(),
