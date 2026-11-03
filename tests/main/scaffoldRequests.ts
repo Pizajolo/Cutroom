@@ -6,6 +6,7 @@ const extension = { id: 'example', name: 'Example', transport: 'stdio', command:
 export const scaffoldRequests = {
   'dialog.pickFolder': { purpose: 'projectParent' },
   'project.create': { ...creation, parentGrant: 'grant' },
+  'project.retryFootageImport': { retryId: 'retry' },
   'project.open': { grantId: 'grant' }, 'project.createInPlace': { ...creation, grantId: 'grant' },
   'project.current': {}, 'project.close': {}, 'project.listRecent': {}, 'project.removeRecent': { id: 'recent' },
   'project.adoptLooseMedia': { rels: ['raw/example.mp4'] },

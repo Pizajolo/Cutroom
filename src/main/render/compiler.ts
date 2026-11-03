@@ -1,8 +1,9 @@
 import type { ExportPreset, TimeRange } from '@shared/schema/export';
 import type { TimelineDoc, TimelineItem } from '@shared/schema/timeline';
+import { isTrackEnabled } from '@shared/timeline/visibility';
 import { INPUT_RESTRICTIONS } from '../media/process';
 
-export interface RenderSource { path: string; hasAudio: boolean }
+export interface RenderSource { path: string; hasAudio: boolean; kind: 'image' | 'video' | 'audio' | 'other' }
 export interface RenderPlan { args: string[]; filterGraph: string; duration: number; width: number; height: number; fps: number }
 const n = (value: number): string => Number(value.toFixed(9)).toString();
 export function atempo(speed: number): string[] {
@@ -10,8 +11,7 @@ export function atempo(speed: number): string[] {
   const filters: string[] = []; while (speed < 0.5) { filters.push('atempo=0.5'); speed *= 2; } while (speed > 2) { filters.push('atempo=2'); speed /= 2; } filters.push(`atempo=${n(speed)}`); return filters;
 }
 export function activeItems(doc: TimelineDoc): { track: string; item: TimelineItem }[] {
-  const solo = doc.tracks.some((track) => track.solo);
-  return doc.tracks.filter((track) => !track.muted && (!solo || track.solo)).flatMap((track) => track.items.map((item) => ({ track: track.kind, item })));
+  return doc.tracks.filter((track) => isTrackEnabled(track, doc.tracks)).flatMap((track) => track.items.map((item) => ({ track: track.kind, item })));
 }
 export interface OverlaySource { path: string }
 export function unsupportedItems(doc: TimelineDoc) {
@@ -37,7 +37,10 @@ export function compileRender(doc: TimelineDoc, preset: ExportPreset, sources: R
   for (const { item, input } of visualOrder) {
     if (item.type !== 'clip') continue;
     const mode = item.reframe?.mode ?? preset.fit; const fit = mode === 'fill' ? 'max' : 'min'; const scale = item.reframe?.scale ?? 1;
-    const filters = [`trim=start=${n(item.in)}:end=${n(item.out)}`, `setpts=(PTS-STARTPTS)/${n(item.speed)}+${n(item.start)}/TB`];
+    // A still has one frame, not a finite source duration. Extend before trimming so
+    // nonzero source in-points and speed changes hold it for the whole clip.
+    const filters = sources[item.src]?.kind === 'image' ? [`tpad=stop_mode=clone:stop_duration=${n(item.out)}`] : [];
+    filters.push(`trim=start=${n(item.in)}:end=${n(item.out)}`, `setpts=(PTS-STARTPTS)/${n(item.speed)}+${n(item.start)}/TB`);
     if (item.crop) filters.push(`crop=w='max(2,trunc(iw*${n(item.crop.w)}/2)*2)':h='max(2,trunc(ih*${n(item.crop.h)}/2)*2)':x='iw*${n(item.crop.x)}':y='ih*${n(item.crop.y)}'`);
     if (item.color) {
       filters.push(`lutrgb=r='clip(val*${n(2 ** item.color.exposure)},0,255)':g='clip(val*${n(2 ** item.color.exposure)},0,255)':b='clip(val*${n(2 ** item.color.exposure)},0,255)'`, `eq=contrast=${n(item.color.contrast)}:saturation=${n(item.color.saturation)}`, `colortemperature=temperature=${n(Math.max(1000, Math.min(40000, item.color.temperature)))}`);

@@ -8,7 +8,7 @@ export const schemaCatalog = {
   tools: schemas.toolInfoSchema, install: schemas.installStateSchema, models: schemas.whisperModelInfoSchema,
   accounts: schemas.accountInfoSchema, claudeCodeStatus: schemas.claudeCodeStatusSchema,
   folderGrant: schemas.folderGrantSchema, projectSession: schemas.projectSessionSchema, recentProject: schemas.recentProjectSchema,
-  projectOpenResult: schemas.projectOpenResultSchema, timelineState: schemas.timelineStateSchema, timelineChanged: schemas.timelineChangedSchema,
+  projectOpenResult: schemas.projectOpenResultSchema, projectCreateResult: schemas.projectCreateResultSchema, timelineState: schemas.timelineStateSchema, timelineChanged: schemas.timelineChangedSchema,
   historyEntry: schemas.historyEntrySchema, publicOp: opSchema, historyOp: historyOpSchema,
   exportPreset: schemas.exportPresetSchema, exportPreflight: schemas.exportPreflightSchema, timeRange: schemas.timeRangeSchema,
   settingsPatch: schemas.settingsPatchSchema, voiceInputSettings: schemas.voiceInputSettingsSchema,

@@ -88,7 +88,8 @@ describe('tool downloads', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'cutroom-downloader-test-')); roots.push(root);
     const options = { url: 'https://download.test/binary', file: path.join(root, 'file'), policy: { allowedHosts: ['download.test'] }, limit: 64, signal: new AbortController().signal, inactivityMs: 10 };
     await expect(download({ ...options, fetch: async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1])); } })) })).rejects.toThrow('timed out');
-    await expect(download({ ...options, file: path.join(root, 'large'), fetch: async () => new Response(new Uint8Array(65)) })).rejects.toThrow('size');
+    // The size assertion must not race the preceding 10 ms inactivity deadline under disk load.
+    await expect(download({ ...options, inactivityMs: 30_000, file: path.join(root, 'large'), fetch: async () => new Response(new Uint8Array(65)) })).rejects.toThrow('size');
   });
 });
 describe('yt-dlp release updates', () => {

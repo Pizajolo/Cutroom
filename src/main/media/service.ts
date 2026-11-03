@@ -122,7 +122,7 @@ export class MediaService {
     return Promise.all(imported.map((rel) => this.file(folder, rel)));
   }
   async probeFile(rel: string) { const folder = this.requireFolder(); return probe(this.context(folder, rel, 'probe'), rel); }
-  async sourceDurations(): Promise<Record<string, number>> { return Object.fromEntries((await this.list()).filter((file) => file.probe).map((file) => [file.rel, file.probe!.duration])); }
+  async sourceDurations(): Promise<Record<string, number>> { return Object.fromEntries((await this.list()).filter((file) => file.kind !== 'image' && file.probe).map((file) => [file.rel, file.probe!.duration])); }
   notify(rels: string[]): void { const folder = this.requireFolder(); this.options.onChanged?.(folder.id, rels); }
   async thumbnails(rel: string): Promise<Thumbnails> { const folder = this.requireFolder(); const value = await thumbnails(this.context(folder, rel, 'thumbnails'), rel); this.check(folder); return value; }
   async waveform(rel: string): Promise<Waveform> { const folder = this.requireFolder(); const value = await waveform(this.context(folder, rel, 'waveform'), rel); this.check(folder); return value; }

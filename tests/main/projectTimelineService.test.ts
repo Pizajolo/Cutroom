@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
-import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FolderGrants } from '@main/projects/grants';
@@ -14,11 +14,11 @@ import type { TimelineItem } from '@shared/schema/timeline';
 const roots: string[] = []; const services: MediaService[] = [];
 const format = { aspect: '16:9', width: 320, height: 180, fps: 30 } as const;
 const creation = { name: 'Example', format, defaultEngine: 'hyperframes' } as const;
-async function setup() {
+async function setup(projectOptions: Pick<ConstructorParameters<typeof ProjectService>[0], 'copyFootage' | 'now'> = {}) {
   const root = await mkdtemp(path.join(process.env.TMPDIR ?? tmpdir(), 'cutroom-project-test-')); roots.push(root);
   const home = path.join(root, 'home'); const footage = path.join(root, 'footage'); await mkdir(footage);
   const media = new MediaService({ resolveTool: async () => { throw new Error('No tools'); }, url: (_id, rel) => `http://127.0.0.1/${rel}` }); services.push(media);
-  const project = new ProjectService({ home, media });
+  const project = new ProjectService({ home, media, ...projectOptions });
   return { root, home, footage, media, project };
 }
 async function initialized() { const env = await setup(); const grant = await env.project.grants.issue(env.footage, 'openProject'); const session = await env.project.createInPlace({ ...creation, grantId: grant.grantId }); return { ...env, session }; }
@@ -52,6 +52,44 @@ describe('persistent project capabilities', () => {
     const second = await env.project.create({ ...creation, parentGrant: (await env.project.grants.issue(env.root, 'projectParent')).grantId });
     expect(path.basename(second.rootPath)).toBe('Example-2'); expect(await readFile(path.join(first.rootPath, 'raw/a.mp4'), 'utf8')).toBe('source'); expect(await readFile(path.join(env.footage, 'a.mp4'), 'utf8')).toBe('source');
     expect(JSON.parse(await readFile(path.join(first.rootPath, 'timeline.json'), 'utf8')).tracks).toHaveLength(8); expect(env.media.rootFor(first.project.id)).toBeUndefined(); expect(env.media.rootFor(second.project.id)).toBe(second.rootPath);
+  });
+  it('keeps a partially imported project reachable and retries only unpublished footage without a duplicate project', async () => {
+    let fail = true;
+    const copy = vi.fn<typeof copyFile>(async (source, destination, mode) => {
+      if (path.basename(String(source)) === 'b.mp4' && fail) { await writeFile(destination, 'partial'); throw new Error('Disk full'); }
+      return copyFile(source, destination, mode);
+    });
+    const env = await setup({ copyFootage: copy });
+    await writeFile(path.join(env.footage, 'a.mp4'), 'source a'); await writeFile(path.join(env.footage, 'b.mp4'), 'source b');
+    const parent = await env.project.grants.issue(env.root, 'projectParent'); const footage = await env.project.grants.issue(env.footage, 'footage');
+    const result = await env.project.create({ ...creation, parentGrant: parent.grantId, footageGrant: footage.grantId });
+    expect(result.importWarning).toMatchObject({ completed: 1, total: 2 }); expect(env.project.current()?.project.id).toBe(result.project.id);
+    expect((await env.project.listRecent()).map((entry) => entry.id)).toEqual([result.project.id]);
+    expect(await readdir(path.join(result.rootPath, 'raw'))).toEqual(['a.mp4']); expect(await readdir(path.join(result.rootPath, 'work'))).toEqual([]);
+    const retry = result.importWarning!.retryId;
+    const again = await env.project.retryFootageImport(retry); expect(again.importWarning).toMatchObject({ completed: 1, total: 2 }); expect(again.importWarning!.retryId).not.toBe(retry);
+    await expect(env.project.retryFootageImport(retry)).rejects.toMatchObject({ code: 'forbidden' });
+    await env.project.close(); expect(await env.project.open({ recentId: result.project.id })).toMatchObject({ status: 'opened', session: { project: { id: result.project.id } } });
+    fail = false; const recovered = await env.project.retryFootageImport(again.importWarning!.retryId);
+    expect(recovered.importWarning).toBeUndefined(); expect(recovered.rootPath).toBe(result.rootPath); expect(recovered.project.id).toBe(result.project.id);
+    expect(await readdir(path.join(result.rootPath, 'raw'))).toEqual(['a.mp4', 'b.mp4']); expect(await readdir(path.join(result.rootPath, 'work'))).toEqual([]);
+    expect(copy.mock.calls.filter(([source]) => path.basename(String(source)) === 'a.mp4')).toHaveLength(1);
+    expect(await readFile(path.join(result.rootPath, 'raw/a.mp4'), 'utf8')).toBe('source a'); expect(await readFile(path.join(result.rootPath, 'raw/b.mp4'), 'utf8')).toBe('source b');
+    expect(await readFile(path.join(env.footage, 'a.mp4'), 'utf8')).toBe('source a'); expect(await readFile(path.join(env.footage, 'b.mp4'), 'utf8')).toBe('source b');
+    expect((await readdir(env.root)).filter((name) => name.startsWith('Example'))).toEqual(['Example']);
+    await expect(env.project.retryFootageImport(again.importWarning!.retryId)).rejects.toMatchObject({ code: 'forbidden' });
+  });
+  it('binds import retry authority to the original project and expires it', async () => {
+    let now = 0; const env = await setup({ now: () => now, copyFootage: async () => { throw new Error('Copy unavailable'); } });
+    await writeFile(path.join(env.footage, 'a.mp4'), 'source');
+    const result = await env.project.create({ ...creation, parentGrant: (await env.project.grants.issue(env.root, 'projectParent')).grantId, footageGrant: (await env.project.grants.issue(env.footage, 'footage')).grantId });
+    const next = await env.project.create({ ...creation, parentGrant: (await env.project.grants.issue(env.root, 'projectParent')).grantId });
+    await expect(env.project.retryFootageImport(result.importWarning!.retryId)).rejects.toMatchObject({ code: 'conflict' });
+    expect(await readdir(path.join(next.rootPath, 'raw'))).toEqual([]);
+    await env.project.open({ recentId: result.project.id }); now = 10 * 60_000;
+    await expect(env.project.retryFootageImport(result.importWarning!.retryId)).rejects.toMatchObject({ code: 'forbidden' });
+    expect(await readdir(path.join(result.rootPath, 'raw'))).toEqual([]);
+    expect((await env.project.listRecent()).some((entry) => entry.id === result.project.id)).toBe(true);
   });
   it('protects loose root files and symlink aliases from agent writes', async () => {
     const { footage } = await setup(); await writeFile(path.join(footage, 'source.mp4'), 'keep'); await mkdir(path.join(footage, 'work')); await symlink('../source.mp4', path.join(footage, 'work/alias.mp4'));
