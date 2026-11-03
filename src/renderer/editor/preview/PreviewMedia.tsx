@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TimelineDoc, Track } from '@shared/schema/timeline';
 import type { MediaFile } from '@shared/schema/media';
+import { isTrackEnabled } from '@shared/timeline/visibility';
 import { previewClock } from './store';
 import { activeAt, sourceTime, itemVolume, isTrackAudible, type MediaItem } from './media';
 
@@ -41,11 +42,14 @@ function TrackLayer({ track, tracks, files }: { track: Track; tracks: Track[]; f
   return <>{items.map((item) => { const file = files.find((f) => f.rel === item.src); return file ? <Source key={item.id} item={item} file={file} track={track} tracks={tracks} /> : null; })}</>;
 }
 export function PreviewMedia({ doc, files }: { doc: TimelineDoc; files: MediaFile[] }) {
-  const nextSources = useMemo(() => doc.tracks.filter((t) => t.kind === 'video' || t.kind === 'broll').flatMap((t) => t.items.filter((i) => i.type === 'clip')).sort((a, b) => a.start - b.start), [doc]);
+  const nextSources = useMemo(() => doc.tracks.filter((t) => isTrackEnabled(t, doc.tracks) && (t.kind === 'video' || t.kind === 'broll')).flatMap((t) => t.items.filter((i) => i.type === 'clip')).sort((a, b) => a.start - b.start), [doc]);
   const [next, setNext] = useState<string | null>(null);
-  useEffect(() => previewClock.subscribe((clock) => {
-    const clip = nextSources.find((i) => i.start > clock.time);
-    setNext(clip?.type === 'clip' ? files.find((f) => f.rel === clip.src)?.url ?? null : null);
-  }), [nextSources, files]);
-  return <>{['video', 'broll', 'voiceover', 'music', 'sfx'].map((kind) => { const track = doc.tracks.find((t) => t.kind === kind); return track ? <TrackLayer key={track.id} track={track} tracks={doc.tracks} files={files} /> : null; })}{next && <video className="preview-preload" src={next} preload="auto" muted aria-hidden="true" />}</>;
+  useEffect(() => {
+    const sync = () => {
+      const clip = nextSources.find((i) => i.start > previewClock.getSnapshot().time);
+      setNext(clip?.type === 'clip' ? files.find((f) => f.rel === clip.src)?.url ?? null : null);
+    };
+    sync(); return previewClock.subscribe(sync);
+  }, [nextSources, files]);
+  return <>{['video', 'broll', 'voiceover', 'music', 'sfx'].map((kind) => { const track = doc.tracks.find((t) => t.kind === kind); return track && isTrackEnabled(track, doc.tracks) ? <TrackLayer key={track.id} track={track} tracks={doc.tracks} files={files} /> : null; })}{next && <video className="preview-preload" src={next} preload="auto" muted aria-hidden="true" />}</>;
 }

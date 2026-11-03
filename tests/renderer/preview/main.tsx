@@ -7,6 +7,7 @@ import type { ToolInfo } from '../../../src/shared/schema/media';
 import type { WhisperModelInfo } from '../../../src/shared/schema/models';
 import { App } from '../../../src/renderer/App';
 import { useNavigation, SETTINGS_SECTIONS } from '../../../src/renderer/state/navigation';
+import { useAssistant } from '../../../src/renderer/editor/assistantStore';
 import { defaultGlobalSettings } from '../../../src/shared/schema/settings';
 import { session, timelineDoc, preset } from '../fixtures';
 import '../../../src/renderer/styles/tokens.css';
@@ -34,6 +35,8 @@ window.cutroom = {
     let response: unknown;
     if (channel === 'app.getInfo') response = { version: '0.1.0-fixture', platform: 'darwin', arch: 'arm64', homeDir: '/fixture', mediaBaseUrl: null, compBaseUrl: null };
     else if (channel === 'project.current') response = project;
+    else if (channel === 'project.retryFootageImport') response = session;
+    else if (channel === 'agent.respondPermission') response = { ok: true };
     else if (channel === 'project.listRecent') response = project ? [{ id: session.project.id, name: session.project.name, rootPath: session.rootPath, format: session.project.format, lastOpenedAt: session.project.createdAt, missing: false }] : [];
     else if (channel === 'settings.get') response = settings;
     else if (channel === 'settings.update') { settings = { ...settings, ...req.patch }; response = settings; emit('settings.changed', settings); }
@@ -86,4 +89,11 @@ window.setInterval(() => {
 }, 1000);
 const requested = new URLSearchParams(location.search).get('section');
 useNavigation.setState({ destination: new URLSearchParams(location.search).has('editor') ? 'project' : new URLSearchParams(location.search).has('home') ? 'home' : 'settings', project, settingsSection: SETTINGS_SECTIONS.find((section) => section === requested) ?? 'Accounts' });
+const review = new URLSearchParams(location.search).get('review');
+if (project && review === 'permissions') {
+  useNavigation.setState({ dock: 'Assistant' });
+  useAssistant.setState({ sessionId: 'fixture-agent', status: 'waiting_permission', messages: [{ role: 'assistant', text: 'Simulated permission review. No command will run.' }] });
+  useAssistant.getState().receive({ type: 'permission_request', sessionId: 'fixture-agent', requestId: 'fixture-permission', tool: 'Bash', description: 'Allow Bash for this request?', input: { command: 'ffmpeg -i "raw/coast.mp4" "work/preview.mov"', cwd: 'work/', env: { API_KEY: 'fixture-secret-not-shown' } } });
+}
+if (project && review === 'import-recovery') useNavigation.setState({ importRecovery: { ...project, importWarning: { message: 'Simulated copy failure: one footage file could not be read.', completed: 1, total: 3, retryId: 'fixture-retry' } } });
 createRoot(document.getElementById('root')!).render(<App />);

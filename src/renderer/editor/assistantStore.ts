@@ -5,6 +5,7 @@ import { errorMessage, useNavigation } from '../state/navigation';
 import type { InvokeReq } from '@shared/ipc';
 import { previewClock } from './preview/store';
 import { useSelection } from './selection/store';
+import { summarizeOperation, type OperationSummary } from './operationSummary';
 export const AGENT_MODELS = [{ id: 'claude-sonnet-5-5', label: 'Sonnet 5.5' }, { id: 'claude-opus-5-5', label: 'Opus 5.5' }, { id: 'claude-haiku-5-5', label: 'Haiku 5.5' }];
 let projectEpoch = 0;
 type Change = Extract<AgentEvent, { type: 'change' }>;
@@ -12,7 +13,7 @@ type Permission = Extract<AgentEvent, { type: 'permission_request' }>;
 interface AssistantState {
   sessionId: string | null; model: string; mode: 'ask' | 'edit'; status: string;
   messages: { role: 'user' | 'assistant'; text: string; streaming?: boolean }[];
-  tools: { id: string; name: string; done: boolean; error?: boolean }[];
+  tools: { id: string; name: string; done: boolean; error?: boolean; operation?: OperationSummary }[];
   permissions: Permission[]; changes: Change[]; cost: number | null; draft: string;
   error: string | null; sending: boolean;
   send: (text: string, mode?: 'ask' | 'edit', context?: InvokeReq<'agent.send'>['context']) => Promise<boolean>;
@@ -56,7 +57,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       case 'text_delta': set((s) => { const messages = [...s.messages]; const last = messages.at(-1); if (last?.role === 'assistant' && last.streaming) messages[messages.length - 1] = { ...last, text: last.text + event.text }; else messages.push({ role: 'assistant', text: event.text, streaming: true }); return { messages }; }); break;
       case 'message': set((s) => { const messages = [...s.messages]; if (messages.at(-1)?.streaming && event.role === 'assistant') messages[messages.length - 1] = { role: event.role, text: event.text }; else if (messages.at(-1)?.role !== event.role || messages.at(-1)?.text !== event.text) messages.push({ role: event.role, text: event.text }); return { messages }; }); break;
       case 'status': set({ status: event.status }); break;
-      case 'tool_start': set((s) => ({ tools: [...s.tools, { id: event.toolUseId, name: event.name, done: false }] })); break;
+      case 'tool_start': set((s) => ({ tools: [...s.tools, { id: event.toolUseId, name: event.name, done: false, operation: summarizeOperation(event.input) }] })); break;
       case 'tool_end': set((s) => ({ tools: s.tools.map((t) => t.id === event.toolUseId ? { ...t, done: true, error: event.isError } : t) })); break;
       case 'permission_request': set((s) => ({ permissions: [...s.permissions, event] })); break;
       case 'change': set((s) => ({ changes: [...s.changes.filter((c) => c.requestId !== event.requestId || c.itemId !== event.itemId), event] })); break;

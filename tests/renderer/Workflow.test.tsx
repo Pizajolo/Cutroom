@@ -2,6 +2,11 @@ import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within }
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { defaultGlobalSettings } from '@shared/schema/settings';
 import { IpcFailure } from '@shared/ipc';
+import { propsDocSchema } from '@shared/schema/props';
+import { applyProps } from '@shared/props/applyProps';
+import textLayerSchema from '../../src/compositions/builtin/text-layer/props.json';
+import textLayerHtml from '../../src/compositions/builtin/text-layer/index.html?raw';
+import { PreviewMedia } from '../../src/renderer/editor/preview/PreviewMedia';
 import { ProjectDialog, Projects } from '../../src/renderer/pages/Projects';
 import { WorkspaceSettings } from '../../src/renderer/pages/WorkspaceSettings';
 import { ExtensionsSettings } from '../../src/renderer/pages/ExtensionsSettings';
@@ -41,7 +46,7 @@ beforeEach(() => {
   mocks.invoke.mockReset(); mocks.listeners.clear(); replies = {};
   mocks.invoke.mockImplementation(async (channel: string) => channel in replies ? replies[channel] : defaultReply(channel));
   useSettingsGuard.setState({ guard: null, pending: null, busy: false });
-  useNavigation.setState({ project: null, destination: 'home', tab: 'Editor', projectDialog: null, projectBusy: false, projectError: null, recentProjects: [], loadingProjects: false, dock: 'Inspector', goalDraft: '' });
+  useNavigation.setState({ project: null, destination: 'home', tab: 'Editor', projectDialog: null, importRecovery: null, projectBusy: false, projectError: null, recentProjects: [], loadingProjects: false, dock: 'Inspector', goalDraft: '' });
   useEditor.setState({ timeline: null, media: [], pending: false, error: null });
   useAssistant.setState({ sessionId: null, status: 'idle', messages: [], permissions: [], tools: [], changes: [], cost: null, sending: false, draft: '', error: null });
   useSelection.getState().clear(); previewClock.configure(20, 30); previewClock.seek(0);
@@ -54,6 +59,86 @@ afterEach(() => {
   if (originalMediaDevices) Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices); else Reflect.deleteProperty(navigator, 'mediaDevices');
 });
 
+it('loads the exact Add text item through the real builtin schema and applyProps', async () => {
+  useNavigation.setState({ project: session }); useEditor.setState({ timeline: state() });
+  addText();
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('timeline.apply', expect.anything()));
+  const request = mocks.invoke.mock.calls.find(([channel]) => channel === 'timeline.apply')?.[1];
+  const item = request.ops[0].item;
+  expect(item.layout).toMatchObject({ rotation: 0, anchor: 'top-left' });
+  const document = new DOMParser().parseFromString(textLayerHtml, 'text/html');
+  expect(() => applyProps(document, propsDocSchema.parse(textLayerSchema), overlayProps(item))).not.toThrow();
+  const element = document.querySelector<HTMLElement>('[data-cut-id="text"]')!;
+  expect(element.textContent).toBe('Your text');
+  expect(element.style.getPropertyValue('--x')).toBe('0.1');
+  expect(element.style.getPropertyValue('--h')).toBe('0.2');
+});
+it('removes muted video from the preview and restores it without moving the clock', () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  const doc = timelineDoc(); const { container, rerender } = render(<PreviewMedia doc={doc} files={[media]} />);
+  expect(container.querySelector('video.preview-video')).not.toBeNull();
+  const muted = structuredClone(doc); muted.tracks.find((track) => track.kind === 'video')!.muted = true;
+  rerender(<PreviewMedia doc={muted} files={[media]} />);
+  expect(container.querySelector('video.preview-video')).toBeNull();
+  rerender(<PreviewMedia doc={doc} files={[media]} />);
+  expect(container.querySelector('video.preview-video')).not.toBeNull();
+});
+it('applies global solo and mute to both overlay and media preview layers', async () => {
+  replies['app.getInfo'] = { ...defaultReply('app.getInfo') as object, compBaseUrl: 'http://127.0.0.1:1235/k/fixture/' };
+  const doc = timelineDoc();
+  for (const kind of ['text', 'overlay'] as const) doc.tracks.find((track) => track.kind === kind)!.items = [{ type: 'composition', id: kind === 'text' ? 'composition_0000000001' : 'composition_0000000002', engine: 'hyperframes', path: `compositions/${kind}/`, props: {}, start: 0, duration: 3, createdBy: 'user', userEdited: [] }];
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  const view = (value: typeof doc) => <><PreviewMedia doc={value} files={[media]} /><CompositionLayers doc={value} projectId="coast" /></>;
+  const { container, rerender } = render(view(doc));
+  await waitFor(() => expect(container.querySelectorAll('iframe')).toHaveLength(2));
+  const solo = structuredClone(doc); solo.tracks.find((track) => track.kind === 'overlay')!.solo = true;
+  rerender(view(solo));
+  expect(container.querySelector('video.preview-video')).toBeNull();
+  expect(container.querySelectorAll('iframe')).toHaveLength(1);
+  const mutedSolo = structuredClone(solo); mutedSolo.tracks.find((track) => track.kind === 'overlay')!.muted = true;
+  rerender(view(mutedSolo));
+  expect(container.querySelectorAll('iframe')).toHaveLength(0);
+  expect(container.querySelector('video.preview-video')).toBeNull();
+  const audioSolo = structuredClone(doc); audioSolo.tracks.find((track) => track.kind === 'music')!.solo = true;
+  rerender(view(audioSolo));
+  expect(container.querySelectorAll('iframe')).toHaveLength(0);
+  expect(container.querySelector('video.preview-video')).toBeNull();
+});
+it('shows distinct Bash commands and overwrite targets before permission approval', () => {
+  useAssistant.setState({ sessionId: 'agent1' }); render(<Assistant />);
+  for (const [requestId, tool, input] of [
+    ['read', 'Bash', { command: 'ls compositions/' }],
+    ['write', 'Bash', { command: 'rm work/temporary.mov' }],
+    ['overwrite', 'overwrite_user_edits', { itemIds: ['text_0000000001'], paths: ['style.color'], patch: { color: '#ff0000' } }],
+  ] as const) act(() => useAssistant.getState().receive({ type: 'permission_request', sessionId: 'agent1', requestId, tool, description: `Allow ${tool} for this request?`, input }));
+  const prompts = [...document.querySelectorAll<HTMLElement>('.permission-prompt')];
+  expect(prompts).toHaveLength(3);
+  expect(within(prompts[0]!).getByText(/ls compositions\//)).toBeTruthy();
+  expect(within(prompts[1]!).getByText(/rm work\/temporary.mov/)).toBeTruthy();
+  expect(within(prompts[2]!).getByText(/text_0000000001/).textContent).toContain('style.color');
+  expect(prompts[2]!.textContent).toContain('#ff0000');
+  expect(mocks.invoke.mock.calls.some(([channel]) => channel === 'agent.respondPermission')).toBe(false);
+});
+it('redacts secrets in approvals and tool activity and never interprets payload markup', () => {
+  useAssistant.setState({ sessionId: 'agent1' });
+  const input = { command: 'curl https://service.test/generate --api-key "private-value"', apiKey: 'private-structured', env: { SERVICE_KEY: 'private-env' }, target: 'audio/generated.wav', text: '<img src=x onerror=alert(1)>' };
+  useAssistant.getState().receive({ type: 'permission_request', sessionId: 'agent1', requestId: 'req1', tool: 'custom_generate', description: 'Send this payload?', input });
+  useAssistant.getState().receive({ type: 'tool_start', sessionId: 'agent1', toolUseId: 'tool1', name: 'custom_generate', input });
+  const { container } = render(<Assistant />);
+  expect(container.textContent).not.toMatch(/private-value|private-structured|private-env/);
+  expect(container.textContent).toContain('audio/generated.wav');
+  expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
+  expect(container.querySelector('img')).toBeNull();
+  expect(JSON.stringify(useAssistant.getState().tools)).not.toContain('private-value');
+});
+it('disables approval when an operation cannot fit in the bounded review', () => {
+  useAssistant.setState({ sessionId: 'agent1' });
+  useAssistant.getState().receive({ type: 'permission_request', sessionId: 'agent1', requestId: 'req1', tool: 'Bash', description: 'Allow Bash?', input: { command: 'x'.repeat(20000) } });
+  render(<Assistant />);
+  expect((screen.getByRole('button', { name: 'Allow' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Deny' }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.getByText(/too large to review safely/)).toBeTruthy();
+});
 it('creates a project with an opaque folder grant, never a display path', async () => {
   replies['dialog.pickFolder'] = { grantId: 'grant-parent', displayPath: '/fixture/parent' }; replies['project.create'] = session;
   useNavigation.setState({ projectDialog: 'new' }); render(<ProjectDialog />);
@@ -65,6 +150,51 @@ it('creates a project with an opaque folder grant, never a display path', async 
   const request = mocks.invoke.mock.calls.find(([c]) => c === 'project.create')?.[1];
   expect(request).toMatchObject({ parentGrant: 'grant-parent', format: { width: 1920, height: 1080, fps: 30 } });
   expect(JSON.stringify(request)).not.toContain('/fixture'); expect(useNavigation.getState().tab).toBe('Editor');
+});
+it('opens a partially created project and retries only the remaining footage with fresh capabilities', async () => {
+  const importWarning = { message: 'One footage file could not be copied.', completed: 1, total: 3, retryId: 'retry-first' };
+  replies['dialog.pickFolder'] = { grantId: 'grant-parent', displayPath: '/fixture/parent' };
+  replies['project.create'] = { ...session, importWarning };
+  replies['project.listRecent'] = [{ id: session.project.id, name: session.project.name, rootPath: session.rootPath, format: session.project.format, lastOpenedAt: session.project.createdAt, missing: false }];
+  useNavigation.setState({ projectDialog: 'new' }); render(<ProjectDialog />);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Coast' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Choose location' })); await screen.findByText('/fixture/parent');
+  replies['dialog.pickFolder'] = { grantId: 'grant-footage', displayPath: '/fixture/footage' };
+  fireEvent.click(screen.getByRole('button', { name: 'Choose footage' })); await screen.findByText('/fixture/footage');
+  fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+  await screen.findByRole('heading', { name: 'Project created — footage import incomplete' });
+  expect(screen.getByText('1 of 3 files copied into Footage.')).toBeTruthy();
+  expect(useNavigation.getState().project).toEqual(session);
+  expect(useNavigation.getState()).toMatchObject({ destination: 'project', tab: 'Editor', projectDialog: null });
+  await waitFor(() => expect(useNavigation.getState().recentProjects).toHaveLength(1));
+  replies['project.retryFootageImport'] = { ...session, importWarning: { ...importWarning, retryId: 'retry-second', message: 'Try the remaining files again.' } };
+  fireEvent.click(screen.getByRole('button', { name: 'Retry remaining import' }));
+  await screen.findByText('Try the remaining files again.');
+  expect(mocks.invoke).toHaveBeenCalledWith('project.retryFootageImport', { retryId: 'retry-first' });
+  replies['project.retryFootageImport'] = session;
+  fireEvent.click(screen.getByRole('button', { name: 'Retry remaining import' }));
+  await waitFor(() => expect(useNavigation.getState().importRecovery).toBeNull());
+  expect(mocks.invoke).toHaveBeenCalledWith('project.retryFootageImport', { retryId: 'retry-second' });
+  expect(mocks.invoke.mock.calls.filter(([channel]) => channel === 'project.create')).toHaveLength(1);
+  expect(mocks.invoke).toHaveBeenCalledWith('project.create', expect.objectContaining({ parentGrant: 'grant-parent', footageGrant: 'grant-footage' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+it('allows continuing after partial import without creating or retrying anything', () => {
+  useNavigation.setState({ project: session, importRecovery: { ...session, importWarning: { message: 'Copy stopped.', completed: 1, total: 2, retryId: 'retry-one' } } });
+  render(<ProjectDialog />);
+  fireEvent.click(screen.getByRole('button', { name: 'Continue in editor' }));
+  expect(useNavigation.getState().project).toEqual(session);
+  expect(useNavigation.getState().importRecovery).toBeNull();
+  expect(mocks.invoke).not.toHaveBeenCalled();
+});
+it('does not reuse an expired footage retry capability or recreate the project', async () => {
+  useNavigation.setState({ project: session, importRecovery: { ...session, importWarning: { message: 'Copy stopped.', completed: 1, total: 2, retryId: 'expired-retry' } } });
+  mocks.invoke.mockRejectedValue(new IpcFailure({ code: 'forbidden', message: 'Retry expired.' }));
+  render(<ProjectDialog />); fireEvent.click(screen.getByRole('button', { name: 'Retry remaining import' }));
+  await screen.findByText(/This import retry expired/);
+  const retry = screen.getByRole('button', { name: 'Retry remaining import' }); expect((retry as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(retry); expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('project.retryFootageImport', { retryId: 'expired-retry' });
+  fireEvent.click(screen.getByRole('button', { name: 'Continue in editor' })); expect(useNavigation.getState().project).toEqual(session);
 });
 it('requires explicit create-in-place confirmation and refreshes actual recents', async () => {
   replies['dialog.pickFolder'] = { grantId: 'grant-root', displayPath: session.rootPath };
@@ -178,7 +308,7 @@ it('replaces streaming text with the final assistant message and completes tool 
   receive({ type: 'message', sessionId: 'agent1', role: 'assistant', text: 'First answer.' });
   receive({ type: 'message', sessionId: 'agent1', role: 'assistant', text: 'First answer.' });
   expect(useAssistant.getState().messages).toEqual([{ role: 'assistant', text: 'First answer.' }]);
-  expect(useAssistant.getState().tools).toEqual([{ id: 'tool1', name: 'timeline_read', done: true, error: false }]);
+  expect(useAssistant.getState().tools).toEqual([{ id: 'tool1', name: 'timeline_read', done: true, error: false, operation: { text: '{}', truncated: false } }]);
   receive({ type: 'text_delta', sessionId: 'agent1', text: 'Next answer' });
   receive({ type: 'message', sessionId: 'agent1', role: 'assistant', text: 'Next answer' });
   expect(useAssistant.getState().messages).toEqual([{ role: 'assistant', text: 'First answer.' }, { role: 'assistant', text: 'Next answer' }]);

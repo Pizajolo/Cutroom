@@ -5,6 +5,7 @@ import { RemotionTitle } from '../../compositions/builtin/remotion-title/Title';
 import type { TimelineDoc, TimelineItem } from '@shared/schema/timeline';
 import type { InvokeRes } from '@shared/ipc';
 import { propsDocSchema, type PropsDoc } from '@shared/schema/props';
+import { isTrackEnabled } from '@shared/timeline/visibility';
 import { useAppInfo } from '../lib/useAppInfo';
 import { api } from '../lib/api';
 import { CompositionBridge } from '../lib/compBridge';
@@ -22,7 +23,7 @@ export function compositionUrl(base: string, projectId: string, item: OverlayIte
 }
 export function overlayProps(item: OverlayItem) {
   if (item.type === 'composition') return item.props;
-  if (item.type === 'text') return { text: { content: item.text, fontFamily: item.style.fontFamily, fontSize: item.style.fontSize, fontWeight: item.style.fontWeight, color: item.style.color, align: item.style.align, ...item.layout } };
+  if (item.type === 'text') return { text: { content: item.text, fontFamily: item.style.fontFamily, fontSize: item.style.fontSize, fontWeight: item.style.fontWeight, color: item.style.color, align: item.style.align, x: item.layout.x, y: item.layout.y, w: item.layout.w, h: item.layout.h } };
   return { captions: { words: JSON.stringify(item.words), preset: item.stylePreset, highlight: item.highlight ?? '#f6d36d' } };
 }
 function CompositionFrame({ item, base, projectId }: { item: OverlayItem; base: string; projectId: string }) {
@@ -76,7 +77,7 @@ export function CompositionLayers({ doc, projectId }: { doc: TimelineDoc; projec
   const { info } = useAppInfo();
   const time = useClock((s) => s.time);
   const tracks = ['captions', 'text', 'overlay'] as const;
-  const active = tracks.flatMap((kind) => doc.tracks.find((t) => t.kind === kind)?.items.filter((i): i is OverlayItem => ['text', 'caption', 'composition'].includes(i.type) && activeAt(i, time)) ?? []);
+  const active = tracks.flatMap((kind) => doc.tracks.find((t) => t.kind === kind && isTrackEnabled(t, doc.tracks))?.items.filter((i): i is OverlayItem => ['text', 'caption', 'composition'].includes(i.type) && activeAt(i, time)) ?? []);
   return <>{active.map((item) => item.type === 'composition' && item.engine === 'remotion' ? <RemotionLayer key={item.id} item={item} doc={doc} /> : info?.compBaseUrl ? <CompositionFrame key={item.id} item={item} base={info.compBaseUrl} projectId={projectId} /> : <span key={item.id} className="composition-preview-error">Composition preview is unavailable.</span>)}</>;
 }
 export function useCompositionSchema(item: Extract<TimelineItem, { type: 'composition' }>) {
