@@ -7,7 +7,7 @@ A macOS video editor built with Electron, React and TypeScript. Cutroom includes
 Requires Node **22 or newer** and npm. End users of the packaged app will not need either.
 
 ```sh
-npm install --legacy-peer-deps
+npm ci
 npm run dev
 npm run build
 npm run typecheck
@@ -16,6 +16,8 @@ npm test
 npm run test:e2e
 npm run schemas
 ```
+
+`package-lock.json` is committed and must stay complete for a plain `npm ci`: `@anthropic-ai/sdk`, `@modelcontextprotocol/sdk` and `electron-builder-squirrel-windows` are declared explicitly because the Claude Agent SDK and electron-builder require them as peer dependencies, and `overrides` pins `webpack` to the exact version `@remotion/bundler` ships so there is one copy. After changing dependencies, regenerate the lock with `npm install --package-lock-only --legacy-peer-deps` (npm 10.9's resolver crashes on vitest's optional peer set without the flag) and confirm `npm ci --dry-run` still passes.
 
 `npm test` runs both the node and jsdom Vitest projects through Electron's Node (`ELECTRON_RUN_AS_NODE=1`), preserving a single native ABI. A development smoke probe is available with `ELECTRON_RUN_AS_NODE=1 electron scripts/verify-core.mjs` (requires Node's `registerHooks`/type-stripping APIs, Node 22.15+); `--filesystem-only` explicitly omits HTTP when local binding is denied. It does not replace Vitest, typecheck, lint or application acceptance tests. Playwright launches the production build with Electron, not a web-app substitute. `npm run schemas` generates JSON Schema draft-07 artifacts in `docs/schemas/` for agents and tooling. Zod's v3 compatibility entry point is used with zod-to-json-schema.
 

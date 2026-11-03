@@ -1,8 +1,9 @@
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import type { Compiler } from 'webpack';
-import { bundle } from '@remotion/bundler';
+// Take every webpack type from Remotion's own re-export. A separately hoisted webpack copy has a
+// distinct Compiler type and makes bundle()'s options unassignable.
+import { bundle, type webpack, type WebpackOverrideFn } from '@remotion/bundler';
 
 const require = createRequire(import.meta.url);
 const escape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -12,15 +13,15 @@ export async function bundleRemotion(entry: string, output: string): Promise<str
   const serveUrl = await bundle({
     entryPoint: entry, outDir: output, rootDir: source, publicDir: path.join(source, 'public'), enableCaching: false, gitSource: null,
     onSymlinkDetected: () => { throw new Error('Symlinks are not allowed in composition assets.'); },
-    webpackOverride: (configuration) => ({ ...configuration,
+    webpackOverride: ((configuration) => ({ ...configuration,
       resolve: { ...configuration.resolve, modules: [modules, ...(configuration.resolve?.modules ?? [])], restrictions: [allowed] },
       resolveLoader: { ...configuration.resolveLoader, restrictions: [new RegExp(`^${escape(modules)}(?:[/\\\\]|$)`)] },
-      plugins: [...(configuration.plugins ?? []), { apply(compiler: Compiler) {
+      plugins: [...(configuration.plugins ?? []), { apply(compiler: webpack.Compiler) {
         compiler.hooks.normalModuleFactory.tap('CutroomLocalModules', (factory) => {
           factory.hooks.beforeResolve.tap('CutroomLocalModules', (request) => { if (request?.request.includes('!')) throw new Error('Authored inline webpack loaders are not allowed.'); });
         });
       } }],
-    }),
+    })) satisfies WebpackOverrideFn,
   });
   // Browser resources stay local too; this is defense in depth, not an OS sandbox.
   const file = path.join(serveUrl, 'index.html'); const html = await readFile(file, 'utf8');
