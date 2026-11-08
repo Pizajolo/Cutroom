@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { readdir } from 'node:fs/promises';
+import { managedPath } from '../fs/managed';
+import { needsBrief } from './briefGate';
 import { z } from 'zod/v3';
-import type { McpServerConfig, Query, SDKUserMessage, Options } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig, Query, SDKUserMessage, Options, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import { contract, IpcFailure, type InvokeReq } from '@shared/ipc/contract';
 import { agentSessionSchema, type AgentEvent, type AgentSession } from '@shared/schema/agent';
 import { opSchema } from '@shared/timeline/types';
@@ -12,7 +15,8 @@ import { resolveClaudeBinary } from '../claude/binary';
 import type { WorkflowRuntime } from '../projects/runtime';
 import type { MediaService } from '../media/service';
 import type { ExtensionSecretStore } from '../secrets/keychain';
-import { agentPolicy, AGENT_MODELS, guardAgentFile } from './policy';
+import { agentPolicy, AGENT_MODELS, classifyTool, guardAgentFile } from './policy';
+import { skillIdSchema } from '@shared/schema/skills';
 import { ChangeReview } from './review';
 import type { TimelineChange } from '../timeline/service';
 
@@ -23,15 +27,18 @@ class Input implements AsyncIterable<SDKUserMessage> {
   close(): void { this.ended = true; this.wake?.(); }
   async *[Symbol.asyncIterator](): AsyncGenerator<SDKUserMessage> { while (!this.ended) { const message = this.queue.shift(); if (message) yield message; else await new Promise<void>((resolve) => { this.wake = resolve; }); } }
 }
-interface Session { info: AgentSession; root: string; input: Input; query?: Query; controller: AbortController; turn: AbortController; requestId?: string; context?: InvokeReq<'agent.send'>['context']; snapshot?: Promise<unknown>; task?: Promise<void> }
-interface Permission { sessionId: string; resolve: (allowed: boolean) => void }
+interface Session { info: AgentSession; root: string; input: Input; query?: Query; controller: AbortController; turn: AbortController; requestId?: string; context?: InvokeReq<'agent.send'>['context']; snapshot?: Promise<unknown>; task?: Promise<void>; approvals: Set<string>; turns: number; needsBrief: boolean }
+interface Permission { sessionId: string; tool: string; rememberable: boolean; resolve: (allowed: boolean) => void }
+interface Question { sessionId: string; questions: z.infer<typeof questionInputSchema>['questions']; resolve: (answer: InvokeReq<'agent.respondQuestion'> | null) => void }
+// SDK 0.3.316 sdk-tools.d.ts: 1–4 questions, 2–4 choices; optional previews are not sent to the renderer.
+const questionInputSchema = z.object({ questions: z.array(z.object({ question: z.string().min(1), header: z.string().max(12), multiSelect: z.boolean(), options: z.array(z.object({ label: z.string().min(1), description: z.string() })).min(2).max(4) })).min(1).max(4) });
 const jsonResult = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value ?? null) }] });
 const toolUseBlock = z.object({ type: z.literal('tool_use'), id: z.string().min(1), name: z.string(), input: z.record(z.unknown()) });
 const toolResultBlock = z.object({ type: z.literal('tool_result'), tool_use_id: z.string().min(1), content: z.unknown().optional(), is_error: z.boolean().optional() });
 const messageText = (content: unknown): string => typeof content === 'string' ? content : Array.isArray(content) ? content.flatMap((part: unknown) => { const text = z.object({ type: z.literal('text'), text: z.string() }).safeParse(part); return text.success ? [text.data.text] : []; }).join('\n') : '';
 export class AgentService {
   readonly review = new ChangeReview();
-  private readonly sessions = new Map<string, Session>(); private readonly permissions = new Map<string, Permission>(); private readonly serverStates = new Map<string, { status: 'ready' | 'unavailable'; detail: string | null }>();
+  private readonly sessions = new Map<string, Session>(); private readonly permissions = new Map<string, Permission>(); private readonly questions = new Map<string, Question>(); private readonly serverStates = new Map<string, { status: 'ready' | 'unavailable'; detail: string | null }>();
   constructor(private readonly options: { runtime: WorkflowRuntime; media: MediaService; secrets: ExtensionSecretStore; emit: (event: AgentEvent) => void; sdk?: () => Promise<Sdk>; env?: () => Promise<Record<string, string>>; binary?: () => Promise<{ path: string } | null> }) {}
   private emit(_session: Session, event: AgentEvent): void { this.options.emit(event); }
   private status(session: Session, status: AgentSession['status']): void { session.info.status = status; this.emit(session, { type: 'status', sessionId: session.info.id, status }); }
@@ -51,15 +58,21 @@ export class AgentService {
     const [sdk, env, binary] = await Promise.all([(this.options.sdk ?? (() => import('@anthropic-ai/claude-agent-sdk')))(), (this.options.env ?? claudeAgentEnv)(), (this.options.binary ?? resolveClaudeBinary)()]);
     if (!binary) throw new IpcFailure({ code: 'unavailable', message: 'Install Claude Code and sign in in Settings → Accounts.' });
     if (this.options.runtime.projects.current()?.project.id !== project.project.id) throw new IpcFailure({ code: 'conflict', message: 'The project changed. Retry starting the assistant.' });
-    const id = saved?.id ?? randomUUID(); const session: Session = { info: { id, projectId: project.project.id, mode: request.mode, model, status: 'starting', createdAt: new Date().toISOString() }, root: project.rootPath, input: new Input(), controller: new AbortController(), turn: new AbortController() };
+    const id = saved?.id ?? randomUUID(); const session: Session = { info: { id, projectId: project.project.id, mode: request.mode, model, status: 'starting', createdAt: new Date().toISOString() }, root: project.rootPath, input: new Input(), controller: new AbortController(), turn: new AbortController(), approvals: new Set(), turns: saved ? 1 : 0, needsBrief: false };
     this.sessions.set(id, session);
     try {
       const servers = await this.servers(sdk, session);
       const options: Options = { ...agentPolicy(project.rootPath, request.mode, this.options.runtime.settings.get()), cwd: project.rootPath, env, pathToClaudeCodeExecutable: binary.path, model, ...(saved ? { resume: id } : { sessionId: id }), abortController: session.controller, includePartialMessages: true,
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: 'You are the Cutroom editing assistant. Times are seconds, timeline positions are output-frame quantized. Use cutroom MCP tools for timeline changes, never write timeline.json or .cutroom/. raw/, references/, assets/ and existing root media are read-only originals. Write authored compositions only under compositions/ and scratch files under work/. Edits are live and reviewable. Never delete source media. Ask mode is read-only. Never download video without explicit rights permission. Codex is a read-only delegated helper, not a Claude model endpoint.' },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: 'You are the Cutroom editing assistant. Times are seconds, timeline positions are output-frame quantized. Use cutroom MCP tools for timeline changes, never write timeline.json or .cutroom/. raw/, references/, assets/ and existing root media are read-only originals. Write authored compositions only under compositions/ and scratch files under work/. Edits are live and reviewable. Never delete source media. Ask mode is read-only. Never download video without explicit rights permission. Codex is a read-only delegated helper, not a Claude model endpoint. When details are missing, ask before creating using AskUserQuestion with concrete options about purpose, audience/platform, length, style and source material. To turn a finished edit into a skill, write general instructions about structure, pacing, caption/title style, music and format, with no project-specific text or file paths.' },
         mcpServers: servers, canUseTool: async (name, input, extra) => {
-          if (['Read', 'Glob', 'Grep'].includes(name)) { try { await guardAgentFile(session.root, name, input, session.info.mode); return { behavior: 'allow', updatedInput: input }; } catch { return { behavior: 'deny', message: 'This path is outside the project.' }; } }
-          const allow = await this.permission(session, name, input, extra.signal); return allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'The user denied this operation.' };
+          if (name === 'AskUserQuestion') return this.question(session, input, extra.signal);
+          try { await guardAgentFile(session.root, name, input, session.info.mode); if (name === 'Write' || name === 'Edit') this.checkBrief(session); }
+          catch (error) { return { behavior: 'deny', message: error instanceof Error ? error.message : 'This path is outside the project.' }; }
+          const settings = this.options.runtime.settings.get();
+          const classification = classifyTool(name, { mode: session.info.mode, approvalMode: settings.agent.approvalMode, extensionIds: settings.extensions.map((entry) => entry.config.id), input });
+          if (classification !== 'ask') return { behavior: 'allow', updatedInput: input };
+          const allow = session.approvals.has(name) || await this.permission(session, name, input, extra.signal, true);
+          return allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'The user denied this operation.' };
         }, hooks: { PreToolUse: [{ hooks: [async (input) => {
           if (input.hook_event_name !== 'PreToolUse') return {};
           const data = z.record(z.unknown()).safeParse(input.tool_input); if (!data.success) return { decision: 'block', reason: 'Invalid tool input.' };
@@ -79,9 +92,18 @@ export class AgentService {
     }
     session = this.require(session.info.id);
     if (!['idle', 'finished', 'interrupted'].includes(session.info.status)) throw new IpcFailure({ code: 'conflict', message: 'Wait for this assistant turn to finish or interrupt it.' });
-    session.requestId = randomUUID(); session.context = request.context; session.snapshot = undefined; session.turn = new AbortController();
+    const skill = request.skillId ? await this.options.runtime.skills.get(request.skillId) : null;
+    let referenceCount = 0;
+    if (session.turns === 0) {
+      try { referenceCount = (await readdir(await managedPath(session.root, 'references'), { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile()).length; }
+      catch (error) { if (!isMissing(error)) throw error; }
+    }
+    session = this.require(session.info.id);
+    if (!['idle', 'finished', 'interrupted'].includes(session.info.status)) throw new IpcFailure({ code: 'conflict', message: 'Wait for this assistant turn to finish or interrupt it.' });
+    session.needsBrief = session.turns === 0 && needsBrief({ text: request.text, referenceCount, hasUrl: /https?:\/\/\S+/iu.test(request.text), itemCount: this.options.runtime.timeline().state().doc.tracks.reduce((count, track) => count + track.items.length, 0), ...(request.skillId ? { skillId: request.skillId } : {}) });
+    session.turns++; session.requestId = randomUUID(); session.context = request.context; session.snapshot = undefined; session.turn = new AbortController();
     this.status(session, 'thinking'); this.emit(session, { type: 'message', sessionId: session.info.id, role: 'user', text: request.text });
-    session.input.push({ type: 'user', message: { role: 'user', content: `${request.text}${request.context ? `\n\nEditor context: ${JSON.stringify(request.context)}` : ''}` }, parent_tool_use_id: null, session_id: session.info.id }); return { ok: true };
+    session.input.push({ type: 'user', message: { role: 'user', content: `${skill ? `Video type: ${skill.name}\n${skill.instructions}\n\n` : ''}${request.text}${session.needsBrief ? '\n\nBefore creating anything, call AskUserQuestion to clarify this brief.' : ''}${request.context ? `\n\nEditor context: ${JSON.stringify(request.context)}` : ''}` }, parent_tool_use_id: null, session_id: session.info.id }); return { ok: true };
   }
   private async consume(session: Session): Promise<void> {
     const tools = new Map<string, string>();
@@ -105,23 +127,58 @@ export class AgentService {
     } } catch { if (!session.controller.signal.aborted) this.emit(session, { type: 'error', sessionId: session.info.id, code: 'unavailable', message: 'The Claude session ended unexpectedly. Start a new session or reconnect in Settings → Accounts.' }); }
     finally { session.input.close(); session.turn.abort(); this.status(session, 'interrupted'); if (this.sessions.get(session.info.id) === session) this.sessions.delete(session.info.id); }
   }
-  private async permission(session: Session, tool: string, input: Record<string, unknown>, signal: AbortSignal): Promise<boolean> {
+  private async question(session: Session, raw: Record<string, unknown>, signal: AbortSignal): Promise<PermissionResult> {
+    const parsed = questionInputSchema.safeParse(raw);
+    if (!parsed.success) return { behavior: 'deny', message: 'Ask 1–4 questions with 2–4 concrete options each.' };
+    const { questions } = parsed.data; const requestId = randomUUID();
+    const combined = AbortSignal.any([signal, session.turn.signal, session.controller.signal]);
+    this.status(session, 'waiting_input');
+    const answer = await new Promise<InvokeReq<'agent.respondQuestion'> | null>((resolve) => {
+      const finish = (answer: InvokeReq<'agent.respondQuestion'> | null): void => { this.questions.delete(requestId); combined.removeEventListener('abort', abort); resolve(answer); };
+      const abort = (): void => finish(null);
+      this.questions.set(requestId, { sessionId: session.info.id, questions, resolve: finish });
+      combined.addEventListener('abort', abort, { once: true });
+      if (combined.aborted) { abort(); return; }
+      this.emit(session, { type: 'question_request', sessionId: session.info.id, requestId, questions });
+    });
+    if (!answer || combined.aborted) return { behavior: 'deny', message: 'The question was cancelled.' };
+    session.needsBrief = false; this.status(session, 'running');
+    return { behavior: 'allow', updatedInput: { questions: raw.questions, answers: answer.answers, ...(answer.response ? { response: answer.response } : {}) } };
+  }
+  respondQuestion(input: InvokeReq<'agent.respondQuestion'>): { ok: true } {
+    const request = contract.invoke['agent.respondQuestion'].req.parse(input);
+    const pending = this.questions.get(request.requestId);
+    if (!pending) throw new IpcFailure({ code: 'not_found', message: 'This question expired.' });
+    this.require(pending.sessionId);
+    if (Object.keys(request.answers).some((key) => !pending.questions.some((question) => question.question === key)) || (!request.response?.trim() && pending.questions.some((question) => {
+      const answer = request.answers[question.question]; return typeof answer === 'string' ? !answer.trim() : !answer?.length || answer.some((entry) => !entry.trim());
+    }))) throw new IpcFailure({ code: 'invalid_request', message: 'Answer each question or enter a response.' });
+    pending.resolve(request); return { ok: true };
+  }
+  private async permission(session: Session, tool: string, input: Record<string, unknown>, signal: AbortSignal, rememberable = false): Promise<boolean> {
     if (signal.aborted || session.controller.signal.aborted) return false;
     const requestId = randomUUID(); this.status(session, 'waiting_permission');
     return new Promise<boolean>((resolve) => {
       const combined = AbortSignal.any([signal, session.turn.signal, session.controller.signal, AbortSignal.timeout(10 * 60_000)]);
       let settled = false;
       const finish = (allow: boolean): void => { if (settled) return; settled = true; this.permissions.delete(requestId); combined.removeEventListener('abort', abort); if (!combined.aborted) this.status(session, 'running'); resolve(allow); };
-      const abort = (): void => finish(false); this.permissions.set(requestId, { sessionId: session.info.id, resolve: finish }); combined.addEventListener('abort', abort, { once: true }); if (combined.aborted) { abort(); return; }
-      this.emit(session, { type: 'permission_request', sessionId: session.info.id, requestId, tool, input, rememberable: false, description: tool === 'url_import_download' ? 'Confirm you have the rights to download this video.' : `Allow ${tool} for this request?` });
+      const abort = (): void => finish(false); this.permissions.set(requestId, { sessionId: session.info.id, tool, rememberable, resolve: finish }); combined.addEventListener('abort', abort, { once: true }); if (combined.aborted) { abort(); return; }
+      this.emit(session, { type: 'permission_request', sessionId: session.info.id, requestId, tool, input, rememberable, description: tool === 'url_import_download' ? 'Confirm you have the rights to download this video.' : tool === 'skill_save' ? 'Save this reusable video type to your skills library?' : `Allow ${tool} for this request?` });
     });
   }
-  respond(request: InvokeReq<'agent.respondPermission'>): { ok: true } { const permission = this.permissions.get(request.requestId); if (!permission) throw new IpcFailure({ code: 'not_found', message: 'This permission request expired.' }); this.require(permission.sessionId); permission.resolve(request.allow); return { ok: true }; }
+  respond(input: InvokeReq<'agent.respondPermission'>): { ok: true } {
+    const request = contract.invoke['agent.respondPermission'].req.parse(input);
+    const permission = this.permissions.get(request.requestId); if (!permission) throw new IpcFailure({ code: 'not_found', message: 'This permission request expired.' });
+    const session = this.require(permission.sessionId);
+    if (request.allow && request.scope === 'session' && permission.rememberable) session.approvals.add(permission.tool);
+    permission.resolve(request.allow); return { ok: true };
+  }
+  private checkBrief(session: Session): void { if (session.needsBrief) throw new IpcFailure({ code: 'forbidden', message: 'Call AskUserQuestion and wait for an answer before creating or editing this video.' }); }
   async interrupt(id: string): Promise<{ ok: true }> { const session = this.require(id); session.turn.abort(); await session.query?.interrupt(); this.status(session, 'interrupted'); return { ok: true }; }
-  async beforeEdit(session: Session): Promise<void> { if (session.info.mode === 'ask') throw new IpcFailure({ code: 'forbidden', message: 'Ask mode is read-only.' }); if (this.options.runtime.settings.get().snapshots.autoBeforeAgent) { session.snapshot ??= this.options.runtime.timeline().createSnapshot('Before assistant edit'); await session.snapshot; } }
+  async beforeEdit(session: Session): Promise<void> { this.checkBrief(session); if (session.info.mode === 'ask') throw new IpcFailure({ code: 'forbidden', message: 'Ask mode is read-only.' }); if (this.options.runtime.settings.get().snapshots.autoBeforeAgent) { session.snapshot ??= this.options.runtime.timeline().createSnapshot('Before assistant edit'); await session.snapshot; } }
   record(change: TimelineChange): void { const session = [...this.sessions.values()].find((entry) => entry.requestId === change.requestId); if (!session) return; for (const entry of this.review.record(change)) this.emit(session, { type: 'change', sessionId: session.info.id, requestId: change.requestId!, ...entry }); }
   extensionStatus(id: string) { return this.serverStates.get(id); }
-  async close(): Promise<void> { for (const session of this.sessions.values()) { session.turn.abort(); session.controller.abort(); session.input.close(); session.query?.close(); } await Promise.allSettled([...this.sessions.values()].map((session) => session.task)); this.sessions.clear(); this.permissions.clear(); this.review.clear(); this.serverStates.clear(); }
+  async close(): Promise<void> { for (const session of this.sessions.values()) { session.turn.abort(); session.controller.abort(); session.input.close(); session.query?.close(); } await Promise.allSettled([...this.sessions.values()].map((session) => session.task)); this.sessions.clear(); this.permissions.clear(); this.questions.clear(); this.review.clear(); this.serverStates.clear(); }
   private async servers(sdk: Sdk, session: Session): Promise<Record<string, McpServerConfig>> {
     const runtime = this.options.runtime; const servers: Record<string, McpServerConfig> = {};
     const waitForJob = async (jobId: string, signal: AbortSignal): Promise<unknown> => {
@@ -149,6 +206,18 @@ export class AgentService {
     add('transcript_get', 'Read a cached transcript.', { rel: projectPathSchema }, ({ rel }) => runtime.transcripts.get(rel));
     add('transcribe_start', 'Start an explicitly selected transcription engine.', contract.invoke['transcripts.start'].req.shape, (input) => runtime.transcripts.start(input), true);
     add('captions_generate', 'Generate trimmed, speed-mapped captions.', contract.invoke['captions.generate'].req.shape, ({ clipItemId }) => runtime.transcripts.captions(clipItemId, `agent:${session.info.id}`, session.requestId), true);
+    add('skills_list', 'List reusable video types.', {}, () => runtime.skills.list());
+    add('skill_read', 'Read a reusable video type and its instructions.', { id: skillIdSchema }, ({ id }) => runtime.skills.get(id));
+    add('skill_apply', 'Copy this video type’s templates into this project and read its instructions.', { id: skillIdSchema }, async ({ id }) => {
+      const skill = await runtime.skills.get(id); const compositions = [];
+      for (const name of skill.compositions) { session.turn.signal.throwIfAborted(); compositions.push(await runtime.compositions.createFromSkill(id, name, name)); }
+      return { names: compositions.map((composition) => composition.name), compositions, instructions: skill.instructions };
+    }, true);
+    add('skill_save', 'Save general reusable editing instructions and optional project compositions. Always asks for confirmation.', { ...contract.invoke['skills.save'].req.omit({ id: true }).shape, compositions: z.array(z.string()).max(100) }, async ({ compositions, ...input }) => {
+      if (!await this.permission(session, 'skill_save', { name: input.name, description: input.description, compositions }, session.turn.signal)) throw new IpcFailure({ code: 'forbidden', message: 'Saving the video type was not approved.' });
+      const saved = await runtime.skills.save(input, compositions);
+      return { id: saved.id, name: saved.name };
+    }, true);
     add('compositions_list', 'List editable compositions.', {}, () => runtime.compositions.list());
     add('compositions_create', 'Copy a built-in composition template.', contract.invoke['compositions.create'].req.shape, ({ template, name }) => runtime.compositions.create(template, name), true);
     add('compositions_check', 'Check composition markup and props.', contract.invoke['compositions.check'].req.shape, ({ name }) => runtime.compositions.check(name));

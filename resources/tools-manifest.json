@@ -9,6 +9,9 @@
     { "name": "whisper-cli", "version": "1.9.5", "arch": "arm64", "bundled": true, "source": { "format": "build", "url": "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.9.5.tar.gz" }, "checksum": null, "allowedHosts": ["github.com", "codeload.github.com"], "sourceSha256": null, "archiveSha256": null, "sha256": null, "updatable": false, "license": "MIT" },
     { "name": "whisper-cli", "version": "1.9.5", "arch": "x64", "bundled": true, "source": { "format": "build", "url": "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.9.5.tar.gz" }, "checksum": null, "allowedHosts": ["github.com", "codeload.github.com"], "sourceSha256": null, "archiveSha256": null, "sha256": null, "updatable": false, "license": "MIT" }
   ],
+  "buildTools": [
+    { "name": "cmake", "version": "4.4.5", "arch": "universal", "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-macos-universal.tar.gz", "checksum": { "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-SHA-256.txt", "format": "sums", "entry": "cmake-4.4.5-macos-universal.tar.gz" }, "allowedHosts": ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"] }
+  ],
   "models": [
     { "name": "base", "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin", "sizeBytes": 147951465, "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe", "allowedHosts": ["huggingface.co"], "allowedHostSuffixes": [".huggingface.co", ".hf.co"] },
     { "name": "small", "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", "sizeBytes": 487601967, "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b", "allowedHosts": ["huggingface.co"], "allowedHostSuffixes": [".huggingface.co", ".hf.co"] },
