@@ -37,7 +37,8 @@ test.afterEach(async () => {
 test('canceling plain-folder creation leaves the folder and project state unchanged', async () => {
   const page = await app!.firstWindow();
   const original = await readFile(path.join(root, 'red.png'));
-  await page.getByRole('button', { name: 'Browse media folder', exact: true }).click();
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByRole('button', { name: 'Open project', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Create a project in this folder?' });
   await expect(dialog).toContainText('Found 1 media files in the folder root.');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -51,7 +52,8 @@ test('canceling plain-folder creation leaves the folder and project state unchan
 test('Folder media creates one recent project, copies loose media without moving it, and adds an undoable still', async () => {
   const page = await app!.firstWindow();
   const original = await readFile(path.join(root, 'red.png'));
-  await page.getByRole('button', { name: 'Browse media folder', exact: true }).click();
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByRole('button', { name: 'Open project', exact: true }).click();
   await page.getByRole('button', { name: 'Create project here', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Add text', exact: true })).toBeEnabled();
   const before = await page.evaluate(() => window.cutroom.invoke('project.current', {}));
@@ -59,15 +61,15 @@ test('Folder media creates one recent project, copies loose media without moving
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   await expect(page.locator('.recent-list > li')).toHaveCount(1);
   await expect(page.locator('.recent-list')).toContainText(root);
-  await page.getByRole('button', { name: 'Folder media', exact: true }).click();
+  await page.locator('.recent-list > li').getByRole('button', { name: 'Open', exact: true }).click();
   const loose = page.getByRole('region', { name: 'Folder root', exact: true });
-  await expect(loose.getByRole('button', { name: 'Preview red.png', exact: true })).toBeVisible();
+  await loose.getByRole('button', { name: 'Select red.png', exact: true }).click();
   await loose.getByRole('button', { name: 'Copy into Footage', exact: true }).click();
   await expect(page.getByText('Copied to Footage. Original kept.', { exact: true })).toBeVisible();
   expect(await readFile(path.join(root, 'red.png'))).toEqual(original);
   expect(await readFile(path.join(root, 'raw/red.png'))).toEqual(original);
   await loose.getByRole('button', { name: 'Add to timeline', exact: true }).click();
-  await expect(page.getByRole('tab', { name: 'Editor', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: /^red\.png, Video \(main\)/ })).toBeVisible();
   const added = await page.evaluate(() => window.cutroom.invoke('timeline.get', {}));
   expect(added.ok).toBe(true);
   if (!added.ok) throw new Error(added.error.message);
