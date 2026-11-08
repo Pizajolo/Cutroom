@@ -68,7 +68,7 @@ const audioSchema = z.object({
 export const itemSchema = z.discriminatedUnion('type', [clipSchema, compositionSchema, textSchema, captionSchema, audioSchema]);
 export type TimelineItem = z.infer<typeof itemSchema>;
 export const trackSchema = z.object({
-  id: z.string().min(1), kind: z.enum(TRACK_KINDS), name: z.string(), muted: z.boolean(), solo: z.boolean(), items: z.array(itemSchema),
+  id: z.string().min(1), kind: z.enum(TRACK_KINDS), name: z.string(), muted: z.boolean(), solo: z.boolean(), locked: z.boolean().optional(), items: z.array(itemSchema),
 }).strict();
 export type Track = z.infer<typeof trackSchema>;
 export const markerSchema = z.object({

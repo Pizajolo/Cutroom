@@ -4,7 +4,7 @@ import { itemIdSchema, itemSchema } from './timeline';
 import { timeRangeSchema } from './export';
 
 export const agentModeSchema = z.enum(['edit', 'ask']);
-export const agentStatusSchema = z.enum(['starting', 'idle', 'thinking', 'running', 'waiting_permission', 'interrupted', 'finished']);
+export const agentStatusSchema = z.enum(['starting', 'idle', 'thinking', 'running', 'waiting_permission', 'waiting_input', 'interrupted', 'finished']);
 export const agentSessionSchema = z.object({
   id: z.string().min(1), projectId: z.string().min(1), mode: agentModeSchema, model: z.string(), status: agentStatusSchema, createdAt: z.string().datetime(),
 }).strict();
@@ -17,7 +17,11 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   z.object({ ...session, type: z.literal('message'), role: z.enum(['user', 'assistant']), text: z.string() }).strict(),
   z.object({ ...session, type: z.literal('tool_start'), toolUseId: z.string().min(1), name: z.string(), input: z.record(z.unknown()) }).strict(),
   z.object({ ...session, type: z.literal('tool_end'), toolUseId: z.string().min(1), name: z.string(), output: z.unknown(), isError: z.boolean() }).strict(),
-  z.object({ ...session, type: z.literal('permission_request'), requestId: z.string().min(1), tool: z.string(), description: z.string(), input: z.record(z.unknown()) }).strict(),
+  z.object({ ...session, type: z.literal('permission_request'), requestId: z.string().min(1), tool: z.string(), description: z.string(), input: z.record(z.unknown()), rememberable: z.boolean() }).strict(),
+  z.object({ ...session, type: z.literal('question_request'), requestId: z.string().min(1), questions: z.array(z.object({
+    question: z.string().min(1), header: z.string(), multiSelect: z.boolean(),
+    options: z.array(z.object({ label: z.string().min(1), description: z.string() }).strict()),
+  }).strict()).min(1) }).strict(),
   z.object({ ...session, type: z.literal('change'), requestId: z.string().min(1), itemId: itemIdSchema, paths: z.array(z.string()), before: itemSchema.nullable(), after: itemSchema.nullable() }).strict(),
   z.object({ ...session, type: z.literal('result'), costUsd: z.number().finite().nonnegative().optional(), inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }).strict(),
   z.object({ ...session, type: z.literal('error'), code: z.string(), message: z.string() }).strict(),

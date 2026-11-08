@@ -16,6 +16,7 @@ import { extensionConfigSchema, extensionIdSchema, extensionInfoSchema, extensio
 import { toolInfoSchema, mediaFileSchema, thumbnailSchema, waveformSchema, importDestinationSchema } from '../schema/media';
 import { whisperModelInfoSchema, whisperModelNameSchema } from '../schema/models';
 import { accountInfoSchema, accountMethodSchema, claudeCodeStatusSchema, providerSchema } from '../schema/accounts';
+import { skillIdSchema, videoSkillSchema, videoSkillDetailSchema } from '../schema/skills';
 
 const toolRequestSchema = z.object({ name: z.string().regex(/^[a-z][a-z0-9-]*$/) }).strict();
 const modelRequestSchema = z.object({ name: whisperModelNameSchema }).strict();
@@ -48,6 +49,7 @@ export const contract = {
     'tools.list': { req: z.object({}).strict(), res: z.array(toolInfoSchema) },
     'tools.install': { req: toolRequestSchema, res: okSchema },
     'tools.cancelInstall': { req: toolRequestSchema, res: okSchema },
+    'tools.installPrerequisite': { req: z.object({ name: z.literal('xcode-clt') }).strict(), res: okSchema },
     'tools.checkUpdate': { req: toolRequestSchema, res: z.object({ current: z.string(), latest: z.string().nullable() }).strict() },
     'tools.update': { req: toolRequestSchema, res: okSchema },
     'models.list': { req: z.object({}).strict(), res: z.array(whisperModelInfoSchema) },
@@ -105,9 +107,14 @@ export const contract = {
     'compositions.render': { req: z.object({ itemId: itemIdSchema.refine((id) => id.startsWith('composition_'), 'Expected a composition id') }).strict(), res: jobStartedSchema },
     'agent.sessions.list': { req: emptySchema, res: z.array(agentSessionSchema) },
     'agent.start': { req: z.object({ mode: agentModeSchema, model: z.string().min(1).max(200).optional() }).strict(), res: z.object({ sessionId: z.string().min(1) }).strict() },
-    'agent.send': { req: z.object({ sessionId: z.string().min(1), text: z.string().trim().min(1).max(100_000), context: agentContextSchema.optional() }).strict(), res: okSchema },
+    'agent.send': { req: z.object({ sessionId: z.string().min(1), text: z.string().trim().min(1).max(100_000), context: agentContextSchema.optional(), skillId: skillIdSchema.optional() }).strict(), res: okSchema },
     'agent.interrupt': { req: sessionRequestSchema, res: okSchema },
-    'agent.respondPermission': { req: z.object({ requestId: z.string().min(1), allow: z.boolean(), message: z.string().max(5000).optional() }).strict(), res: okSchema },
+    'agent.respondPermission': { req: z.object({ requestId: z.string().min(1), allow: z.boolean(), message: z.string().max(5000).optional(), scope: z.enum(['once', 'session']).optional() }).strict(), res: okSchema },
+    'agent.respondQuestion': { req: z.object({ requestId: z.string().min(1), answers: z.record(z.union([z.string(), z.array(z.string())])), response: z.string().max(5000).optional() }).strict(), res: okSchema },
+    'skills.list': { req: emptySchema, res: z.array(videoSkillSchema) },
+    'skills.get': { req: z.object({ id: skillIdSchema }).strict(), res: videoSkillDetailSchema },
+    'skills.save': { req: videoSkillDetailSchema.pick({ id: true, name: true, description: true, instructions: true }).extend({ id: skillIdSchema.optional() }).strict(), res: videoSkillDetailSchema },
+    'skills.delete': { req: z.object({ id: skillIdSchema }).strict(), res: okSchema },
     'agent.review.keep': { req: z.object(reviewRequest).strict(), res: timelineStateSchema },
     'agent.review.revert': { req: z.object({ ...reviewRequest, resolution: z.enum(['keepCurrent', 'restoreOriginal']).optional() }).strict(), res: timelineStateSchema },
     'accounts.codex.status': { req: emptySchema, res: codexStatusSchema },
@@ -140,6 +147,7 @@ export const contract = {
     'jobs.changed': z.array(jobInfoSchema),
     'settings.changed': globalSettingsSchema,
     'agent.event': agentEventSchema,
+    'skills.changed': z.array(videoSkillSchema),
     'media.changed': z.object({ projectId: z.string(), rels: z.array(projectPathSchema) }).strict(),
     'media.progress': z.object({ projectId: z.string(), rel: projectPathSchema, stage: z.enum(['probe', 'thumbnails', 'waveform', 'import']), progress: z.number().finite().min(0).max(1) }).strict(),
   },

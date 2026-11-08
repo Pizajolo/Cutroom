@@ -38,12 +38,14 @@ export const renderPresetsSettingsSchema = z.object({
 // Credentials are Keychain references only; never persist tokens or API keys here.
 export const globalSettingsSchema = z.object({
   ...shared, version: z.literal(2), voiceInput: voiceInputSettingsSchema, sandbox: sandboxSettingsSchema,
+  agent: z.object({ approvalMode: z.enum(['auto', 'ask']) }).strict().default({ approvalMode: 'auto' }),
   snapshots: snapshotSettingsSchema, renderPresets: renderPresetsSettingsSchema, extensions: z.array(storedExtensionSchema).max(100),
 }).strict();
 export type GlobalSettings = z.infer<typeof globalSettingsSchema>;
 // Authentication and extensions have their own mutation channels; no credential references in patches.
 export const settingsPatchSchema = z.object({
   appearance: shared.appearance.optional(), defaultEngine: shared.defaultEngine.optional(),
+  agent: globalSettingsSchema.shape.agent.removeDefault().partial().optional(),
   voiceInput: voiceInputSettingsSchema.partial().optional(), whisperModel: shared.whisperModel.optional(),
   remotionLicenseAcknowledgedAt: shared.remotionLicenseAcknowledgedAt.optional(),
   renderPresets: renderPresetsSettingsSchema.optional(), sandbox: sandboxSettingsSchema.partial().optional(), snapshots: snapshotSettingsSchema.partial().optional(),
@@ -65,7 +67,7 @@ export function migrateGlobalSettings(value: unknown): GlobalSettings {
 }
 export function defaultGlobalSettings(): GlobalSettings {
   return globalSettingsSchema.parse({
-    version: 2, appearance: 'system', defaultEngine: 'hyperframes', claude: { auth: 'claude-code' }, elevenLabs: {},
+    version: 2, appearance: 'system', defaultEngine: 'hyperframes', agent: { approvalMode: 'auto' }, claude: { auth: 'claude-code' }, elevenLabs: {},
     voiceInput: { engine: 'whisper', model: 'base' }, whisperModel: 'base', remotionLicenseAcknowledgedAt: null,
     sandbox: { networkByDefault: false, allowShell: false, allowWeb: false, allowedDomains: [] },
     snapshots: { retainDays: 30, maxBytes: 10 * 1024 ** 3, autoBeforeAgent: true, autoBeforeExport: true },

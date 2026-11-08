@@ -17,6 +17,7 @@ export const schemaCatalog = {
   cleanPreview: schemas.cleanPreviewSchema, snapshotInfo: schemas.snapshotInfoSchema,
   transcript: schemas.transcriptSchema, urlMetadata: schemas.urlMetadataSchema, urlFormat: schemas.urlFormatSchema,
   compositionTemplate: schemas.compositionTemplateSchema, compositionInfo: schemas.compositionInfoSchema, compositionCheck: schemas.compositionCheckSchema,
+  videoSkill: schemas.videoSkillSchema, videoSkillDetail: schemas.videoSkillDetailSchema,
   agentSession: schemas.agentSessionSchema, agentContext: schemas.agentContextSchema, agentEvent: schemas.agentEventSchema, codexStatus: schemas.codexStatusSchema,
   audioGenerate: schemas.audioGenerateRequestSchema, audioVoice: schemas.audioVoiceSchema,
   extensionConfig: schemas.extensionConfigSchema, storedExtension: schemas.storedExtensionSchema, extensionInfo: schemas.extensionInfoSchema, extensionValidation: schemas.extensionValidationSchema,

@@ -57,7 +57,7 @@ describe('editable props', () => {
 });
 describe('settings and installation schema round trips', () => {
   it.each([
-    ['tool', toolInfoSchema, { name: 'ffmpeg', version: '9.0.2', path: '/tools/ffmpeg', source: 'downloaded', status: 'ok', verification: 'upstream', install: null, updatable: true, latestVersion: '9.0.3', hint: null }],
+    ['tool', toolInfoSchema, { name: 'ffmpeg', version: '9.0.2', path: '/tools/ffmpeg', source: 'downloaded', status: 'ok', verification: 'upstream', install: null, updatable: true, latestVersion: '9.0.3', hint: null, action: null }],
     ['install', installStateSchema, { state: 'downloading', received: 42, total: 100 }],
     ['model', whisperModelInfoSchema, { name: 'large-v3-turbo', sizeBytes: 100, status: 'missing', install: { state: 'queued', received: 0, total: null }, isDefault: false }],
     ['account', accountInfoSchema, { provider: 'openai', status: 'connected', method: 'api-key', keyPreview: '…1234', detail: null, checkedAt: '2026-11-01T12:00:00.000Z' }],

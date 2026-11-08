@@ -6,8 +6,8 @@ import { SettingsStore } from '@main/settings/store';
 import { defaultGlobalSettings, globalSettingsSchema, globalSettingsV1Schema } from '@shared/schema/settings';
 
 function legacySettings() {
-  const { voiceInput, sandbox, snapshots, renderPresets, extensions: _extensions, ...rest } = defaultGlobalSettings();
-  void _extensions;
+  const { voiceInput, sandbox, snapshots, renderPresets, extensions: _extensions, agent: _agent, ...rest } = defaultGlobalSettings();
+  void _extensions; void _agent;
   return globalSettingsV1Schema.parse({
     ...rest, version: 1, voiceInput: voiceInput.engine, renderPreset: renderPresets.defaultId,
     sandbox: { networkByDefault: sandbox.networkByDefault, allowedDomains: sandbox.allowedDomains },
@@ -23,6 +23,13 @@ describe('settings store', () => {
   it('loads defaults from a missing file without writing it', async () => {
     expect((await SettingsStore.load(home)).get()).toEqual(defaultGlobalSettings());
     expect(await readdir(home)).toEqual([]);
+  });
+  it('loads an existing v2 file without agent settings using auto approval', async () => {
+    const { agent: _agent, ...old } = defaultGlobalSettings(); void _agent;
+    old.appearance = 'dark';
+    await writeFile(path.join(home, 'settings.json'), JSON.stringify(old));
+    const store = await SettingsStore.load(home);
+    expect(store.get()).toEqual({ ...old, agent: { approvalMode: 'auto' } });
   });
   it('atomically writes a private file that round-trips and contains only references', async () => {
     const store = await SettingsStore.load(home);

@@ -90,7 +90,7 @@ export class ToolRegistry {
         const hash = pin.sha256 ?? (record?.verification === 'upstream' ? record.sha256 : null);
         const file = path.join(updates, name, pin.version, name);
         const status = await this.verify(file, updates, hash);
-        candidates.push({ name, version: pin.version, path: file, source: compareVersions(pin.version, base.version) > 0 ? 'updated' : 'downloaded', status, verification: status === 'ok' ? (pin.sha256 ? 'pinned' : 'upstream') : null, install: this.installs.get(name) ?? null, updatable: pin.updatable, latestVersion: null, hint: null });
+        candidates.push({ name, version: pin.version, path: file, source: compareVersions(pin.version, base.version) > 0 ? 'updated' : 'downloaded', status, verification: status === 'ok' ? (pin.sha256 ? 'pinned' : 'upstream') : null, install: this.installs.get(name) ?? null, updatable: pin.updatable, latestVersion: null, hint: null, action: null });
         if (pin.bundled) {
           const bundled = path.join(root, name); const status = await this.verify(bundled, root, pin.sha256);
           candidates.push({ ...candidates[candidates.length - 1]!, path: bundled, source: 'bundled', status, verification: status === 'ok' ? 'pinned' : null });

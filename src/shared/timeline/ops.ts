@@ -107,6 +107,7 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
       case 'restoreTrack': {
         const track = trackById(doc, record.track.id);
         inverse = { type: 'restoreTrack', track: trackMetadataSchema.strip().parse(track) };
+        delete track.locked;
         Object.assign(track, structuredClone(record.track)); paths = [`tracks.${track.id}`]; break;
       }
       case 'restoreFormat':
@@ -135,6 +136,31 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
     item.duration = quantize(item.duration, doc.format.fps);
     if (item.duration <= 0 || item.start < 0) fail('out_of_bounds', 'Item must occupy at least one frame');
   };
+  const trim = (item: TimelineItem, edge: 'start' | 'end', requestedTime: number): void => {
+    const oldStart = item.start; const oldEnd = endOf(item); const rate = item.type === 'clip' ? item.speed : 1;
+    let time = quantize(requestedTime, fps);
+    if (edge === 'start') {
+      const earliest = media(item) ? Math.max(0, item.start - item.in / rate) : 0;
+      time = Math.max(Math.ceil((earliest - 1e-8) * fps) / fps, Math.min(time, oldEnd - 1 / fps));
+      if (media(item)) item.in = Math.max(0, item.in + (time - item.start) * rate);
+      item.duration = oldEnd - time; item.start = time;
+    } else {
+      const sourceDuration = media(item) ? ctx.sourceDurations?.[item.src] : undefined;
+      const latest = sourceDuration !== undefined && media(item) ? item.start + (sourceDuration - item.in) / rate : Infinity;
+      time = Math.min(Math.floor((latest + 1e-8) * fps) / fps, Math.max(time, item.start + 1 / fps));
+      if (time <= item.start) fail('out_of_bounds', 'Source has no remaining frame');
+      if (media(item)) item.out = item.in + (time - item.start) * rate;
+      item.duration = time - item.start;
+    }
+    quantizeItem(item);
+    if (item.type === 'caption') {
+      const offset = item.start - oldStart;
+      item.words = item.words.map((word) => ({ ...word, start: Math.max(0, word.start - offset), end: Math.min(item.duration, word.end - offset) }))
+        .filter((word) => word.end > word.start);
+      if (!item.words.some((word) => word.id === item.highlight)) item.highlight = null;
+    }
+    touch(item, 'start', 'duration', ...(media(item) ? ['in', 'out'] : []), ...(item.type === 'caption' ? ['words', 'highlight'] : []));
+  };
   switch (op.type) {
     case 'addItem': {
       const track = trackById(doc, op.trackId);
@@ -144,40 +170,63 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
       if (index > track.items.length) fail('out_of_bounds', 'Item index out of bounds');
       track.items.splice(index, 0, item); touch(item, '*'); break;
     }
-    case 'moveItem': {
-      const found = locate(doc, op.itemId);
-      if (op.trackId && op.trackId !== found.track.id) {
-        const target = trackById(doc, op.trackId);
-        found.track.items.splice(found.index, 1); target.items.push(found.item);
-        paths.add(`items.${found.item.id}.trackId`);
+    case 'moveItem': case 'moveItems': {
+      const moves = op.type === 'moveItems' ? op.moves : [op];
+      if (new Set(moves.map((move) => move.itemId)).size !== moves.length) fail('invalid', 'Duplicate moved item');
+      for (const move of moves) {
+        const found = locate(doc, move.itemId);
+        if (move.trackId && move.trackId !== found.track.id) {
+          const target = trackById(doc, move.trackId);
+          found.track.items.splice(found.index, 1); target.items.push(found.item);
+          paths.add(`items.${found.item.id}.trackId`);
+        }
+        found.item.start = move.start; quantizeItem(found.item); touch(found.item, 'start');
       }
-      found.item.start = op.start; quantizeItem(found.item); touch(found.item, 'start'); break;
+      break;
     }
-    case 'trimItem': {
+    case 'trimItem': case 'rippleTrim': {
+      const { track, item } = locate(doc, op.itemId);
+      const oldStart = item.start; const oldEnd = endOf(item); const oldDuration = item.duration;
+      trim(item, op.edge, op.time);
+      if (op.type === 'rippleTrim') {
+        item.start = oldStart; quantizeItem(item);
+        for (const next of track.items) if (next.id !== item.id && next.start >= oldEnd - 1e-8) {
+          next.start += item.duration - oldDuration; quantizeItem(next); touch(next, 'start');
+        }
+      }
+      break;
+    }
+    case 'slipItem': {
       const { item } = locate(doc, op.itemId);
-      const oldStart = item.start; const oldEnd = endOf(item); const rate = item.type === 'clip' ? item.speed : 1;
-      let time = quantize(op.time, fps);
-      if (op.edge === 'start') {
-        const earliest = media(item) ? Math.max(0, item.start - item.in / rate) : 0;
-        time = Math.max(Math.ceil((earliest - 1e-8) * fps) / fps, Math.min(time, oldEnd - 1 / fps));
-        if (media(item)) item.in = Math.max(0, item.in + (time - item.start) * rate);
-        item.duration = oldEnd - time; item.start = time;
-      } else {
-        const sourceDuration = media(item) ? ctx.sourceDurations?.[item.src] : undefined;
-        const latest = sourceDuration !== undefined && media(item) ? item.start + (sourceDuration - item.in) / rate : Infinity;
-        time = Math.min(Math.floor((latest + 1e-8) * fps) / fps, Math.max(time, item.start + 1 / fps));
-        if (time <= item.start) fail('out_of_bounds', 'Source has no remaining frame');
-        if (media(item)) item.out = item.in + (time - item.start) * rate;
-        item.duration = time - item.start;
+      if (!media(item)) return fail('invalid', 'Only media items can be slipped');
+      const sourceDuration = ctx.sourceDurations?.[item.src];
+      const delta = Math.max(-item.in, Math.min(op.delta, sourceDuration === undefined ? Infinity : sourceDuration - item.out));
+      item.in += delta; item.out += delta; touch(item, 'in', 'out'); break;
+    }
+    case 'rollEdit': {
+      const left = locate(doc, op.leftItemId); const right = locate(doc, op.rightItemId);
+      if (left.item.id === right.item.id || left.track.id !== right.track.id || Math.abs(endOf(left.item) - right.item.start) > 1e-8) fail('invalid', 'Roll edit requires adjacent items on one track');
+      const leftRate = left.item.type === 'clip' ? left.item.speed : 1;
+      const rightRate = right.item.type === 'clip' ? right.item.speed : 1;
+      const sourceDuration = media(left.item) ? ctx.sourceDurations?.[left.item.src] : undefined;
+      const earliest = Math.max(left.item.start + 1 / fps, media(right.item) ? right.item.start - right.item.in / rightRate : 0);
+      const latest = Math.min(endOf(right.item) - 1 / fps, sourceDuration !== undefined && media(left.item) ? left.item.start + (sourceDuration - left.item.in) / leftRate : Infinity);
+      const minimum = Math.ceil((earliest - 1e-8) * fps) / fps; const maximum = Math.floor((latest + 1e-8) * fps) / fps;
+      if (minimum > maximum) fail('out_of_bounds', 'Source has no remaining frame');
+      const time = Math.max(minimum, Math.min(quantize(op.time, fps), maximum));
+      trim(left.item, 'end', time); trim(right.item, 'start', time); break;
+    }
+    case 'closeGap': {
+      const track = trackById(doc, op.trackId); const at = quantize(op.at, fps);
+      if (track.items.some((item) => item.start <= at && at < endOf(item))) fail('out_of_bounds', 'Time must be inside an empty gap');
+      const nextStart = Math.min(...track.items.filter((item) => item.start > at).map((item) => item.start));
+      if (!Number.isFinite(nextStart)) fail('out_of_bounds', 'Time must be inside an empty gap');
+      const gapStart = Math.max(0, ...track.items.filter((item) => endOf(item) <= at).map(endOf));
+      const duration = nextStart - gapStart;
+      for (const item of track.items) if (item.start >= nextStart - 1e-8) {
+        item.start -= duration; quantizeItem(item); touch(item, 'start');
       }
-      quantizeItem(item);
-      if (item.type === 'caption') {
-        const offset = item.start - oldStart;
-        item.words = item.words.map((word) => ({ ...word, start: Math.max(0, word.start - offset), end: Math.min(item.duration, word.end - offset) }))
-          .filter((word) => word.end > word.start);
-        if (!item.words.some((word) => word.id === item.highlight)) item.highlight = null;
-      }
-      touch(item, 'start', 'duration', ...(media(item) ? ['in', 'out'] : []), ...(item.type === 'caption' ? ['words', 'highlight'] : [])); break;
+      break;
     }
     case 'splitItem': {
       const { track, item, index } = locate(doc, op.itemId);
@@ -229,7 +278,7 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
     }
     case 'setTrack': {
       const track = trackById(doc, op.trackId);
-      for (const key of ['muted', 'solo', 'name'] as const) {
+      for (const key of ['muted', 'solo', 'name', 'locked'] as const) {
         const value = op[key];
         if (value !== undefined) { Object.assign(track, { [key]: value }); paths.add(`tracks.${track.id}.${key}`); }
       }
@@ -254,12 +303,17 @@ export function applyOp(original: TimelineDoc, input: HistoryOp, ctx: OpContext 
       doc.markers.splice(index, 1); paths.add(`markers.${op.markerId}`); break;
     }
   }
+  for (const track of [...original.tracks, ...doc.tracks]) {
+    if (track.locked && track.items.some((item) => touched.has(item.id))) fail('invalid', 'Track is locked');
+  }
   validate(doc, ctx);
   const inverse: HistoryOp[] = [];
   for (const id of touched) {
     const current = locate(doc.tracks.some((track) => track.items.some((item) => item.id === id)) ? doc : original, id);
     inverse.push(itemSnapshot(original, id, current.track.id, current.index));
   }
+  // Restore lower array indices first, even when group moves were requested in reverse order.
+  if (op.type === 'moveItems') inverse.sort((a, b) => a.type === 'restoreItem' && b.type === 'restoreItem' ? a.index - b.index : 0);
   if (op.type === 'setTrack') inverse.push({ type: 'restoreTrack', track: trackMetadataSchema.strip().parse(trackById(original, op.trackId)) });
   if (op.type === 'setFormat') inverse.push({ type: 'restoreFormat', format: structuredClone(original.format) });
   if (op.type === 'addMarker') inverse.push(markerSnapshot(original, op.marker.id));
