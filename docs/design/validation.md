@@ -83,11 +83,27 @@ Geometry check at 390×844 for all five settings sections plus extension edit/re
 
 Attempted `app_start` before review. The app exited 127: `sh: electron-vite: command not found` in this designer worktree. Used the tool's working-folder HTTP server for the static references instead. No dependency installation, npm/typecheck/lint/unit suite, native login, microphone capture, Keychain change, media operation or live MCP connection was performed in this design step.
 
+## Chat-first supplement review (2026-11-08)
+
+Current handoff: round6.md and its component overrides. Added three static offline references importing production tokens directly: round6.html, round6-chat.html and round6-timeline.html (including #export / #rendering).
+
+Browser review and measurements:
+
+- Main desk screenshot-reviewed at1440×900,1120×800,1024×680 with Media open, and390×844 reading layout. Additional1280×800 snapshot/geometry check. Document scroll widths exactly1440/1280/1120/1024/390 respectively; no horizontal document overflow. Upper columns measured380/704/300 at1440,380/544/300 at1280,320/472/272 at1120 and320/368/280 at1024 with Media open. Composer remained within the upper region at every measured desktop size. At1024 Media starts closed and the visible Media link opens the single dock via a static fragment.
+- Preview corrected after first screenshot to constrain both axes without cropping the output frame; measured width/height ratio1.7779 at1440,1120 and1024. Reduced sample transcript length so the compact review card is visible at1440; shorter-height streams intentionally scroll independently from the composer.
+- Chat decisions screenshot-reviewed at1440×900 and390×844: options, explicit Other input, permission session action, rights exception, review details and video types. Iterated Other visibility to follow the selected radio and illustrated a free-text45-second answer. Real requests start unselected; the mockup explicitly labels its preselected illustration. Native Tab from Other reached its input; computed focus outline2px solid rgb(175,215,255), offset2px.
+- Timeline group-move/snap/locked and invalid-placement reference screenshot-reviewed at1440×900. Corrected sample group delta and In/Out band geometry to match labels. Export settings screenshot-reviewed at1440×900 and390×844; narrow dialog width342px, inner scrollWidth340px, footer bottom756px in844px viewport. Export video switches to the static rendering view; narrow rendering screenshot also reviewed. No actual render is started.
+- Added a compact Close panel link and removed secondary preview size metadata in compact widths so the actual controls remain legible. In production use the specified focus restoration, not fragment navigation.
+
+Contrast rechecked in-browser from the actual dark tokens: primary/panel12.74:1, secondary/panel7.97:1, muted/panel6.13:1, muted/raised5.51:1, button text/accent9.06:1, focus/panel9.99:1, necessary input border/input3.62:1. No colour values changed; existing system-light token checks remain applicable. This is a token-level check, not full application WCAG certification. Browser-fetched normalized custom-property declarations in docs/design/tokens.css and src/renderer/styles/tokens.css were equivalent after the additive geometry update. Browser console reported no new messages in the reviewed session.
+
+Attempted app_start before review; it exited1 with ERR_MODULE_NOT_FOUND for vite in this designer worktree. Used the browser tool's working-folder HTTP server for static references. No dependency installs, product logic changes, npm/typecheck/lint/unit suite, actual Whisper build/transcription, IPC, permission response or native dialog operations were run. Runtime approval/gating, keyboard editing, splitter persistence and service acceptance remain frontend/backend/QA gates.
+
 ## Limits and implementation follow-through
 
 - Mockups are static HTML/CSS, with real links between the four references and CSS-target switching for Export. Many controls illustrate appearance and intentionally do not edit media or run jobs. Sample usage, amounts, times and completed checks are fictional design content.
 - Production uses Lucide React rather than treating the mockup's small illustrative SVG symbol sheet as a new icon library.
 - Mockups force dark for deterministic review. Production does not: tokens follow system `prefers-color-scheme`. Light values were inspected by applying the light rule set, not by changing macOS settings.
-- The compact reference retains a pinned Inspector. Production follows spec §2 for a dismissible upper-workspace sheet below 1120 px, with preview/timeline unobscured when it is closed.
+- Historical references retain the former dock layouts. Current production handoff is round6.md: persistent left chat, one right Media/Inspector/Audio/Transcript panel, nonmodal beside-preview compact dock. Do not implement a canvas-covering sheet from the older notes.
 - Keyboard/focus/ARIA requirements are documented for implementation; static visual controls are not evidence those behaviours pass production tests.
 - No npm, Electron, rendering, media-import or application test suite was run in this design-only step. Those are separate developer/QA gates.

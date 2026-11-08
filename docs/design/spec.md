@@ -2,6 +2,8 @@
 
 Version 1 · 2026-11-01 · implementation handoff
 
+**Current overrides (2026-11-08): [round6.md](round6.md)** supersedes §2 and conflicting media, timeline, assistant and keyboard details (§§3/5/11/15). Use its chat-first single-screen layout, not the older project-tab/dock mockups below.
+
 **Build order:** §§1–8 are the first renderer milestone. §§9–15 extend the same shell. This is a design target, not a claim that the features already exist. Use real backend capability/status; never make a disabled feature look operational.
 
 Companion files:
