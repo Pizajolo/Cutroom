@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
+import { Pause, Play, Repeat2, SkipBack, SkipForward } from 'lucide-react';
+import { jumpEdit, jumpSeconds, toggleLoop } from '../timeline/navigation';
 import { formatTimecode, parseTimecode } from '../../lib/time';
 import { previewClock, useClock } from './store';
 
@@ -28,13 +29,17 @@ export function Transport() {
   const duration = useClock((state) => state.duration);
   const fps = useClock((state) => state.fps);
   const rate = useClock((state) => state.rate);
+  const loop = useClock((state) => state.loop);
   return <div className="transport" aria-label="Playback controls">
     <div className="transport-buttons">
-      <button type="button" className="icon-button" aria-label="Go to start" disabled={!duration} onClick={() => previewClock.seek(0)}><SkipBack size={16} /></button>
+      <button type="button" className="icon-button" aria-label="Previous edit" title="Previous edit (↑)" disabled={!duration} onClick={() => jumpEdit(-1)}><SkipBack size={16} /></button>
+      {[-5, -1].map((seconds) => <button key={seconds} className="button quiet-button" aria-label={`Back ${-seconds} seconds`} disabled={!duration} onClick={() => jumpSeconds(seconds)}>{seconds}s</button>)}
       <button type="button" className="icon-button play-button" aria-label={playing ? 'Pause' : 'Play'} title="Play / pause (Space)" disabled={!duration} onClick={() => previewClock.toggle()}>{playing ? <Pause size={18} /> : <Play size={18} />}</button>
-      <button type="button" className="icon-button" aria-label="Go to end" disabled={!duration} onClick={() => previewClock.seek(duration)}><SkipForward size={16} /></button>
+      {[1, 5].map((seconds) => <button key={seconds} className="button quiet-button" aria-label={`Forward ${seconds} seconds`} disabled={!duration} onClick={() => jumpSeconds(seconds)}>+{seconds}s</button>)}
+      <button type="button" className="icon-button" aria-label="Next edit" title="Next edit (↓)" disabled={!duration} onClick={() => jumpEdit(1)}><SkipForward size={16} /></button>
     </div>
     <SeekField /><span className="quiet">/</span><span className="timecode">{formatTimecode(duration, fps)}</span>
+    <button className="icon-button" aria-label="Loop" title="Loop range or whole edit (⌘L)" aria-pressed={!!loop} disabled={!duration} onClick={toggleLoop}><Repeat2 size={16} /></button>
     {playing && rate !== 1 && <span className="playback-rate">{rate}×</span>}
   </div>;
 }

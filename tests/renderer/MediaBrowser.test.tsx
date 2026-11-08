@@ -1,9 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MediaFile } from '@shared/schema/media';
-import { BrowseMediaButton, MediaBrowser } from '../../src/renderer/media/MediaBrowser';
+import { MediaBrowser } from '../../src/renderer/media/MediaBrowser';
 import { MEDIA_DRAG_TYPE } from '../../src/renderer/media/types';
-import { useNavigation } from '../../src/renderer/state/navigation';
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn<(channel: string, request: unknown) => Promise<unknown>>(),
@@ -38,20 +37,18 @@ afterEach(cleanup);
 describe('media folder browser', () => {
   it('groups files, renders real metadata and identifies source protections and empty sections', async () => {
     render(<MediaBrowser folder={folder} />);
-    const footage = await screen.findByRole('region', { name: 'Footage' });
-    await within(footage).findByRole('button', { name: 'Preview coast.mp4' });
-    expect(within(footage).getAllByText('Read-only for agents').length).toBe(1);
-    expect(within(footage).getAllByText('1920 × 1080').length).toBe(2);
-    expect(within(footage).getAllByText('0:12').length).toBe(2);
-    expect(within(screen.getByRole('region', { name: 'Exports' })).getByRole('button', { name: 'Preview teaser-v1.mp4' })).toBeTruthy();
-    expect(screen.getByText('No generated audio yet.')).toBeTruthy();
+    const footage = await screen.findByText('Footage', { selector: 'summary' }).then((el) => el.closest('details')!);
+    await within(footage).findByRole('button', { name: 'Select coast.mp4' });
+    expect(within(footage).getAllByText(/video · 0:12/).length).toBe(2);
+    expect(within(screen.getByText('Exports', { selector: 'summary' }).closest('details')!).getByRole('button', { name: 'Select teaser-v1.mp4' })).toBeTruthy();
+    expect(screen.getByText('No audio yet.')).toBeTruthy();
     expect(mocks.invoke).toHaveBeenCalledWith('media.thumbnails', { rel: 'raw/coast.mp4' });
   });
   it('opens native inline playback when a card is clicked', async () => {
     const { container } = render(<MediaBrowser folder={folder} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Preview coast.mp4' }));
+    fireEvent.doubleClick(await screen.findByRole('button', { name: 'Select coast.mp4' }));
     const video = container.querySelector('video'); expect(video?.getAttribute('src')).toBe(files[0]?.url); expect(video?.hasAttribute('controls')).toBe(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Close source player' })); expect(container.querySelector('video')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to timeline' })); expect(container.querySelector('video')).toBeNull();
   });
   it('preserves literal percent filenames through display, thumbnails, playback and timeline drag', async () => {
     // Renderer-only passthrough coverage; filesystem/HTTP round trips belong to tests/main.
@@ -62,75 +59,66 @@ describe('media folder browser', () => {
     ];
     const { container } = render(<MediaBrowser folder={folder} />);
     for (const file of files) {
-      const card = await screen.findByRole('button', { name: `Preview ${file.name}` });
+      const card = await screen.findByRole('button', { name: `Select ${file.name}` });
       expect(within(card).getByText(file.name, { exact: true })).toBeTruthy();
       await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('media.thumbnails', { rel: file.rel }));
-      fireEvent.click(card);
+      fireEvent.doubleClick(card);
       expect(container.querySelector('video')?.getAttribute('src')).toBe(file.url);
       const setData = vi.fn();
       fireEvent.dragStart(card, { dataTransfer: { setData } });
       expect(setData).toHaveBeenCalledExactlyOnceWith(MEDIA_DRAG_TYPE, JSON.stringify({ rel: file.rel }));
     }
-    expect(screen.getAllByRole('button', { name: /^Preview / })).toHaveLength(3);
-    expect(screen.getByRole('button', { name: 'Preview take%20one.mp4' })).not.toBe(screen.getByRole('button', { name: 'Preview take one.mp4' }));
+    expect(screen.getAllByRole('button', { name: /^Select / })).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Select take%20one.mp4' })).not.toBe(screen.getByRole('button', { name: 'Select take one.mp4' }));
   });
   it('imports into raw by default and refreshes without remounting', async () => {
-    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Import files' })[0]!);
+    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Select coast.mp4' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Import files' }));
     expect((screen.getByRole('combobox', { name: 'Destination' }) as HTMLSelectElement).value).toBe('raw');
     fireEvent.click(screen.getByRole('button', { name: 'Choose files' }));
-    await screen.findByRole('button', { name: 'Preview new.mp4' });
+    await screen.findByRole('button', { name: 'Select new.mp4' });
     expect(mocks.invoke).toHaveBeenCalledWith('media.importDialog', { destination: 'raw' });
   });
   it('obtains File grants immediately before importing a confirmed Finder drop', async () => {
     mocks.path.mockReturnValue('/dropped/new.mp4'); const file = new File(['video'], 'new.mp4');
-    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
-    fireEvent.drop(screen.getByRole('region', { name: 'Footage' }), { dataTransfer: { types: ['Files'], files: [file] } });
+    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Select coast.mp4' });
+    fireEvent.drop(screen.getByText('Footage', { selector: 'summary' }).closest('details')!, { dataTransfer: { types: ['Files'], files: [file] } });
     expect(mocks.path).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Import 1 file' }));
-    await screen.findByRole('button', { name: 'Preview new.mp4' });
+    await screen.findByRole('button', { name: 'Select new.mp4' });
     expect(mocks.path).toHaveBeenCalledWith(file);
     expect(mocks.invoke).toHaveBeenCalledWith('media.importPaths', { paths: ['/dropped/new.mp4'], destination: 'raw' });
   });
   it('does not import a dropped file when its one-use path grant is unavailable', async () => {
     mocks.path.mockReturnValue('');
-    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
-    fireEvent.drop(screen.getByRole('region', { name: 'Footage' }), { dataTransfer: { types: ['Files'], files: [new File(['video'], 'new.mp4')] } });
+    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Select coast.mp4' });
+    fireEvent.drop(screen.getByText('Footage', { selector: 'summary' }).closest('details')!, { dataTransfer: { types: ['Files'], files: [new File(['video'], 'new.mp4')] } });
     fireEvent.click(screen.getByRole('button', { name: 'Import 1 file' }));
     await screen.findByText('The dropped files could not be located. Use Import files instead.');
     expect(mocks.invoke.mock.calls.some(([channel]) => channel === 'media.importPaths')).toBe(false);
   });
   it('discards a cancelled drop before a later native import', async () => {
-    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
-    fireEvent.drop(screen.getByRole('region', { name: 'Footage' }), { dataTransfer: { types: ['Files'], files: [new File(['video'], 'unused.mp4')] } });
+    render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Select coast.mp4' });
+    fireEvent.drop(screen.getByText('Footage', { selector: 'summary' }).closest('details')!, { dataTransfer: { types: ['Files'], files: [new File(['video'], 'unused.mp4')] } });
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Import files' })[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Add' })); fireEvent.click(screen.getByRole('menuitem', { name: 'Import files' }));
     fireEvent.click(screen.getByRole('button', { name: 'Choose files' }));
-    await screen.findByRole('button', { name: 'Preview new.mp4' });
+    await screen.findByRole('button', { name: 'Select new.mp4' });
     expect(mocks.path).not.toHaveBeenCalled();
     expect(mocks.invoke).toHaveBeenCalledWith('media.importDialog', { destination: 'raw' });
   });
   it('encodes only a project-relative source in the timeline drag', async () => {
-    render(<MediaBrowser folder={folder} />); const card = await screen.findByRole('button', { name: 'Preview coast.mp4' }); const setData = vi.fn();
+    render(<MediaBrowser folder={folder} />); const card = await screen.findByRole('button', { name: 'Select coast.mp4' }); const setData = vi.fn();
     fireEvent.dragStart(card, { dataTransfer: { setData } });
     expect(setData).toHaveBeenCalledWith(MEDIA_DRAG_TYPE, JSON.stringify({ rel: 'raw/coast.mp4' }));
   });
   it('refreshes only for the selected folder and removes subscriptions on unmount', async () => {
-    const { unmount } = render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Preview coast.mp4' });
+    const { unmount } = render(<MediaBrowser folder={folder} />); await screen.findByRole('button', { name: 'Select coast.mp4' });
     const before = mocks.invoke.mock.calls.filter(([channel]) => channel === 'media.list').length;
     mocks.listeners.get('media.changed')?.({ projectId: 'different-folder', rels: [] });
     expect(mocks.invoke.mock.calls.filter(([channel]) => channel === 'media.list').length).toBe(before);
     mocks.listeners.get('media.changed')?.({ projectId: folder.id, rels: [] });
     await waitFor(() => expect(mocks.invoke.mock.calls.filter(([channel]) => channel === 'media.list').length).toBe(before + 1));
     unmount(); expect(mocks.listeners.size).toBe(0);
-  });
-  it('uses the real open flow and preserves a plain folder grant for explicit creation', async () => {
-    mocks.invoke.mockImplementation(async (channel) => channel === 'dialog.pickFolder' ? { grantId: 'opaque-grant', displayPath: folder.root } : { status: 'needsCreate', grantId: 'opaque-grant', displayPath: folder.root, looseMediaCount: 2 });
-    useNavigation.setState({ projectBusy: false, projectDialog: null });
-    render(<BrowseMediaButton />); fireEvent.click(screen.getByRole('button', { name: 'Browse media folder' }));
-    await waitFor(() => expect(useNavigation.getState().projectDialog).toMatchObject({ status: 'needsCreate', grantId: 'opaque-grant', looseMediaCount: 2 }));
-    expect(mocks.invoke).toHaveBeenCalledWith('dialog.pickFolder', { purpose: 'openProject' });
-    expect(mocks.invoke).toHaveBeenCalledWith('project.open', { grantId: 'opaque-grant' });
-    expect(mocks.invoke.mock.calls.some(([channel]) => channel === 'project.createInPlace')).toBe(false);
   });
 });

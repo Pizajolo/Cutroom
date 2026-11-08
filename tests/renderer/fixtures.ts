@@ -16,7 +16,7 @@ export function defaultReply(channel: string): unknown {
     case 'app.getInfo': return { version: '0.1.0', platform: 'darwin', arch: 'arm64', homeDir: '/fixture', mediaBaseUrl: null, compBaseUrl: null };
     case 'settings.get': return defaultGlobalSettings();
     case 'project.current': return null;
-    case 'project.listRecent': case 'jobs.list': case 'extensions.list': case 'audio.voices': case 'tools.list': case 'models.list': case 'accounts.list': case 'media.list': case 'snapshots.list': return [];
+    case 'skills.list': case 'timeline.history': case 'project.listRecent': case 'jobs.list': case 'extensions.list': case 'audio.voices': case 'tools.list': case 'models.list': case 'accounts.list': case 'media.list': case 'snapshots.list': return [];
     case 'timeline.get': case 'timeline.apply': case 'timeline.undo': case 'timeline.redo': return { doc: timelineDoc(), revision: 1, canUndo: true, canRedo: false };
     case 'export.presets': return [preset];
     case 'export.preflight': return { canExport: true, blockers: [], unsupportedItems: [] };

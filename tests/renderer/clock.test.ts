@@ -32,6 +32,19 @@ describe('master clock', () => {
     const { clock, callbacks } = fixture(); clock.seek(5); clock.step(1); expect(clock.getSnapshot().time).toBe(151 / 30);
     clock.step(-1); expect(clock.getSnapshot().time).toBe(5); clock.play(); expect(callbacks.size).toBe(1); clock.dispose(); expect(callbacks.size).toBe(0);
   });
+  it('loops without wall-time drift, starts outside ranges at In and pauses immediately', () => {
+    const { clock, advance } = fixture(); clock.setLoop({ start: 2, end: 5 }); clock.seek(10); clock.play();
+    expect(clock.getSnapshot().time).toBe(2); advance(10_250); expect(clock.getSnapshot()).toMatchObject({ time: 3.25, playing: true });
+    clock.pause(); advance(5000); expect(clock.getSnapshot().time).toBe(3.25);
+    clock.play(-1); advance(2000); expect(clock.getSnapshot().time).toBe(4.25);
+    clock.setLoop(null); advance(5000); expect(clock.getSnapshot()).toMatchObject({ time: 0, playing: false });
+  });
+  it('normalizes backwards loop ranges and clears loops when a project becomes empty', () => {
+    const { clock } = fixture(); clock.setLoop({ start: 8, end: 3 }); expect(clock.getSnapshot().loop).toEqual({ start: 3, end: 8 });
+    expect(() => clock.setLoop({ start: 4, end: 4 })).toThrow(); expect(() => clock.setLoop({ start: NaN, end: 5 })).toThrow();
+    clock.configure(5, 30); expect(clock.getSnapshot().loop).toEqual({ start: 3, end: 5 });
+    clock.configure(0, 30); expect(clock.getSnapshot().loop).toBeNull();
+  });
   it('refuses invalid configurations and playback rates', () => {
     const { clock } = fixture(); expect(() => clock.configure(-1, 30)).toThrow(); expect(() => clock.configure(10, 0)).toThrow(); expect(() => clock.play(0)).toThrow(); expect(() => clock.play(Infinity)).toThrow();
   });
