@@ -113,7 +113,7 @@ export class AgentService {
       let settled = false;
       const finish = (allow: boolean): void => { if (settled) return; settled = true; this.permissions.delete(requestId); combined.removeEventListener('abort', abort); if (!combined.aborted) this.status(session, 'running'); resolve(allow); };
       const abort = (): void => finish(false); this.permissions.set(requestId, { sessionId: session.info.id, resolve: finish }); combined.addEventListener('abort', abort, { once: true }); if (combined.aborted) { abort(); return; }
-      this.emit(session, { type: 'permission_request', sessionId: session.info.id, requestId, tool, input, description: tool === 'url_import_download' ? 'Confirm you have the rights to download this video.' : `Allow ${tool} for this request?` });
+      this.emit(session, { type: 'permission_request', sessionId: session.info.id, requestId, tool, input, rememberable: false, description: tool === 'url_import_download' ? 'Confirm you have the rights to download this video.' : `Allow ${tool} for this request?` });
     });
   }
   respond(request: InvokeReq<'agent.respondPermission'>): { ok: true } { const permission = this.permissions.get(request.requestId); if (!permission) throw new IpcFailure({ code: 'not_found', message: 'This permission request expired.' }); this.require(permission.sessionId); permission.resolve(request.allow); return { ok: true }; }
