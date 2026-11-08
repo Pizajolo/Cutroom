@@ -4,6 +4,7 @@ export interface ClockState {
   fps: number;
   rate: number;
   playing: boolean;
+  loop: { start: number; end: number } | null;
 }
 export interface ClockScheduler {
   now: () => number;
@@ -18,7 +19,7 @@ const browserScheduler: ClockScheduler = {
 
 /** The clock is authoritative; media elements follow it, never the other way around. */
 export class MasterClock {
-  private state: ClockState = { time: 0, duration: 0, fps: 30, rate: 1, playing: false };
+  private state: ClockState = { time: 0, duration: 0, fps: 30, rate: 1, playing: false, loop: null };
   private listeners = new Set<(state: ClockState) => void>();
   private anchorTime = 0;
   private anchorWall = 0;
@@ -38,9 +39,19 @@ export class MasterClock {
   configure(duration: number, fps: number): void {
     if (!Number.isFinite(duration) || duration < 0 || !Number.isFinite(fps) || fps <= 0) throw new Error('Invalid clock format');
     this.sample();
-    this.update({ duration, fps, time: Math.min(this.state.time, duration) });
+    const loop = this.state.loop;
+    this.update({ duration, fps, time: Math.min(this.state.time, duration), loop: loop && loop.start < duration ? { start: loop.start, end: Math.min(loop.end, duration) } : null });
     this.anchor();
     if (!duration) this.pause();
+  }
+
+  setLoop(range: { start: number; end: number } | null): void {
+    this.sample();
+    const start = range ? Math.max(0, Math.min(range.start, range.end)) : 0;
+    const end = range ? Math.min(this.state.duration, Math.max(range.start, range.end)) : 0;
+    if (range && (!Number.isFinite(start) || !Number.isFinite(end) || end <= start)) throw new Error('Invalid loop range');
+    this.update({ loop: range ? { start, end } : null });
+    this.anchor();
   }
 
   play(rate = this.state.rate): void {
@@ -48,8 +59,12 @@ export class MasterClock {
     if (!this.state.duration) return;
     this.sample();
     let time = this.state.time;
-    if (rate > 0 && time >= this.state.duration) time = 0;
-    if (rate < 0 && time <= 0) time = this.state.duration;
+    if (this.state.loop) {
+      if (time < this.state.loop.start || time >= this.state.loop.end) time = this.state.loop.start;
+    } else {
+      if (rate > 0 && time >= this.state.duration) time = 0;
+      if (rate < 0 && time <= 0) time = this.state.duration;
+    }
     this.update({ playing: true, rate, time });
     this.anchor();
     this.schedule();
@@ -98,6 +113,12 @@ export class MasterClock {
   private sample(): void {
     if (!this.state.playing) return;
     const time = this.anchorTime + (this.scheduler.now() - this.anchorWall) / 1000 * this.state.rate;
+    const loop = this.state.loop;
+    if (loop) {
+      const span = loop.end - loop.start;
+      this.update({ time: loop.start + ((time - loop.start) % span + span) % span });
+      return;
+    }
     const finished = time >= this.state.duration || time <= 0 && this.state.rate < 0;
     this.update({ time: Math.max(0, Math.min(this.state.duration, time)), ...(finished ? { playing: false } : {}) });
     if (finished) this.cancelFrame();

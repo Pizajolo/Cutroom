@@ -1,66 +1,32 @@
-import { Bell, CircleAlert, Download, Film, FolderOpen, House, KeyRound, PanelLeftClose, PanelLeftOpen, Settings2, Users } from 'lucide-react';
+import { BookOpen, CircleAlert, Download, Film, FolderOpen, House, KeyRound, Settings2 } from 'lucide-react';
 import { accountMethodLabel, useAccounts } from '../lib/useAccounts';
 import { setupProgress, useModels, useTools } from '../lib/useTools';
 import { ProgressBar } from './InstallProgress';
-import { JobsIndicator } from './Jobs';
 import type { AppInfo } from '../lib/useAppInfo';
-import { useNavigation, type Destination } from '../state/navigation';
+import { useNavigation } from '../state/navigation';
 
 const links = [
   { destination: 'home', label: 'Home', Icon: House },
   { destination: 'projects', label: 'Projects', Icon: FolderOpen },
-  { destination: 'teams', label: 'Teams', Icon: Users },
+  { destination: 'skills', label: 'Skills', Icon: BookOpen },
 ] as const;
 export function Sidebar({ info }: { info: AppInfo | null }) {
-  const destination = useNavigation((state) => state.destination);
-  const collapsed = useNavigation((state) => state.sidebarCollapsed);
-  const recent = useNavigation((state) => state.recentProjects);
-  const current = useNavigation((state) => state.project);
-  const tab = useNavigation((state) => state.tab);
-  const navigate = useNavigation((state) => state.navigate);
-  const openRecent = useNavigation((state) => state.openRecent);
-  const toggleSidebar = useNavigation((state) => state.toggleSidebar);
-  const { data: accounts, error: accountsError } = useAccounts();
+  const destination = useNavigation((s) => s.destination);
+  const { data: accounts, error } = useAccounts();
   const { data: tools } = useTools();
   const { data: models } = useModels();
-  const claude = accounts?.find((account) => account.provider === 'anthropic');
+  const claude = accounts?.find((a) => a.provider === 'anthropic');
   const setup = setupProgress(tools, models);
-  const openSettings = (section: 'Accounts' | 'Tools') => { useNavigation.getState().setSettingsSection(section); navigate('settings'); };
-  const connectionLabel = claude?.status === 'connected' ? `Claude connected · ${accountMethodLabel(claude)}` : claude?.status === 'invalid' ? 'Claude: key rejected' : claude?.status === 'unreachable' ? "Claude: can't reach service" : accountsError ? 'Check Claude connection' : accounts ? 'Connect Claude' : 'Checking connections…';
-  const downloadLabel = setup.failed ? 'Tool setup needs attention' : `Downloading tools…${setup.percent === undefined ? '' : ` ${setup.percent}%`}`;
-  const active = (target: Destination) => destination === target || target === 'projects' && (destination === 'project' || destination === 'media');
-  return <aside className={`sidebar${collapsed ? ' sidebar-collapsed' : ''}`} aria-label="Main navigation">
-    <div className="brand"><Film size={20} strokeWidth={1.75} aria-hidden="true" /><strong className="sidebar-label">Cutroom</strong></div>
-    <nav aria-label="Main">
-      {links.map(({ destination: target, label, Icon }) => <div key={target}>
-        <button type="button" className="nav-link" aria-current={active(target) ? 'page' : undefined} title={label} onClick={() => navigate(target)}>
-          <Icon size={18} strokeWidth={1.75} aria-hidden="true" /><span className="sidebar-label">{label}</span>
-        </button>
-        {target === 'projects' && <div className="recent-projects sidebar-label"><button type="button" className="recent-project" aria-current={destination === 'project' && tab === 'Media' ? 'page' : undefined} title={current?.rootPath ?? 'Open a project media folder'} onClick={() => navigate('media')}>Folder media</button></div>}
-        {target === 'projects' && recent.length > 0 && <div className="recent-projects sidebar-label">
-          {recent.slice(0, 5).map((entry) => <button type="button" key={entry.id} title={entry.missing ? `${entry.name} · Folder not found` : entry.rootPath} disabled={entry.missing}
-            className="recent-project" aria-current={destination === 'project' && current?.project.id === entry.id ? 'page' : undefined}
-            onClick={() => { void openRecent(entry.id); }}>{entry.name}</button>)}
-        </div>}
-      </div>)}
-    </nav>
+  const openSettings = (section: 'Accounts' | 'Tools') => { useNavigation.getState().setSettingsSection(section); useNavigation.getState().navigate('settings'); };
+  const connection = claude?.status === 'connected' ? `Claude connected · ${accountMethodLabel(claude)}` : error ?? 'Connect Claude';
+  const progress = setup.failed ? 'Tool setup needs attention' : `Setting up tools…${setup.percent === undefined ? '' : ` ${setup.percent}%`}`;
+  return <aside className="sidebar sidebar-collapsed" aria-label="Main navigation">
+    <div className="brand" title={info ? `Cutroom ${info.version}` : 'Cutroom'}><Film size={20} aria-hidden="true" /></div>
+    <nav aria-label="Main">{links.map(({ destination: target, label, Icon }) => <button type="button" key={target} className="nav-link" title={label} aria-label={label} aria-current={destination === target || target === 'projects' && destination === 'project' ? 'page' : undefined} onClick={() => useNavigation.getState().navigate(target)}><Icon size={18} aria-hidden="true" /></button>)}</nav>
     <div className="sidebar-bottom">
-      <button type="button" className="nav-link" title="Settings" aria-current={destination === 'settings' ? 'page' : undefined} onClick={() => navigate('settings')}>
-        <Settings2 size={18} strokeWidth={1.75} aria-hidden="true" /><span className="sidebar-label">Settings</span>
-      </button>
-      <div className="sidebar-connection"><button type="button" className="nav-link" title={connectionLabel} aria-label={connectionLabel} onClick={() => openSettings('Accounts')}><KeyRound size={16} aria-hidden="true" /><span className="sidebar-label">{connectionLabel}</span></button></div>
-      {(setup.busy || setup.failed) && <button type="button" className="nav-link sidebar-download" title={downloadLabel} aria-label={downloadLabel} onClick={() => openSettings('Tools')}>
-        {setup.failed ? <CircleAlert size={16} aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}<span className="sidebar-label">{downloadLabel}</span>
-        {setup.busy && !setup.failed && <span className="sidebar-label"><ProgressBar name="Tool setup download" percent={setup.percent} text={downloadLabel} /></span>}
-      </button>}
-      <div className="sidebar-utility">
-        <button type="button" className="icon-button" title={collapsed ? 'Expand sidebar (⌘B)' : 'Collapse sidebar (⌘B)'} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleSidebar}>
-          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-        </button>
-        <button type="button" className="icon-button" aria-label="Notifications unavailable" title="Notifications are not connected in this build" disabled><Bell size={16} /></button>
-        <small className="version sidebar-label">{info ? `v${info.version}` : 'Connecting…'}</small>
-      </div>
-      <div className="jobs-slot sidebar-label" aria-label="Jobs status"><JobsIndicator /></div>
+      <button className="nav-link" title="Settings" aria-label="Settings" aria-current={destination === 'settings' ? 'page' : undefined} onClick={() => useNavigation.getState().navigate('settings')}><Settings2 size={18} /></button>
+      {(setup.busy || setup.failed) && <button className="nav-link rail-setup" title={progress} aria-label={progress} onClick={() => openSettings('Tools')}>{setup.failed ? <CircleAlert size={18} /> : <Download size={18} />}{setup.busy && <ProgressBar name="Tool setup" percent={setup.percent} text={progress} />}</button>}
+      <button className={`nav-link${claude?.status === 'connected' ? ' rail-connected' : ''}`} title={connection} aria-label={connection} onClick={() => openSettings('Accounts')}><KeyRound size={18} /></button>
     </div>
   </aside>;
 }

@@ -46,6 +46,12 @@ describe('scoped keymap', () => {
     remove(); press(document.body, 's'); expect(editor).toHaveBeenCalledOnce();
     keymap.setScopes([]); press(document.body, 's'); expect(editor).toHaveBeenCalledOnce();
   });
+  it('accepts Control as Command while preserving native text clipboard and undo', () => {
+    const keymap = setup(), run = vi.fn(); keymap.register({ id: 'copy', key: 'c', command: true, scope: 'editor', run });
+    press(document.body, 'c', { ctrlKey: true }); expect(run).toHaveBeenCalledOnce();
+    const input = document.createElement('input'); document.body.append(input); press(input, 'c', { ctrlKey: true }); expect(run).toHaveBeenCalledOnce();
+    press(document.body, 'c', { ctrlKey: true, metaKey: true }); expect(run).toHaveBeenCalledOnce();
+  });
   it('leaves shortcuts inside dialogs alone, even global new-goal', () => {
     const keymap = setup(); const run = vi.fn();
     keymap.register({ id: 'new-goal', key: 'n', command: true, scope: 'global', run });

@@ -73,10 +73,10 @@ describe('timeline foundation', () => {
     try {
       fireEvent.focus(ruler);
       fireEvent.keyDown(ruler, { key: '=', metaKey: true });
-      await screen.findByText('128 px/s');
+      await waitFor(() => expect((screen.getByRole('slider', { name: 'Timeline zoom' }) as HTMLInputElement).value).toBe('7'));
       fireEvent.blur(ruler, { relatedTarget: document.body });
       fireEvent.keyDown(document.body, { key: '=', metaKey: true });
-      expect(screen.getByText('128 px/s')).toBeTruthy();
+      expect((screen.getByRole('slider', { name: 'Timeline zoom' }) as HTMLInputElement).value).toBe('7');
     } finally { detach(); }
   });
 });

@@ -49,7 +49,7 @@ export class Keymap {
     const candidates = [...this.shortcuts.values()].sort((a, b) => priorities[b.scope] - priorities[a.scope]);
     for (const shortcut of candidates) {
       if (!this.scopes.has(shortcut.scope) || keyName(event.key) !== keyName(shortcut.key)) continue;
-      if (!!shortcut.command !== event.metaKey || event.ctrlKey || !!shortcut.alt !== event.altKey || !!shortcut.shift !== event.shiftKey) continue;
+      if (!!shortcut.command !== (event.metaKey || event.ctrlKey) || event.metaKey && event.ctrlKey || !!shortcut.alt !== event.altKey || !!shortcut.shift !== event.shiftKey) continue;
       if (event.repeat && !shortcut.repeat) continue;
       if (inText && !(shortcut.allowInTextInput ?? shortcut.scope === 'global')) continue;
       if (inDialog && !shortcut.allowInDialog) continue;

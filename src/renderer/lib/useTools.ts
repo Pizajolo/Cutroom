@@ -11,14 +11,14 @@ export const modelRevision = models.revision;
 export function receiveModels(list: WhisperModelInfo[], revision: number) { models.update(() => list, revision); }
 export const isInstalling = (install: InstallState | null) => !!install && install.state !== 'failed';
 export function downloadPercent(install: InstallState) {
-  return install.state === 'downloading' && install.total !== null && install.total > 0
+  return (install.state === 'downloading' || install.state === 'building') && install.total !== null && install.total > 0
     ? Math.round(Math.max(0, Math.min(100, install.received / install.total * 100))) : undefined;
 }
 export function setupProgress(tools: ToolInfo[] | null, models: WhisperModelInfo[] | null) {
   const installs = [...(tools ?? []), ...(models ?? []).filter((model) => model.isDefault)].map((item) => item.install);
   const active = installs.filter((install): install is InstallState => isInstalling(install));
   const failed = installs.some((install) => install?.state === 'failed') || (tools ?? []).some((tool) => tool.status === 'checksum_mismatch');
-  const determinate = active.length > 0 && active.every((install) => downloadPercent(install) !== undefined);
+  const determinate = active.length > 0 && active.every((install) => install.state === active[0]!.state && downloadPercent(install) !== undefined);
   const total = active.reduce((sum, install) => sum + (install.total ?? 0), 0);
   const percent = determinate && total > 0 ? Math.round(active.reduce((sum, install) => sum + Math.min(install.received, install.total ?? 0), 0) / total * 100) : undefined;
   return { busy: active.length > 0, failed, percent };
