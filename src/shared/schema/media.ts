@@ -2,7 +2,7 @@ import { z } from 'zod/v3';
 import { projectPathSchema } from './common';
 
 export const installStateSchema = z.object({
-  state: z.enum(['queued', 'downloading', 'verifying', 'installing', 'failed']),
+  state: z.enum(['queued', 'downloading', 'verifying', 'building', 'installing', 'failed']),
   received: z.number().int().nonnegative(), total: z.number().int().positive().nullable(),
   error: z.string().optional(),
 }).strict();
@@ -10,8 +10,8 @@ export type InstallState = z.infer<typeof installStateSchema>;
 export const toolInfoSchema = z.object({
   name: z.string(), version: z.string(), path: z.string(),
   source: z.enum(['bundled', 'downloaded', 'updated']), status: z.enum(['ok', 'missing', 'checksum_mismatch']),
-  verification: z.enum(['pinned', 'upstream']).nullable(), install: installStateSchema.nullable(),
-  updatable: z.boolean(), latestVersion: z.string().nullable(), hint: z.string().nullable(),
+  verification: z.enum(['pinned', 'upstream', 'built']).nullable(), install: installStateSchema.nullable(),
+  updatable: z.boolean(), latestVersion: z.string().nullable(), hint: z.string().nullable(), action: z.enum(['install_clt']).nullable(),
 }).strict();
 export type ToolInfo = z.infer<typeof toolInfoSchema>;
 export const mediaProbeSchema = z.object({

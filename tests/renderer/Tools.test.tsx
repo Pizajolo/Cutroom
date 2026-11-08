@@ -7,7 +7,7 @@ import { setupProgress } from '../../src/renderer/lib/useTools';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listeners: new Map<string, (payload: unknown) => void>() }));
 vi.mock('../../src/renderer/lib/api', () => ({ api: { invoke: mocks.invoke, on: (event: string, listener: (payload: unknown) => void) => { mocks.listeners.set(event, listener); return () => mocks.listeners.delete(event); } } }));
-const tool = (patch: Partial<ToolInfo> = {}): ToolInfo => ({ name: 'ffmpeg', version: '7.1', path: '/bundle/ffmpeg', source: 'bundled', status: 'ok', verification: 'pinned', install: null, updatable: false, latestVersion: null, hint: null, ...patch });
+const tool = (patch: Partial<ToolInfo> = {}): ToolInfo => ({ name: 'ffmpeg', version: '7.1', path: '/bundle/ffmpeg', source: 'bundled', status: 'ok', verification: 'pinned', install: null, updatable: false, latestVersion: null, hint: null, action: null, ...patch });
 const model = (patch: Partial<WhisperModelInfo> = {}): WhisperModelInfo => ({ name: 'base', sizeBytes: 148_000_000, status: 'installed', install: null, isDefault: true, ...patch });
 let tools: ToolInfo[];
 let models: WhisperModelInfo[];
@@ -23,8 +23,8 @@ afterEach(cleanup);
 it('shows verified tools, source, build hints and independently installed models', async () => {
   render(<Tools />); await screen.findByText('ffmpeg');
   expect(screen.getByText('Updated')).toBeTruthy(); expect(screen.getAllByText('Pinned checksum')).toHaveLength(3);
-  expect(screen.getByText('Not verified yet')).toBeTruthy(); expect(screen.getByText('Build required')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Install whisper-cli' })).toBeNull();
+  expect(screen.getByText('Not verified yet')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Install whisper-cli' })).toBeTruthy();
   expect(screen.getByText('Installed')).toBeTruthy(); expect(screen.getByText('Not downloaded')).toBeTruthy();
   expect(screen.getByText('148 MB')).toBeTruthy(); expect(screen.getByText('488 MB')).toBeTruthy();
   const select = screen.getByRole('combobox', { name: 'Default transcription model' }) as HTMLSelectElement;
@@ -136,6 +136,31 @@ it('retains fetch errors and lets the user retry', async () => {
   mocks.invoke.mockResolvedValue(tools);
   fireEvent.click(screen.getByRole('button', { name: 'Retry tools check' }));
   await screen.findByRole('table');
+});
+it.each([100, null])('shows measured or unknown builds without byte metadata and cancels independently (%s)', async (total) => {
+  tools = [tool({ name: 'whisper-cli', status: 'missing', install: { state: 'building', received: 42, total } })];
+  render(<Tools />); const progress = await screen.findByRole('progressbar', { name: 'whisper-cli build' });
+  expect(progress.getAttribute('aria-valuenow')).toBe(total ? '42' : null);
+  expect(progress.getAttribute('aria-valuetext')).not.toContain('MB');
+  let finish!: () => void; mocks.invoke.mockImplementation(() => new Promise<{ ok: true }>((resolve) => { finish = () => resolve({ ok: true }); }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel whisper-cli build' }));
+  expect(screen.getByText('Stopping…')).toBeTruthy(); expect(mocks.invoke).toHaveBeenCalledWith('tools.cancelInstall', { name: 'whisper-cli' });
+  await act(async () => finish());
+  act(() => mocks.listeners.get('tools.changed')?.([tool({ name: 'whisper-cli', verification: 'built' })]));
+  expect(screen.getByText('Built from pinned source')).toBeTruthy(); expect(screen.getByText('OK')).toBeTruthy();
+});
+it('only opens the Apple installer after an explicit prerequisite action, with Retry retained', async () => {
+  tools = [tool({ name: 'whisper-cli', status: 'missing', action: 'install_clt', hint: "Install Apple's Command Line Tools to enable transcription.", install: { state: 'failed', received: 0, total: null, error: 'Developer tools are missing.' } })];
+  render(<Tools />); await screen.findByRole('button', { name: 'Install developer tools' });
+  expect(mocks.invoke.mock.calls.some(([channel]) => channel === 'tools.installPrerequisite')).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Install developer tools' }));
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('tools.installPrerequisite', { name: 'xcode-clt' }));
+  expect(screen.getByText("Finish Apple's installer, then choose Retry.")).toBeTruthy(); expect(screen.getByRole('button', { name: 'Retry whisper-cli' })).toBeTruthy();
+});
+it('counts builds as busy without mixing build units and download bytes', () => {
+  const build = tool({ name: 'whisper-cli', install: { state: 'building', received: 42, total: 100 } });
+  expect(setupProgress([build], [])).toEqual({ busy: true, failed: false, percent: 42 });
+  expect(setupProgress([build, tool({ install: { state: 'downloading', received: 100, total: 1000 } })], [])).toEqual({ busy: true, failed: false, percent: undefined });
 });
 it('aggregates bytes rather than percentages, excluding optional models and build prerequisites', () => {
   const download = (received: number, total: number | null) => ({ state: 'downloading' as const, received, total });

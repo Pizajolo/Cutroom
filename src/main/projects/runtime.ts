@@ -18,15 +18,16 @@ import type { SecretStore } from '../secrets/keychain';
 import { UrlImportService } from '../urlImport/service';
 import { AgentService } from '../agent/service';
 import { OverlayService } from '../render/overlays';
+import { SkillsService } from '../skills/service';
 
 export class WorkflowRuntime {
   readonly projects: ProjectService; readonly jobs: JobQueue; readonly settings: SettingsService; readonly exports: ExportService; readonly storage: StorageService; readonly extensions: ExtensionsService; readonly codex = new CodexService(); readonly compositions: CompositionsService;
-  readonly agent: AgentService;
+  readonly agent: AgentService; readonly skills: SkillsService;
   readonly overlays: OverlayService;
   readonly urls: UrlImportService;
   readonly audio: AudioService; readonly transcripts: TranscriptsService; readonly elevenlabs: ElevenLabsClient;
   private activeTimeline: TimelineService | null = null;
-  constructor(options: { home: string; media: MediaService; store: SettingsStore; secrets: ExtensionSecretStore & SecretStore; compositionsRoot: string; compositionBaseUrl: string; resolveModel: (name: string) => Promise<string>; resolveTool: (name: string) => Promise<string>; emit: <E extends EventName>(event: E, value: EventPayload<E>) => void }) {
+  constructor(options: { home: string; media: MediaService; store: SettingsStore; secrets: ExtensionSecretStore & SecretStore; compositionsRoot: string; compositionBaseUrl: string; skillsRoot: string; resolveModel: (name: string) => Promise<string>; resolveTool: (name: string) => Promise<string>; emit: <E extends EventName>(event: E, value: EventPayload<E>) => void }) {
     this.jobs = new JobQueue((jobs) => options.emit('jobs.changed', jobs));
     this.settings = new SettingsService(options.store, (settings) => options.emit('settings.changed', settings));
     this.projects = new ProjectService({ home: options.home, media: options.media, onChanged: (session) => options.emit('project.changed', session), onProgress: (projectId, completed, total, rel) => options.emit('media.progress', { projectId, rel, stage: 'import', progress: completed / Math.max(1, total) }) });
@@ -36,7 +37,8 @@ export class WorkflowRuntime {
     this.transcripts = new TranscriptsService({ runtime: this, home: options.home, client: this.elevenlabs, resolveTool: options.resolveTool, resolveModel: options.resolveModel });
     this.overlays = new OverlayService({ runtime: this, compositionsRoot: options.compositionsRoot, resolveTool: options.resolveTool });
     this.exports = new ExportService(this, options.media, options.resolveTool);
-    this.compositions = new CompositionsService({ root: options.compositionsRoot, baseUrl: options.compositionBaseUrl, current: () => this.projects.require() });
+    this.skills = new SkillsService({ home: options.home, builtinRoot: options.skillsRoot, baseUrl: options.compositionBaseUrl, current: () => this.projects.require(), changed: (skills) => options.emit('skills.changed', skills) });
+    this.compositions = new CompositionsService({ root: options.compositionsRoot, baseUrl: options.compositionBaseUrl, current: () => this.projects.require(), skillRoot: (id) => this.skills.root(id) });
     this.agent = new AgentService({ runtime: this, media: options.media, secrets: options.secrets, emit: (event) => options.emit('agent.event', event) });
     this.extensions = new ExtensionsService({ store: options.store, secrets: options.secrets, changed: () => options.emit('settings.changed', options.store.get()), status: async (id) => {
       const connected = this.agent.extensionStatus(id); if (connected) return connected;

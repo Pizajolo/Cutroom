@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { IpcFailure } from '@shared/ipc/errors';
 import { resolveInProject } from './safePath';
@@ -35,6 +35,26 @@ export async function atomicWrite(root: string, rel: string, text: string): Prom
     try { await directory.sync(); } finally { await directory.close(); }
   } finally { await rm(temporary, { force: true }); }
 }
+export async function copyTree(source: string, target: string, maxBytes = 50 * 1024 * 1024): Promise<number> {
+  for (const root of [source, target]) if (!(await lstat(root)).isDirectory() || await realpath(root) !== path.resolve(root)) throw new IpcFailure({ code: 'forbidden', message: 'Template folders cannot be symbolic links.' });
+  let bytes = 0; let entries = 0;
+  const copy = async (rel = '', depth = 0): Promise<void> => {
+    if (depth > 16) throw new IpcFailure({ code: 'invalid_request', message: 'Template is too deeply nested.' });
+    for (const entry of await readdir(rel ? await managedPath(source, rel) : source, { withFileTypes: true })) {
+      if (++entries > 10000) throw new IpcFailure({ code: 'invalid_request', message: 'Template has too many files.' });
+      const child = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) throw new IpcFailure({ code: 'forbidden', message: 'Templates cannot contain links or special files.' });
+      if (entry.isDirectory()) { await mkdir(await managedPath(target, child), { mode: 0o700 }); await copy(child, depth + 1); }
+      else {
+        const data = await readManagedBytes(source, child, maxBytes - bytes); bytes += data.length;
+        if (bytes > maxBytes) throw new IpcFailure({ code: 'invalid_request', message: 'Template exceeds the size limit.' });
+        await writeFile(await managedPath(target, child), data, { flag: 'wx', mode: 0o600 });
+      }
+    }
+  };
+  await copy(); return bytes;
+}
+
 export const atomicJson = (root: string, rel: string, value: unknown): Promise<void> => atomicWrite(root, rel, `${JSON.stringify(value, null, 2)}\n`);
 export async function appendJson(root: string, rel: string, value: unknown): Promise<void> {
   const target = await managedPath(root, rel);

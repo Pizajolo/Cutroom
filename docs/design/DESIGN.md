@@ -1,18 +1,22 @@
 # Cutroom design
 
-The complete implementation specification is **[spec.md](spec.md)**. This index preserves the DESIGN.md entry point; do not maintain a second, divergent specification here.
+The base implementation specification is **[spec.md](spec.md)**. **[round6.md](round6.md) is authoritative for the chat-first layout, simplified navigation/media, approvals/questions, skills and expanded timeline.** This index preserves the DESIGN.md entry point; do not maintain a second, divergent specification here.
 
 ## Direction
 
 A calm macOS editing desk: neutral graphite/slate surfaces, system sans typography, muted media-type colours, steel-blue direct selection and dashed amber agent-change review. The video is the colourful object; the interface stays quiet. Lucide icons and system fonts work offline.
 
-Preview sits above an eight-track timeline. Media/Transcript share the left dock; Inspector/Audio/Assistant share the right dock. Default window1440×960, timeline396 px. Compact layouts collapse navigation and docks before sacrificing the timeline. Direct changes are instant and undoable. Agents' changes are already live: Keep acknowledges, Revert uses targeted conflict-aware inverse operations.
+Chat stays left of Preview; a single right panel contains Media/Inspector/Audio/Transcript. The eight-track timeline spans below them. Review viewport1440×900, rail56px, chat380px, right panel300px, timeline396px. See round6.md for compact rules. Direct changes are instant and undoable. Agents' changes are already live: Keep acknowledges, Revert uses targeted conflict-aware inverse operations.
 
 ## Handoff
 
 | File | Purpose |
 |---|---|
-| [spec.md](spec.md) | Principles, exact window/dock sizes, all screens/states, interactions, full keyboard map and acceptance checklist |
+| [round6.md](round6.md) | Current chat-first shell, single Media panel, decision cards, Skills, timeline features, compact rules and authoritative shortcut changes |
+| [mockups/round6.html](mockups/round6.html) | Current editing desk at desktop, compact and reading widths |
+| [mockups/round6-chat.html](mockups/round6-chat.html) | Clarifying questions, permission exceptions, rights, compact review and video types |
+| [mockups/round6-timeline.html](mockups/round6-timeline.html) | Group move/snap, track lock, invalid placement and export/progress references |
+| [spec.md](spec.md) | Base principles, screens/states, interactions and keyboard map; apply round6 overrides first |
 | [components.md](components.md) | Clip/track/playhead/ruler, controls, overlays, messages, progress; dimensions, states, keyboard and accessibility |
 | [tokens.css](tokens.css) | Design token mirror; dark and system-light colours, type, spacing, geometry, motion, layers, timeline values |
 | `src/renderer/styles/tokens.css` | Same custom-property declarations, ready for renderer import |
@@ -40,6 +44,7 @@ Frontend first milestone: spec §§1–8. Later screen details: §§9–14. Keyb
 - Fixed row order is not compositing order: B-roll renders above Video.
 - Source imports copy/clone by default; Move requires confirmation.
 - Display money as **API-equivalent estimate** and unavailable usage as unavailable.
-- Assistant replaces Inspector at normal window sizes; optional extra dock only on large screens.
+- Chat is a dedicated left column, not an Inspector tab. One Media panel owns all media/folder browsing.
+- Auto-approve defaults on for enabled tools; rights, forced overwrites and skill-save confirmations still ask. Question cards never auto-answer.
 
 No open visual/product questions for the planner. Remaining availability and capability questions (tool versions, provider metadata, font acquisition, platform signing) are implementation gates, not permission to display mock success.

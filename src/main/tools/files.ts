@@ -10,7 +10,7 @@ export async function managedDirectory(home: string, ...parts: string[]): Promis
   await mkdir(home, { recursive: true, mode: 0o700 });
   const base = await realpath(home); let current = base;
   for (const part of parts) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(part) || part === '..') throw new Error('Invalid managed directory name.');
+    if ((part !== '.build' && !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(part)) || part === '..') throw new Error('Invalid managed directory name.');
     current = path.join(current, part);
     try { await mkdir(current, { mode: 0o700 }); } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error; }
     if (!(await lstat(current)).isDirectory() || await realpath(current) !== current || !contained(base, current)) throw new Error('Managed directory is not contained.');

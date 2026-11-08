@@ -5,37 +5,32 @@ import { api } from '../lib/api';
 import { requestNavigation, useSettingsGuard } from './settingsDraft';
 import type { MediaFolder } from '../media/types';
 
-export const PROJECT_TABS = ['Editor', 'Runs', 'Media', 'Backlog', 'Notes'] as const;
-export type ProjectTab = typeof PROJECT_TABS[number];
-export type Destination = 'home' | 'projects' | 'project' | 'media' | 'teams' | 'settings';
+export type Destination = 'home' | 'projects' | 'project' | 'skills' | 'settings';
 export const SETTINGS_SECTIONS = ['Accounts', 'Tools', 'Sandbox', 'Voice input', 'Render presets', 'Storage / snapshots', 'Extensions'] as const;
 export type SettingsSection = typeof SETTINGS_SECTIONS[number];
 export type { ProjectSession };
 type NeedsCreate = Extract<InvokeRes<'project.open'>, { status: 'needsCreate' }>;
 interface NavigationState {
-  destination: Destination; tab: ProjectTab; settingsSection: SettingsSection;
+  destination: Destination; settingsSection: SettingsSection;
   project: ProjectSession | null; recentProjects: RecentProject[]; mediaFolder: MediaFolder | null;
   loadingProjects: boolean; projectError: string | null; projectBusy: boolean;
   projectDialog: 'new' | NeedsCreate | null; importRecovery: ProjectCreateResult | null;
-  sidebarCollapsed: boolean; goalDraft: string; goalFocusRequest: number;
-  dock: 'Inspector' | 'Audio' | 'Assistant'; sourceRel: string | null;
-  navigate: (destination: Destination) => void; setTab: (tab: ProjectTab) => void;
+  goalDraft: string; goalFocusRequest: number;
+  chatCollapsed: boolean; chatFocusRequest: number;
+  dock: 'Media' | 'Inspector' | 'Audio' | 'Transcript'; sourceRel: string | null;
+  navigate: (destination: Destination) => void;
   setSettingsSection: (section: SettingsSection) => void; openProject: (project: ProjectSession) => void;
   openRecent: (id: string) => Promise<void>; pickProject: () => Promise<void>;
   refreshRecent: () => Promise<void>; newProject: () => void;
-  toggleSidebar: () => void; setGoalDraft: (draft: string) => void; focusGoal: () => void;
+  setGoalDraft: (draft: string) => void; focusGoal: () => void;
 }
 export const errorMessage = (reason: unknown) => reason instanceof Error ? reason.message : 'The request could not be completed.';
 export const useNavigation = create<NavigationState>((set, get) => ({
-  destination: 'home', tab: 'Editor', settingsSection: 'Accounts', project: null, recentProjects: [], mediaFolder: null,
+  destination: 'home', settingsSection: 'Accounts', project: null, recentProjects: [], mediaFolder: null,
   loadingProjects: true, projectError: null, projectBusy: false, projectDialog: null, importRecovery: null,
-  sidebarCollapsed: false, goalDraft: '', goalFocusRequest: 0, dock: 'Inspector', sourceRel: null,
-  navigate: (destination) => requestNavigation(() => {
-    if (destination === 'media') { if (get().project) set({ destination: 'project', tab: 'Media' }); else void get().pickProject(); }
-    else set({ destination });
-  }),
-  setTab: (tab) => requestNavigation(() => set({ destination: 'project', tab })), setSettingsSection: (settingsSection) => { if (settingsSection !== get().settingsSection) requestNavigation(() => set({ settingsSection })); },
-  openProject: (project) => { set({ project, mediaFolder: { id: project.project.id, root: project.rootPath }, destination: 'project', tab: 'Editor', projectDialog: null, importRecovery: null, sourceRel: null }); void get().refreshRecent(); },
+  chatCollapsed: false, chatFocusRequest: 0, goalDraft: '', goalFocusRequest: 0, dock: 'Media', sourceRel: null,
+  navigate: (destination) => requestNavigation(() => set({ destination })), setSettingsSection: (settingsSection) => { if (settingsSection !== get().settingsSection) requestNavigation(() => set({ settingsSection })); },
+  openProject: (project) => { set({ project, mediaFolder: { id: project.project.id, root: project.rootPath }, destination: 'project', chatCollapsed: false, projectDialog: null, importRecovery: null, sourceRel: null }); void get().refreshRecent(); },
   openRecent: async (recentId) => {
     if (useSettingsGuard.getState().guard) { requestNavigation(() => { void get().openRecent(recentId); }); return; }
     if (get().projectBusy) return;
@@ -61,7 +56,6 @@ export const useNavigation = create<NavigationState>((set, get) => ({
     catch (reason) { set({ projectError: errorMessage(reason), loadingProjects: false }); }
   },
   newProject: () => requestNavigation(() => set({ projectDialog: 'new' })),
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setGoalDraft: (goalDraft) => set({ goalDraft }), focusGoal: () => requestNavigation(() => set((state) => ({ destination: 'home', goalFocusRequest: state.goalFocusRequest + 1 }))),
 }));
 

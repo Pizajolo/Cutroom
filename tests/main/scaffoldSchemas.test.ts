@@ -26,7 +26,8 @@ const agentEvents = [
   { type: 'message', sessionId: 'session', role: 'assistant', text: 'Done.' },
   { type: 'tool_start', sessionId: 'session', toolUseId: 'tool', name: 'timeline.get', input: {} },
   { type: 'tool_end', sessionId: 'session', toolUseId: 'tool', name: 'timeline.get', output: { revision: 1 }, isError: false },
-  { type: 'permission_request', sessionId: 'session', requestId: 'permission', tool: 'export.start', description: 'Export video?', input: { presetId: 'draft' } },
+  { type: 'permission_request', sessionId: 'session', requestId: 'permission', tool: 'export.start', description: 'Export video?', input: { presetId: 'draft' }, rememberable: false },
+  { type: 'question_request', sessionId: 'session', requestId: 'question', questions: [{ question: 'Which format?', header: 'Format', multiSelect: false, options: [{ label: 'Landscape', description: '16:9 video' }] }] },
   { type: 'change', sessionId: 'session', requestId: 'review', itemId: item.id, paths: ['start'], before: item, after: { ...item, start: 2 } },
   { type: 'result', sessionId: 'session', costUsd: 0.01, inputTokens: 100, outputTokens: 20 },
   { type: 'error', sessionId: 'session', code: 'unavailable', message: 'Not configured.' },
@@ -129,6 +130,17 @@ describe('new request validation boundaries', () => {
   });
   it.each(['../project', '/project', 'a/b', 'a\\b', '.', '..', '\u0000project'])('rejects project path disguised as name %j', (name) => {
     expect(projectNameSchema.safeParse(name).success).toBe(false);
+  });
+  it.each(['../escape', '/absolute', 'Uppercase', '', 'a'.repeat(65)])('rejects unsafe skill ids %j at every boundary', (id) => {
+    for (const channel of ['skills.get', 'skills.delete'] as const) expect(contract.invoke[channel].req.safeParse({ id }).success).toBe(false);
+    expect(contract.invoke['skills.save'].req.safeParse({ ...scaffoldRequests['skills.save'], id }).success).toBe(false);
+    expect(contract.invoke['agent.send'].req.safeParse({ sessionId: 'session', text: 'Make a video', skillId: id }).success).toBe(false);
+  });
+  it('validates question responses and session-scoped permission responses', () => {
+    expect(contract.invoke['agent.respondQuestion'].req.parse({ requestId: 'q', answers: { Format: 'Landscape', Style: ['Clean', 'Bold'] }, response: 'Keep it short' })).toMatchObject({ answers: { Style: ['Clean', 'Bold'] } });
+    expect(contract.invoke['agent.respondQuestion'].req.safeParse({ requestId: 'q', answers: { Format: 1 } }).success).toBe(false);
+    expect(contract.invoke['agent.respondPermission'].req.safeParse({ requestId: 'p', allow: true, scope: 'session' }).success).toBe(true);
+    expect(contract.invoke['agent.respondPermission'].req.safeParse({ requestId: 'p', allow: true, scope: 'forever' }).success).toBe(false);
   });
   it('rejects secret and credential mutation through settings.update', () => {
     for (const patch of [{ apiKey: 'secret' }, { claude: { credentialRef: 'secret' } }, { accounts: {} }, { extensions: [] }]) {

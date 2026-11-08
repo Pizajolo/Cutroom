@@ -19,6 +19,7 @@ export class SettingsService {
       if (patch.sandbox) draft.sandbox = { ...draft.sandbox, ...patch.sandbox };
       if (patch.snapshots) draft.snapshots = { ...draft.snapshots, ...patch.snapshots };
       if (patch.voiceInput) draft.voiceInput = { ...draft.voiceInput, ...patch.voiceInput };
+      if (patch.agent) draft.agent = { ...draft.agent, ...patch.agent };
       if (patch.whisperModel) { draft.whisperModel = patch.whisperModel; if (draft.voiceInput.engine === 'whisper') draft.voiceInput.model = patch.whisperModel; }
       if (draft.voiceInput.engine === 'scribe' && draft.accounts.elevenlabs.status !== 'connected') throw new IpcFailure({ code: 'invalid_request', message: 'Connect ElevenLabs in Accounts before choosing Scribe voice input.' });
       if (patch.renderPresets) {

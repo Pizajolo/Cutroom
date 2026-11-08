@@ -245,6 +245,191 @@ describe('caption trims', () => {
   });
 });
 
+const secondId = 'clip_footage002';
+function pairDoc(gap = 0): TimelineDoc {
+  return applyOp(doc(), { type: 'addItem', trackId: 'video', item: { ...newClip(), start: 10 + gap, in: 5, out: 15 } as TimelineItem }).doc;
+}
+
+describe('group moves', () => {
+  it('swaps adjacent video clips atomically, quantizes moves and restores the original', () => {
+    const original = pairDoc();
+    const result = applyOp(original, { type: 'moveItems', moves: [{ itemId: clipId, start: 10.001 }, { itemId: secondId, start: 0 }] });
+    expect(item(result.doc).start).toBe(10); expect(item(result.doc, secondId).start).toBe(0);
+    expect(result.changed.itemIds).toEqual([clipId, secondId]);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('restores exact array order after moving multiple items off a track in reverse order', () => {
+    const original = pairDoc();
+    const third = { ...newClip(), id: 'clip_footage003', start: 20 };
+    original.tracks[3]!.items.push(third);
+    const result = applyOp(original, { type: 'moveItems', moves: [third.id, secondId, clipId].map((itemId, index) => ({ itemId, trackId: 'broll', start: index * 10 })) });
+    expect(result.changed.paths).toContain(`items.${clipId}.trackId`);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('rejects final overlaps, missing items, duplicate ids and invalid group sizes without mutation', () => {
+    const original = pairDoc(); const before = structuredClone(original);
+    expectError(() => applyOp(original, { type: 'moveItems', moves: [{ itemId: secondId, start: 5 }] }), 'overlap');
+    expectError(() => applyOp(original, { type: 'moveItems', moves: [{ itemId: clipId, start: 30 }, { itemId: 'clip_missing000', start: 0 }] }), 'not_found');
+    expectError(() => applyOp(original, { type: 'moveItems', moves: [{ itemId: clipId, start: 30 }, { itemId: clipId, start: 0 }] }), 'invalid');
+    expect(opSchema.safeParse({ type: 'moveItems', moves: [] }).success).toBe(false);
+    expect(opSchema.safeParse({ type: 'moveItems', moves: Array.from({ length: 1001 }, () => ({ itemId: clipId, start: 0 })) }).success).toBe(false);
+    expect(original).toEqual(before);
+  });
+});
+
+describe('ripple trims', () => {
+  it.each(['start', 'end'] as const)('trims the %s edge, shifts later items only on its track and undoes exactly', (edge) => {
+    const original = pairDoc(2);
+    const result = applyOp(original, { type: 'rippleTrim', itemId: clipId, edge, time: edge === 'start' ? 2 : 8 });
+    expect(item(result.doc)).toMatchObject({ start: 0, duration: 8, in: edge === 'start' ? 2 : 0, out: edge === 'start' ? 10 : 8 });
+    expect(item(result.doc, secondId).start).toBe(10);
+    expect(item(result.doc, compositionId)).toEqual(item(original, compositionId));
+    expect(result.changed.itemIds).toContain(secondId);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('extends the end only to a source-safe frame and moves later clips right', () => {
+    const original = pairDoc(); const clip = item(original); if (clip.type !== 'clip') throw new Error('Expected clip');
+    clip.speed = 2; clip.out = 20;
+    const result = applyOp(original, { type: 'rippleTrim', itemId: clipId, edge: 'end', time: 99 }, { sourceDurations: { 'raw/clip.mp4': 23.01 } });
+    expect(item(result.doc)).toMatchObject({ duration: 11.5, out: 23 });
+    expect(item(result.doc, secondId).start).toBe(11.5);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('clamps the start to one frame and respects speed in source seconds', () => {
+    const original = pairDoc(); const clip = item(original); if (clip.type !== 'clip') throw new Error('Expected clip');
+    clip.speed = 2; clip.out = 20;
+    const result = applyOp(original, { type: 'rippleTrim', itemId: clipId, edge: 'start', time: 100 });
+    expect(item(result.doc).duration).toBeCloseTo(1 / 30);
+    expect(item(result.doc)).toMatchObject({ start: 0, in: 20 - 2 / 30, out: 20 });
+    expect(item(result.doc, secondId).start).toBeCloseTo(1 / 30);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('rebases caption words before retaining the original timeline start', () => {
+    const original = captionDoc();
+    const result = applyOp(original, { type: 'rippleTrim', itemId: captionId, edge: 'start', time: 11 });
+    expect(caption(result.doc)).toMatchObject({ start: 10, duration: 5, highlight: null });
+    expect(caption(result.doc).words[0]).toMatchObject({ id: 'cross-start', start: 0, end: 0.25 });
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('fails on missing items without changing the document', () => {
+    expectError(() => applyOp(doc(), { type: 'rippleTrim', itemId: 'clip_missing000', edge: 'end', time: 1 }), 'not_found');
+  });
+});
+
+describe('slip edits', () => {
+  it.each([[-100, 0, 10], [1.25, 3.25, 13.25], [100, 5, 15]])('clamps a source delta %s without moving or resizing the item', (delta, start, end) => {
+    const original = doc(); const clip = item(original); if (clip.type !== 'clip') throw new Error('Expected clip');
+    clip.speed = 2; clip.duration = 5; clip.in = 2; clip.out = 12;
+    const result = applyOp(original, { type: 'slipItem', itemId: clipId, delta }, { sourceDurations: { 'raw/clip.mp4': 15 } });
+    expect(item(result.doc)).toMatchObject({ start: 0, duration: 5, in: start, out: end, speed: 2 });
+    expect(result.changed.paths).toEqual([`items.${clipId}.in`, `items.${clipId}.out`]);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('supports audio sources and rejects compositions or missing items', () => {
+    const original = doc();
+    original.tracks[6]!.items.push({ type: 'audio', id: 'audio_music00001', src: 'audio/music.wav', start: 2, duration: 4, in: 1, out: 5, gain: 1, fadeIn: 0, fadeOut: 0, createdBy: 'user', userEdited: [] });
+    const result = applyOp(original, { type: 'slipItem', itemId: 'audio_music00001', delta: 2 });
+    expect(item(result.doc, 'audio_music00001')).toMatchObject({ start: 2, duration: 4, in: 3, out: 7 });
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+    expectError(() => applyOp(original, { type: 'slipItem', itemId: compositionId, delta: 1 }), 'invalid');
+    expectError(() => applyOp(original, { type: 'slipItem', itemId: 'clip_missing000', delta: 1 }), 'not_found');
+  });
+});
+
+describe('roll edits', () => {
+  it('moves a quantized cut without moving the outer edges, using both clip speeds', () => {
+    const original = pairDoc(); const left = item(original); const right = item(original, secondId);
+    if (left.type !== 'clip' || right.type !== 'clip') throw new Error('Expected clips');
+    left.speed = 2; left.out = 20; right.speed = 0.5; right.out = 10;
+    const result = applyOp(original, { type: 'rollEdit', leftItemId: clipId, rightItemId: secondId, time: 12.001 });
+    expect(item(result.doc)).toMatchObject({ start: 0, duration: 12, out: 24 });
+    expect(item(result.doc, secondId)).toMatchObject({ start: 12, duration: 8, in: 6, out: 10 });
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it.each([[0, 9], [100, 12]])('clamps cut %s to source limits on both sides', (time, expected) => {
+    const original = pairDoc(); const right = item(original, secondId); if (right.type !== 'clip') throw new Error('Expected clip');
+    right.src = 'raw/right.mp4'; right.in = 1; right.out = 11;
+    const result = applyOp(original, { type: 'rollEdit', leftItemId: clipId, rightItemId: secondId, time }, { sourceDurations: { 'raw/clip.mp4': 12.01, 'raw/right.mp4': 11 } });
+    expect(item(result.doc).duration).toBe(expected);
+    expect(item(result.doc, secondId).start).toBe(expected);
+    expect(item(result.doc, secondId).duration).toBe(20 - expected);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('requires distinct adjacent items on one track', () => {
+    expectError(() => applyOp(pairDoc(1), { type: 'rollEdit', leftItemId: clipId, rightItemId: secondId, time: 8 }), 'invalid');
+    expectError(() => applyOp(doc(), { type: 'rollEdit', leftItemId: clipId, rightItemId: compositionId, time: 1 }), 'invalid');
+    expectError(() => applyOp(doc(), { type: 'rollEdit', leftItemId: clipId, rightItemId: clipId, time: 1 }), 'invalid');
+    expectError(() => applyOp(doc(), { type: 'rollEdit', leftItemId: clipId, rightItemId: 'clip_missing000', time: 1 }), 'not_found');
+  });
+});
+
+describe('closing gaps', () => {
+  it('closes the whole gap and shifts all later items on that track with exact undo', () => {
+    const original = pairDoc(3);
+    original.tracks[3]!.items.push({ ...newClip(), id: 'clip_footage003', start: 30 });
+    const result = applyOp(original, { type: 'closeGap', trackId: 'video', at: 11 });
+    expect(item(result.doc, secondId).start).toBe(10); expect(item(result.doc, 'clip_footage003').start).toBe(27);
+    expect(item(result.doc)).toEqual(item(original));
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it('closes a leading gap to zero and preserves frame-grid positions', () => {
+    const original = applyOp(doc(), { type: 'moveItem', itemId: clipId, start: 31 / 30 }).doc;
+    const result = applyOp(original, { type: 'closeGap', trackId: 'video', at: 0.5 });
+    expect(item(result.doc).start).toBe(0);
+    expect(applyOps(result.doc, result.inverse).doc).toEqual(original);
+  });
+  it.each([0, 5, 13, 99])('rejects occupied times or an unbounded tail at %s', (at) => {
+    expectError(() => applyOp(pairDoc(3), { type: 'closeGap', trackId: 'video', at }), 'out_of_bounds');
+  });
+  it('rejects empty or unknown tracks', () => {
+    expectError(() => applyOp(doc(), { type: 'closeGap', trackId: 'text', at: 0 }), 'out_of_bounds');
+    expectError(() => applyOp(doc(), { type: 'closeGap', trackId: 'missing', at: 0 }), 'not_found');
+  });
+});
+
+describe('track locks', () => {
+  const edits: Op[] = [
+    { type: 'addItem', trackId: 'video', item: { ...newClip(), id: 'clip_footage003', start: 30 } },
+    { type: 'moveItem', itemId: clipId, start: 30, trackId: 'broll' },
+    { type: 'moveItems', moves: [{ itemId: clipId, start: 30 }] },
+    { type: 'trimItem', itemId: clipId, edge: 'end', time: 8 },
+    { type: 'rippleTrim', itemId: clipId, edge: 'end', time: 8 },
+    { type: 'slipItem', itemId: clipId, delta: 1 },
+    { type: 'rollEdit', leftItemId: clipId, rightItemId: secondId, time: 8 },
+    { type: 'closeGap', trackId: 'video', at: 11 },
+    { type: 'splitItem', itemId: clipId, at: 3 },
+    { type: 'deleteItem', itemId: clipId }, { type: 'rippleDelete', itemId: clipId },
+    { type: 'insertGap', trackId: 'video', at: 0, duration: 1 },
+    { type: 'reorderItem', itemId: clipId, index: 1 },
+    { type: 'setProps', itemId: clipId, patch: { note: 'Changed' } },
+    { type: 'setFormat', format: { fps: 24 } },
+  ];
+  it.each(edits)('rejects $type edits on a locked track without mutation', (op) => {
+    const original = applyOp(pairDoc(op.type === 'closeGap' ? 3 : 0), { type: 'setTrack', trackId: 'video', locked: true }).doc;
+    const before = structuredClone(original);
+    expect(() => applyOp(original, op)).toThrowError(expect.objectContaining({ code: 'invalid', message: 'Track is locked' }));
+    expect(original).toEqual(before);
+  });
+  it.each(['moveItem', 'moveItems'] as const)('rejects %s onto a locked destination', (type) => {
+    const original = applyOp(doc(), { type: 'setTrack', trackId: 'broll', locked: true }).doc;
+    const move = { itemId: clipId, start: 0, trackId: 'broll' };
+    expect(() => applyOp(original, type === 'moveItems' ? { type, moves: [move] } : { type, ...move })).toThrow('Track is locked');
+  });
+  it('allows unlock and track metadata edits; lock undo restores an absent locked field exactly', () => {
+    const original = doc(); const locked = applyOp(original, { type: 'setTrack', trackId: 'video', locked: true });
+    expect(applyOps(locked.doc, locked.inverse).doc).toEqual(original);
+    expect(applyOp(locked.doc, { type: 'setTrack', trackId: 'video', muted: true }).doc.tracks[3]?.muted).toBe(true);
+    const unlocked = applyOp(locked.doc, { type: 'setTrack', trackId: 'video', locked: false });
+    expect(applyOp(unlocked.doc, { type: 'trimItem', itemId: clipId, edge: 'end', time: 8 }).doc).toBeDefined();
+    expect(applyOps(unlocked.doc, unlocked.inverse).doc).toEqual(locked.doc);
+  });
+  it('does not block exact history item restores on locked tracks', () => {
+    const original = doc(); const edit = applyOp(original, { type: 'trimItem', itemId: clipId, edge: 'end', time: 8 });
+    const locked = applyOp(edit.doc, { type: 'setTrack', trackId: 'video', locked: true });
+    expect(item(applyOps(locked.doc, edit.inverse).doc)).toEqual(item(original));
+  });
+});
+
 describe('inverse property', () => {
   it('restores random valid docs exactly for 250 generated edits', () => {
     fc.assert(fc.property(

@@ -8,7 +8,7 @@ import { atomicJson, managedDirectory } from './files';
 const recordSchema = z.object({
   name: toolNameSchema, version: versionSchema, arch: z.enum(['arm64', 'x64', 'universal']),
   sha256: z.string().regex(/^[a-f0-9]{64}$/), archiveSha256: z.string().regex(/^[a-f0-9]{64}$/),
-  verification: z.enum(['pinned', 'upstream']), installedAt: z.string().datetime(),
+  verification: z.enum(['pinned', 'upstream', 'built']), installedAt: z.string().datetime(),
 }).strict();
 export type InstalledTool = z.infer<typeof recordSchema>;
 const schema = z.object({ version: z.literal(1), records: z.array(recordSchema), checks: z.record(z.object({ lastCheckedAt: z.string().datetime(), latest: versionSchema.nullable() }).strict()) }).strict();

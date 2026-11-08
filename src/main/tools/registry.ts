@@ -6,6 +6,8 @@ import type { InstallState, ToolInfo } from '@shared/schema/media';
 import { compareVersions, type ToolPin, type ToolsManifest } from './manifest';
 import { InstalledStore, type InstalledTool } from './installed';
 import { atomicJson, contained, isMissing, managedDirectory } from './files';
+import { CLT_MESSAGE } from './cmake';
+import { sourceIsPinned, SOURCE_PIN_MESSAGE } from './whisperBuild';
 
 interface CacheEntry { size: number; mtimeMs: number; ctimeMs: number; ino: number; sha256: string }
 export interface RegistryOptions { home: string; bundledRoot: string; arch: string; manifest: ToolsManifest; onChanged?: (tools: ToolInfo[]) => void }
@@ -20,6 +22,8 @@ export class ToolRegistry {
   readonly installed: InstalledStore;
   private readonly cache = new Map<string, CacheEntry>();
   private readonly installs = new Map<string, InstallState>();
+  private developerToolsMissing = false;
+  setDeveloperToolsMissing(missing: boolean): void { this.developerToolsMissing = missing; void this.refresh().catch(() => undefined); }
   private tools: ToolInfo[] = [];
   private refreshing: Promise<ToolInfo[]> | undefined;
   private emitTimer?: ReturnType<typeof setTimeout>;
@@ -87,10 +91,11 @@ export class ToolRegistry {
       const candidates: ToolInfo[] = [];
       for (const pin of versions) {
         const record: InstalledTool | undefined = state.records.find((record) => record.name === name && record.version === pin.version && record.arch === pin.arch);
-        const hash = pin.sha256 ?? (record?.verification === 'upstream' ? record.sha256 : null);
+        const built = pin.source.format === 'build' && sourceIsPinned(pin) && record?.verification === 'built' && record.archiveSha256 === pin.sourceSha256;
+        const hash = pin.sha256 ?? (built || (pin.source.format !== 'build' && record?.verification === 'upstream') ? record?.sha256 ?? null : null);
         const file = path.join(updates, name, pin.version, name);
         const status = await this.verify(file, updates, hash);
-        candidates.push({ name, version: pin.version, path: file, source: compareVersions(pin.version, base.version) > 0 ? 'updated' : 'downloaded', status, verification: status === 'ok' ? (pin.sha256 ? 'pinned' : 'upstream') : null, install: this.installs.get(name) ?? null, updatable: pin.updatable, latestVersion: null, hint: null });
+        candidates.push({ name, version: pin.version, path: file, source: compareVersions(pin.version, base.version) > 0 ? 'updated' : 'downloaded', status, verification: status === 'ok' ? (built ? 'built' : pin.sha256 ? 'pinned' : 'upstream') : null, install: this.installs.get(name) ?? null, updatable: pin.updatable, latestVersion: null, hint: null, action: null });
         if (pin.bundled) {
           const bundled = path.join(root, name); const status = await this.verify(bundled, root, pin.sha256);
           candidates.push({ ...candidates[candidates.length - 1]!, path: bundled, source: 'bundled', status, verification: status === 'ok' ? 'pinned' : null });
@@ -98,7 +103,10 @@ export class ToolRegistry {
       }
       const chosen = candidates.find((candidate) => candidate.status === 'ok') ?? candidates.find((candidate) => candidate.status === 'checksum_mismatch') ?? candidates.find((candidate) => candidate.version === base.version && candidate.source === 'bundled') ?? candidates[0];
       if (!chosen) continue;
-      if (base.source.format === 'build' && chosen.status !== 'ok') chosen.hint = 'Build with npm run build:whisper (requires cmake and Xcode Command Line Tools)';
+      if (base.source.format === 'build' && chosen.status !== 'ok') {
+        chosen.hint = !sourceIsPinned(base) ? SOURCE_PIN_MESSAGE : this.developerToolsMissing ? CLT_MESSAGE : 'The transcription engine will be built automatically. Retry installation if it did not finish.';
+        chosen.action = sourceIsPinned(base) && this.developerToolsMissing ? 'install_clt' : null;
+      }
       const latest = state.checks[name]?.latest; chosen.latestVersion = latest && compareVersions(latest, chosen.version) > 0 ? latest : null;
       result.push(chosen);
       if (chosen.status === 'ok') await this.link(chosen).catch(() => undefined); else await this.unlinkManaged(name).catch(() => undefined);

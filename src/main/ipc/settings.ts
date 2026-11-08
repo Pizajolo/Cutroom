@@ -5,6 +5,7 @@ import type { AccountsService } from '../accounts/service';
 import type { ClaudeCodeService } from '../claude/service';
 
 export function registerSettingsIpc(installer: ToolInstaller, models: WhisperModels, accounts: AccountsService, claude: ClaudeCodeService): void {
+  handle('tools.installPrerequisite', ({ name }) => installer.installPrerequisite(name));
   handle('tools.install', async ({ name }) => { await installer.install(name); return { ok: true }; });
   handle('tools.cancelInstall', async ({ name }) => { await installer.cancel(name); return { ok: true }; });
   handle('tools.checkUpdate', ({ name }) => installer.checkUpdate(name));

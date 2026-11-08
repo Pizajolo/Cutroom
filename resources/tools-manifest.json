@@ -154,6 +154,9 @@
       "license": "MIT"
     }
   ],
+  "buildTools": [
+    { "name": "cmake", "version": "4.4.5", "arch": "universal", "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-macos-universal.tar.gz", "checksum": { "url": "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-SHA-256.txt", "format": "sums", "entry": "cmake-4.4.5-macos-universal.tar.gz" }, "allowedHosts": ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"] }
+  ],
   "models": [
     {
       "name": "base",

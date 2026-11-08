@@ -1,6 +1,20 @@
 # Component catalogue
 
-Use with `spec.md` and `tokens.css`. Dimensions are CSS px at 100% scale. Neutral default text uses primary; secondary is metadata, muted is supporting copy. Essential information never uses disabled colour. User selection = solid blue, pending agent edit = dashed amber, focus = offset blue ring. They may coexist.
+Use with `spec.md`, **[round6.md](round6.md)** (current layout/interaction overrides) and `tokens.css`. Dimensions are CSS px at 100% scale. Neutral default text uses primary; secondary is metadata, muted is supporting copy. Essential information never uses disabled colour. User selection = solid blue, pending agent edit = dashed amber, focus = offset blue ring. They may coexist.
+
+## Round6 component overrides
+
+- **Track header:** 180px / compact168px, label flexible plus Lock/M/S24px targets; selected, focus and pressed states follow the shared matrix. Locked lane adds subtle hatching, not unreadable opacity; accessible state says Locked. Fixed order, no reorder handle.
+- **Question:** radius8, padding12, gap12, strong border; option min36px with checked indicator and selected blue border/fill. Hover uses hover fill; keyboard focus stays offset. No preselection. Invalid Other keeps text and inline error. Sending disables duplicate response; answered becomes summary; stale request says No longer waiting.
+- **Permission:** same card geometry, neutral surface, action/scope12–13px; Allow once / optional Allow for this session / Deny28px buttons wrapping. Pending/failed uses shared matrix. Rights/overwrite/skill-save cards never offer session grant.
+- **Review:** min44px, radius5, padding12, dashed amber left edge, neutral fill. Keep all/Revert all28px, details disclosure. Keep acknowledges live changes; rejected actions aren't counted. Conflict dialog remains base spec.
+- **Media row:** min56px, thumbnail48×32, gap8, inset12. Default neutral; hover shows actions; selected background + blue leading edge; independent focus. Missing art uses file-kind icon. Read-only is labelled text, not disabled whole row.
+- **Composer:** textarea72–160px then scroll,12px outer inset, two wrapping control rows, model/type/voice and approval/read-only/send. Auto-approve switch28×16px inside28px labelled target (36px in reading fallback), clear checked thumb position. State changes are confirmed on settings save; failure reverts displayed saved value and shows Retry.
+- **Ruler range:**28px high with12px handle targets, blue band and brackets; focused handle gets offset ring, active handle readout shows time. Marker12px hit area with diamond/label; focus and Enter opens label editor.
+- **Resizer:**1px rule/8px target, hover/focus highlights rule; role separator reports width or height. Keyboard arrows8px, Shift32px, Home/End bounds, double-click reset. Clamp at bounds without presenting an error.
+- **Tool progress:**4px track, measured Building… NN% or indeterminate Building…; state plus text never colour only. Separate Cancel pending state; Stopping… until confirmed. OK comes only from verified install state. Built source label is not a signature badge.
+
+All other button/input/menu/dialog/toast/slider/tab states below remain in force. See round6.md for exact keyboard, responsive, error and focus-restoration behaviour.
 
 ## Shared state rules
 

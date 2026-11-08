@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
-export function Dialog({ title, children, footer, onClose, wide = false }: {
-  title: string; children: ReactNode; footer?: ReactNode; onClose: () => void; wide?: boolean;
+export function Dialog({ title, children, footer, onClose, wide = false, className = '' }: {
+  title: string; children: ReactNode; footer?: ReactNode; onClose: () => void; wide?: boolean; className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -16,7 +16,7 @@ export function Dialog({ title, children, footer, onClose, wide = false }: {
       if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
   }, []);
-  return <dialog ref={ref} className={`dialog${wide ? ' dialog-wide' : ''}`} aria-labelledby={titleId}
+  return <dialog ref={ref} className={`dialog${wide ? ' dialog-wide' : ''} ${className}`} aria-labelledby={titleId}
     onCancel={(event) => { event.preventDefault(); onClose(); }}>
     <header className="dialog-header"><h2 id={titleId}>{title}</h2><button type="button" className="icon-button" aria-label={`Close ${title}`} onClick={onClose}><X size={16} /></button></header>
     <div className="dialog-body">{children}</div>

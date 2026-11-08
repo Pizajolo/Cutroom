@@ -22,6 +22,14 @@ describe('nonsecret settings updates', () => {
     for (const patch of [{ sandbox: { networkByDefault: true } }, { sandbox: { allowedDomains: ['https://example.org/path'] } }, { unknown: true }, { voiceInput: { engine: 'scribe' } }]) await expect(service.update(patch as SettingsPatch)).rejects.toThrow();
     await service.update({ appearance: 'light', sandbox: { allowedDomains: ['example.org'], allowShell: true } }); expect((await SettingsStore.load(root)).get().sandbox).toMatchObject({ allowedDomains: ['example.org'], allowShell: true, networkByDefault: false });
   });
+  it('merges and persists agent approval preferences without changing sandbox limits', async () => {
+    const { root, store } = await setup(); const service = new SettingsService(store, () => {});
+    const sandbox = store.get().sandbox;
+    await service.update({ agent: { approvalMode: 'ask' } });
+    await service.update({ agent: {} });
+    expect((await SettingsStore.load(root)).get()).toMatchObject({ agent: { approvalMode: 'ask' }, sandbox });
+    await expect(service.update({ agent: { approvalMode: 'unsafe' } } as unknown as SettingsPatch)).rejects.toThrow();
+  });
   it('protects builtins and requires the selected custom preset to remain present', async () => {
     const { store } = await setup(); const service = new SettingsService(store, () => {}); const custom = { ...BUILTIN_PRESETS[0]!, id: 'mine', builtin: false };
     await service.update({ renderPresets: { defaultId: 'mine', custom: [custom] } }); await expect(service.update({ renderPresets: { defaultId: 'mine', custom: [] } })).rejects.toMatchObject({ code: 'invalid_request' });

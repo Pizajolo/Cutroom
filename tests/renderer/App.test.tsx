@@ -6,7 +6,7 @@ import { useNavigation } from '../../src/renderer/state/navigation';
 import { defaultReply } from './fixtures';
 
 beforeEach(() => {
-  useNavigation.setState({ destination: 'home', tab: 'Editor', project: null, mediaFolder: null, recentProjects: [], goalDraft: '', goalFocusRequest: 0, sidebarCollapsed: false, settingsSection: 'Accounts' });
+  useNavigation.setState({ destination: 'home', project: null, mediaFolder: null, recentProjects: [], goalDraft: '', goalFocusRequest: 0, settingsSection: 'Accounts' });
   const invoke = vi.fn<CutroomBridge['invoke']>();
   invoke.mockImplementation((async (channel: string) => ({ ok: true, data: channel === 'project.current' ? useNavigation.getState().project : defaultReply(channel) })) as CutroomBridge['invoke']);
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
@@ -19,7 +19,7 @@ describe('renderer shell', () => {
   it('starts on Home, reads the real app version and navigates to Projects', async () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: 'What do you want to make?' })).toBeTruthy();
-    await screen.findByText('v0.1.0');
+    await screen.findByTitle('Cutroom 0.1.0');
     expect(window.cutroom.invoke).toHaveBeenCalledWith('app.getInfo', {});
     fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
     expect(screen.getByRole('heading', { name: 'Projects' })).toBeTruthy();
@@ -33,18 +33,16 @@ describe('renderer shell', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Describe your video' })));
     expect((screen.getByRole('textbox', { name: 'Describe your video' }) as HTMLTextAreaElement).value).toBe('A 30-second coastal teaser');
   });
-  it('renders the five project tabs for an already provided project session', async () => {
+  it('renders permanent chat and a single project desk without project tabs', async () => {
     useNavigation.getState().openProject({ rootPath: '/test/launch', looseMediaCount: 0, project: {
       id: 'launch', name: 'Launch film', format: { aspect: '9:16', width: 1080, height: 1920, fps: 30 }, defaultEngine: 'hyperframes', createdAt: '2026-11-01T00:00:00.000Z',
       folderMap: { raw: 'raw', references: 'references', assets: 'assets', compositions: 'compositions', audio: 'audio', work: 'work', final: 'final' },
     } });
     render(<App />);
-    expect(screen.getByRole('tablist', { name: 'Project' }).querySelectorAll('[role="tab"]').length).toBe(5);
-    const editor = screen.getByRole('tab', { name: 'Editor' });
-    expect(editor.getAttribute('aria-selected')).toBe('true');
-    fireEvent.keyDown(editor, { key: 'ArrowRight' });
-    expect(screen.getByRole('tab', { name: 'Runs' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('heading', { name: 'Runs not available in this build' })).toBeTruthy();
+    expect(screen.queryByRole('tablist', { name: 'Project' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Chat' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Media' })); expect(screen.getByRole('tab', { name: 'Media' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Message Claude' })).toBeTruthy();
   });
   it('shows an operational error and Retry when app info fails', async () => {
     vi.mocked(window.cutroom.invoke).mockImplementation((async (channel: string) => channel === 'app.getInfo' ? { ok: false, error: { code: 'internal', message: 'Desktop service unavailable.' } } : { ok: true, data: defaultReply(channel) }) as CutroomBridge['invoke']);

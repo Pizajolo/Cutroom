@@ -16,3 +16,4 @@ export * from './compositions';
 export * from './agent';
 export * from './audio';
 export * from './extensions';
+export * from './skills';

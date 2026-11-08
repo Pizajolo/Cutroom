@@ -37,11 +37,12 @@ test.beforeEach(async () => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
   }, root);
   const page = await app.firstWindow();
-  await page.getByRole('button', { name: 'Browse media folder', exact: true }).click();
-  // Browsing a plain media folder now requires explicit in-place project creation.
+  // Rail -> Projects -> Open project; a plain media folder requires explicit in-place project creation.
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByRole('button', { name: 'Open project', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Create a project in this folder?' })).toBeVisible();
   await page.getByRole('button', { name: 'Create project here', exact: true }).click();
-  await page.getByRole('button', { name: 'Folder media', exact: true }).click();
+  // The media browser is the default tab of the project panel; there is no separate Folder media tab.
   await expect(page.getByRole('textbox', { name: 'Search media' })).toBeVisible();
 });
 
@@ -57,7 +58,7 @@ test('literal percent filenames survive listing and exact HTTP byte ranges', asy
   if (!reply.ok) throw new Error(reply.error.message);
   expect(reply.data.map((file) => file.rel).sort()).toEqual(names.map((name) => `raw/${name}`).sort());
   for (const file of reply.data) {
-    await expect(page.getByRole('button', { name: `Preview ${file.name}`, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Select ${file.name}`, exact: true })).toBeVisible();
     const expected = await readFile(path.join(root, file.rel));
     const response = await page.request.get(file.url);
     expect(response.status()).toBe(200);
@@ -71,7 +72,8 @@ test('literal percent filenames survive listing and exact HTTP byte ranges', asy
 
 test('source preview loads PCM through the authenticated media origin', async () => {
   const page = await app.firstWindow();
-  await page.getByRole('button', { name: 'Preview 100% done.wav', exact: true }).click();
+  await page.getByRole('button', { name: 'Select 100% done.wav', exact: true }).click();
+  await page.getByRole('button', { name: 'Inspect', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Source: 100% done.wav', exact: true })).toBeVisible();
   await expect.poll(() => page.locator('audio').evaluate((audio: HTMLAudioElement) => Number.isFinite(audio.duration) ? audio.duration : null)).toBeCloseTo(0.25, 2);
   expect(await page.locator('audio').evaluate((audio: HTMLAudioElement) => audio.error?.message ?? null)).toBeNull();

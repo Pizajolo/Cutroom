@@ -18,7 +18,7 @@ afterEach(async () => { await Promise.all(runtimes.splice(0).map((runtime) => ru
 async function setup() {
   const root = await mkdtemp(path.join(process.env.TMPDIR ?? tmpdir(), 'cutroom-speech-')); roots.push(root); const home = path.join(root, 'home'); await mkdir(home);
   const store = await SettingsStore.load(home); const media = new MediaService({ resolveTool: async () => '/fake', url: (_id, rel) => `http://127.0.0.1/${rel}` }); mediaServices.push(media);
-  const runtime = new WorkflowRuntime({ home, store, media, secrets: { get: async () => 'secret-only-header', set: async () => {}, delete: async () => {}, getExtension: async () => null, setExtension: async () => {}, deleteExtension: async () => {} }, compositionsRoot: path.join(root, 'builtins'), compositionBaseUrl: 'http://127.0.0.1/k/token/', resolveTool: async () => '/fake', resolveModel: async () => '/model', emit: () => {} }); runtimes.push(runtime);
+  const runtime = new WorkflowRuntime({ home, store, media, secrets: { get: async () => 'secret-only-header', set: async () => {}, delete: async () => {}, getExtension: async () => null, setExtension: async () => {}, deleteExtension: async () => {} }, compositionsRoot: path.join(root, 'builtins'), skillsRoot: path.join(root, 'skills'), compositionBaseUrl: 'http://127.0.0.1/k/token/', resolveTool: async () => '/fake', resolveModel: async () => '/model', emit: () => {} }); runtimes.push(runtime);
   const session = await runtime.projects.create({ parentGrant: (await runtime.projects.grants.issue(root, 'projectParent')).grantId, name: 'Speech', format: { aspect: '16:9', width: 320, height: 180, fps: 30 }, defaultEngine: 'hyperframes' });
   return { root, home, store, media, runtime, session };
 }

@@ -1,16 +1,16 @@
-import { constants } from 'node:fs';
-import { copyFile, mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod/v3';
 import { IpcFailure } from '@shared/ipc/errors';
 import { compositionNameSchema, type CompositionInfo, type CompositionCheck } from '@shared/schema/compositions';
 import { propsDocSchema } from '@shared/schema/props';
+import { skillIdSchema } from '@shared/schema/skills';
 import type { ProjectSession } from '@shared/schema/project';
-import { atomicWrite, managedPath, readManaged } from '../fs/managed';
+import { atomicWrite, copyTree, managedPath, readManaged } from '../fs/managed';
 
 const manifestSchema = z.object({ id: compositionNameSchema, name: z.string().min(1), engine: z.enum(['hyperframes', 'remotion']), description: z.string(), durationSec: z.number().positive().default(5), entry: z.enum(['index.html', 'index.tsx']).default('index.html'), compositionId: z.string().optional() }).passthrough();
 export class CompositionsService {
-  constructor(private readonly options: { root: string; current: () => ProjectSession; baseUrl: string }) {}
+  constructor(private readonly options: { root: string; current: () => ProjectSession; baseUrl: string; skillRoot?: (id: string) => Promise<string> }) {}
   private async manifests() {
     const entries = await readdir(path.join(this.options.root, 'builtin'), { withFileTypes: true }); const result: { folder: string; manifest: z.infer<typeof manifestSchema> }[] = [];
     for (const entry of entries) if (entry.isDirectory() && compositionNameSchema.safeParse(entry.name).success) {
@@ -28,20 +28,23 @@ export class CompositionsService {
   }
   async create(templateId: string, inputName: string): Promise<CompositionInfo> {
     const name = compositionNameSchema.parse(inputName); const template = (await this.manifests()).find((entry) => entry.manifest.id === templateId); if (!template) throw new IpcFailure({ code: 'not_found', message: 'Composition template not found.' });
+    return this.copy(await managedPath(this.options.root, `builtin/${template.folder}`), name, template.manifest);
+  }
+  async createFromSkill(skillId: string, compositionName: string, inputName: string): Promise<CompositionInfo> {
+    const name = compositionNameSchema.parse(inputName); const templateName = compositionNameSchema.parse(compositionName);
+    if (!this.options.skillRoot) throw new IpcFailure({ code: 'unavailable', message: 'The skills library is unavailable.' });
+    const source = await managedPath(await this.options.skillRoot(skillIdSchema.parse(skillId)), `compositions/${templateName}`);
+    const manifest = manifestSchema.parse(JSON.parse(await readManaged(source, 'manifest.json')));
+    return this.copy(source, name, manifest);
+  }
+  private async copy(source: string, name: string, manifest: z.infer<typeof manifestSchema>): Promise<CompositionInfo> {
     const session = this.options.current(); const destination = await managedPath(session.rootPath, 'compositions'); let unique = name; let folder = '';
     for (let index = 1; ; index++) { unique = index === 1 ? name : `${name.slice(0, 90)}-${index}`; folder = await managedPath(destination, unique); try { await mkdir(folder, { mode: 0o700 }); break; } catch (error) { if (error instanceof Error && 'code' in error && error.code === 'EEXIST') continue; throw error; } }
-    const source = await managedPath(this.options.root, `builtin/${template.folder}`);
-    const copy = async (rel = '', depth = 0): Promise<void> => {
-      if (depth > 16) throw new IpcFailure({ code: 'invalid_request', message: 'Composition template is too deeply nested.' });
-      for (const entry of await readdir(rel ? await managedPath(source, rel) : source, { withFileTypes: true })) {
-        const child = rel ? `${rel}/${entry.name}` : entry.name; if (entry.isSymbolicLink()) throw new IpcFailure({ code: 'forbidden', message: 'Composition templates cannot contain symbolic links.' });
-        if (entry.isDirectory()) { await mkdir(await managedPath(folder, child)); await copy(child, depth + 1); }
-        else if (entry.isFile()) await copyFile(await managedPath(source, child), await managedPath(folder, child), constants.COPYFILE_EXCL);
-      }
-    };
-    await copy();
-    if (template.manifest.entry === 'index.html') { const html = await readManaged(folder, 'index.html'); await atomicWrite(folder, 'index.html', html.replaceAll('__CUTROOM_COMP_BASE__', this.options.baseUrl)); }
-    return { name: unique, engine: template.manifest.engine, path: `compositions/${unique}`, durationSec: template.manifest.durationSec, ...(template.manifest.compositionId ? { compositionId: template.manifest.compositionId } : {}) };
+    try {
+      await copyTree(source, folder);
+      if (manifest.entry === 'index.html') { const html = await readManaged(folder, 'index.html'); await atomicWrite(folder, 'index.html', html.replaceAll('__CUTROOM_COMP_BASE__', this.options.baseUrl)); }
+      return { name: unique, engine: manifest.engine, path: `compositions/${unique}`, durationSec: manifest.durationSec, ...(manifest.compositionId ? { compositionId: manifest.compositionId } : {}) };
+    } catch (error) { await rm(folder, { recursive: true, force: true }); throw error; }
   }
   async check(inputName: string): Promise<CompositionCheck> {
     const name = compositionNameSchema.parse(inputName); const root = await managedPath(this.options.current().rootPath, `compositions/${name}`); const violations: CompositionCheck['violations'] = [];
