@@ -7,9 +7,12 @@ import { compareVersions, toolNameSchema, type ToolPin } from './manifest';
 import { managedDirectory, publishExclusive, sha256 } from './files';
 import { clearQuarantine, extractZip, verifyArchitecture } from './binary';
 import { releasePin, ToolRegistry } from './registry';
+import { runCommand, type RunCommand } from '../process/run';
+import { BUILD_ENV, CLT_MESSAGE, ensureCmake, hasDeveloperTools } from './cmake';
+import { compileWhisper, sourceIsPinned, SOURCE_PIN_MESSAGE } from './whisperBuild';
 
 interface Job { controller: AbortController; done: Promise<void> }
-export interface InstallerOptions { registry: ToolRegistry; fetch?: Fetch; extract?: typeof extractZip; clearQuarantine?: typeof clearQuarantine }
+export interface InstallerOptions { registry: ToolRegistry; fetch?: Fetch; extract?: typeof extractZip; clearQuarantine?: typeof clearQuarantine; run?: RunCommand }
 export class ToolInstaller {
   private readonly jobs = new Map<string, Job>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -24,7 +27,6 @@ export class ToolInstaller {
   async ensureAll(): Promise<void> {
     for (const pin of this.options.registry.basePins()) {
       if (this.closed) return;
-      if (pin.source.format === 'build') continue;
       const tool = (await this.options.registry.list()).find((tool) => tool.name === pin.name);
       if (tool?.status !== 'ok') await this.install(pin.name).catch(() => undefined);
     }
@@ -33,7 +35,6 @@ export class ToolInstaller {
     if (this.closed) return Promise.reject(new IpcFailure({ code: 'unavailable', message: 'The app is shutting down.' }));
     const existing = this.jobs.get(name); if (existing) return existing.done;
     const pin = selected ?? this.pin(name);
-    if (pin.source.format === 'build') return Promise.reject(new IpcFailure({ code: 'invalid_request', message: 'Build with npm run build:whisper (requires cmake and Xcode Command Line Tools)' }));
     const controller = new AbortController();
     this.options.registry.setInstall(name, { state: 'queued', received: 0, total: null });
     const done = this.queue.then(async () => {
@@ -46,7 +47,40 @@ export class ToolInstaller {
     });
     this.jobs.set(name, { controller, done }); this.queue = done.catch(() => undefined); return done;
   }
+  async installPrerequisite(name: 'xcode-clt'): Promise<{ ok: true }> {
+    z.literal('xcode-clt').parse(name);
+    try {
+      const result = await (this.options.run ?? runCommand)('/usr/bin/xcode-select', ['--install'], { env: BUILD_ENV, timeoutMs: 15000 });
+      if (result.code !== 0) throw new Error();
+      return { ok: true };
+    } catch { throw new IpcFailure({ code: 'unavailable', message: 'Could not open Apple’s Command Line Tools installer. Try again from Settings › Tools.' }); }
+  }
+  private async performBuild(pin: ToolPin, signal: AbortSignal): Promise<void> {
+    const registry = this.options.registry;
+    if (!sourceIsPinned(pin)) throw new DownloadFailure(SOURCE_PIN_MESSAGE);
+    const run = this.options.run ?? runCommand;
+    const available = await hasDeveloperTools(run, signal);
+    signal.throwIfAborted(); registry.setDeveloperToolsMissing(!available);
+    if (!available) throw new DownloadFailure(CLT_MESSAGE);
+    const cmake = registry.options.manifest.buildTools?.find((tool) => tool.name === 'cmake');
+    if (!cmake) throw new DownloadFailure('The transcription build tool is not configured in this release.');
+    registry.setInstall(pin.name, { state: 'downloading', received: 0, total: null });
+    const cmakePath = await ensureCmake({ home: registry.options.home, pin: cmake, signal, run, fetch: this.options.fetch });
+    const toolsRoot = await managedDirectory(registry.options.home, 'tools');
+    const staging = await mkdtemp(path.join(toolsRoot, '.staging-'));
+    try {
+      const binary = await compileWhisper({ pin, signal, run, fetch: this.options.fetch, cmakePath, workDir: staging,
+        onProgress: (received) => registry.setInstall(pin.name, { state: 'building', received, total: 100 }) });
+      await verifyArchitecture(binary, registry.options.arch); const actual = await sha256(binary);
+      if (pin.sha256 && pin.sha256 !== actual) throw new DownloadFailure('The transcription executable checksum does not match. Nothing was installed.');
+      await chmod(binary, 0o755); await (this.options.clearQuarantine ?? clearQuarantine)(binary, signal);
+      const target = await managedDirectory(registry.options.home, 'tools', pin.name, pin.version);
+      signal.throwIfAborted(); await publishExclusive(binary, path.join(target, pin.name), actual);
+      await registry.installed.record({ name: pin.name, version: pin.version, arch: pin.arch, sha256: actual, archiveSha256: pin.sourceSha256!, verification: 'built', installedAt: new Date().toISOString() });
+    } finally { await rm(staging, { recursive: true, force: true }); }
+  }
   private async perform(pin: ToolPin, signal: AbortSignal): Promise<void> {
+    if (pin.source.format === 'build') return this.performBuild(pin, signal);
     const registry = this.options.registry;
     const toolsRoot = await managedDirectory(registry.options.home, 'tools');
     const staging = await mkdtemp(path.join(toolsRoot, '.staging-'));

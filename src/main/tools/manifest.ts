@@ -22,11 +22,16 @@ export const toolPinSchema = z.object({
 export type ToolPin = z.infer<typeof toolPinSchema>;
 export const modelPinSchema = z.object({ name: whisperModelNameSchema, url: https, sizeBytes: z.number().int().positive(), sha256: digest, ...hosts }).strict();
 export type ModelPin = z.infer<typeof modelPinSchema>;
-const manifestSchema = z.object({ schemaVersion: z.literal(2), tools: z.array(toolPinSchema), models: z.array(modelPinSchema).default([]) }).strict();
+export const buildToolPinSchema = z.object({
+  name: z.literal('cmake'), version: versionSchema, arch: z.literal('universal'), url: https,
+  checksum: z.object({ url: https, format: z.literal('sums'), entry }).strict(), ...hosts,
+}).strict();
+export type BuildToolPin = z.infer<typeof buildToolPinSchema>;
+const manifestSchema = z.object({ schemaVersion: z.literal(2), tools: z.array(toolPinSchema), models: z.array(modelPinSchema).default([]), buildTools: z.array(buildToolPinSchema).optional() }).strict();
 export type ToolsManifest = z.infer<typeof manifestSchema>;
 export function parseManifest(value: unknown): ToolsManifest {
   const manifest = manifestSchema.parse(value);
-  const keys = manifest.tools.map((pin) => `${pin.name}/${pin.version}/${pin.arch}`);
+  const keys = [...manifest.tools.map((pin) => `tool/${pin.name}/${pin.version}/${pin.arch}`), ...(manifest.buildTools ?? []).map((pin) => `build/${pin.name}/${pin.version}/${pin.arch}`)];
   if (new Set(keys).size !== keys.length || new Set(manifest.models.map((pin) => pin.name)).size !== manifest.models.length) throw new Error('Duplicate manifest pin.');
   return manifest;
 }

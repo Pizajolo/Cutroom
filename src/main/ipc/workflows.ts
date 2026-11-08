@@ -60,6 +60,11 @@ export function registerWorkflowIpc(runtime: WorkflowRuntime): void {
   workflowHandle('agent.send', (request) => runtime.agent.send(request));
   workflowHandle('agent.interrupt', ({ sessionId }) => runtime.agent.interrupt(sessionId));
   workflowHandle('agent.respondPermission', (request) => runtime.agent.respond(request));
+  workflowHandle('agent.respondQuestion', (request) => runtime.agent.respondQuestion(request));
+  workflowHandle('skills.list', () => runtime.skills.list());
+  workflowHandle('skills.get', ({ id }) => runtime.skills.get(id));
+  workflowHandle('skills.save', (request) => runtime.skills.save(request));
+  workflowHandle('skills.delete', ({ id }) => runtime.skills.delete(id));
   workflowHandle('agent.review.keep', ({ requestId, itemIds }) => { runtime.agent.review.keep(requestId, itemIds); return runtime.timeline().state(); });
   workflowHandle('agent.review.revert', ({ requestId, itemIds, resolution }) => runtime.agent.review.revert(runtime.timeline(), requestId, itemIds, resolution));
   workflowHandle('urlImport.fetch', ({ url }) => runtime.urls.fetch(url));

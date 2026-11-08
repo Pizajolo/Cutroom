@@ -85,7 +85,7 @@ else {
     mediaRef.current = media;
     const compositionsRoot = path.join(here, '../compositions');
     const compositionServer = await startCompositionServer({ projectRoot: (id) => media.rootFor(id), compositionsRoot, mediaBaseUrl: server.baseUrl, devOrigin: !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined });
-    const workflows = new WorkflowRuntime({ home: homeDir, media, store: settings, secrets, compositionsRoot, compositionBaseUrl: compositionServer.baseUrl, resolveModel: (name) => models.resolve(name), resolveTool: (name) => registry.resolve(name), emit });
+    const workflows = new WorkflowRuntime({ home: homeDir, media, store: settings, secrets, compositionsRoot, compositionBaseUrl: compositionServer.baseUrl, skillsRoot: path.join(resources, 'skills'), resolveModel: (name) => models.resolve(name), resolveTool: (name) => registry.resolve(name), emit });
     registerStartupIpc({ registry, media, installer, models, accounts, claude, workflows, getInfo: () => ({
       version: app.getVersion(), platform: process.platform, arch: process.arch,
       homeDir, mediaBaseUrl: server.baseUrl, compBaseUrl: compositionServer.baseUrl,
@@ -101,10 +101,9 @@ else {
     createWindow();
     void accounts.verifyConnected();
     if (process.env.CUTROOM_NO_AUTO_DOWNLOAD !== '1') {
+      void models.ensureDefault().catch(() => undefined);
       void (async () => {
         await installer.ensureAll();
-        if (closing) return;
-        await models.ensureDefault();
         if (!closing) await installer.checkUpdate('yt-dlp', true).catch(() => undefined);
       })().catch(() => undefined);
     }
