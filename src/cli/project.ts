@@ -34,6 +34,12 @@ export async function styleVideos(): Promise<Record<string, string[]>> {
   return Object.fromEntries(Object.entries(all).map(([id, files]) => [id, files.filter((file) => existsSync(file))]));
 }
 
+/** Take one video off a style's list. The file itself is not touched. */
+export async function unlinkVideo(id: string, file: string): Promise<void> {
+  const videos = await styleVideos();
+  await writeFile(VIDEOS, JSON.stringify({ ...videos, [id]: (videos[id] ?? []).filter((f) => f !== file) }, null, 2));
+}
+
 /** List a fresh export under every style its project uses. */
 export async function linkExport(root: string, file: string): Promise<void> {
   const styles = (await readProject(root)).styles ?? [];

@@ -5,7 +5,7 @@ import type { CutroomApi } from '../shared/types';
 const METHODS = [
   'openProject', 'recentProjects', 'openRecent', 'importFiles', 'downloadLinks', 'listMedia', 'getTimeline', 'saveTimeline',
   'loadChat', 'saveChat', 'send', 'stop', 'exportVideo', 'reveal', 'listSkills', 'tools',
-  'closeProject', 'forgetProject', 'revealSkill', 'readSkill', 'saveSkill', 'openVideo', 'deleteSkill', 'getSettings', 'saveSettings', 'claudeStatus',
+  'closeProject', 'forgetProject', 'revealSkill', 'readSkill', 'saveSkill', 'removeExample', 'deleteSkill', 'getSettings', 'saveSettings', 'claudeStatus',
   'claudeLogin', 'codexStatus', 'codexLogin', 'voices', 'micAccess', 'cloneVoice', 'deleteVoice', 'getScript', 'features', 'setProjectFeature', 'duration', 'getModel', 'setProjectModel',
 ] as const;
 

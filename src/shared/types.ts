@@ -150,10 +150,16 @@ export interface Skill {
   description: string;
   /** True for skills the user saved from their own edits. */
   custom: boolean;
-  /** `media://` address of the video the style was saved from, if it has one. */
-  example?: string;
-  /** Exported videos made with this style (absolute paths). */
-  videos: string[];
+  /** Videos that show the style: the one it was saved from, then every export made with it. */
+  examples: Example[];
+}
+
+export interface Example {
+  /** Absolute path of the video. */
+  file: string;
+  /** `media://` address the UI can play. */
+  src: string;
+  label: string;
 }
 
 /** Skills that are tools rather than editing styles. */
@@ -292,8 +298,8 @@ export interface CutroomApi {
   readSkill(id: string): Promise<string>;
   /** Rewrite one of the user's own styles. */
   saveSkill(id: string, text: string): Promise<Skill[]>;
-  /** Open a video listed under a style in the default player. */
-  openVideo(path: string): Promise<void>;
+  /** Take a video off a style's examples. An exported video stays where it is; the saved example goes to the Trash. */
+  removeExample(id: string, file: string): Promise<Skill[]>;
   /** Moves a saved style to the Trash. */
   deleteSkill(id: string): Promise<Skill[]>;
   getSettings(): Promise<Settings>;

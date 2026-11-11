@@ -7,7 +7,7 @@ import { Readable } from 'node:stream';
 import { BrowserWindow, app, dialog, ipcMain, protocol, shell } from 'electron';
 import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
-import { LIBRARY } from '../cli/project';
+import { LIBRARY, styleVideos, unlinkVideo } from '../cli/project';
 import { PREVIEW_FILE, PROJECT_DIRS, SCRIPT_FILE, TIMELINE_FILE } from '../shared/types';
 import type { ChatMessage, CutroomApi, Mark, Project, Script, Timeline } from '../shared/types';
 import * as agent from './agent';
@@ -135,9 +135,12 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
     await writeFile(path.join(agent.customSkillDir(id), 'SKILL.md'), text);
     return agent.listSkills();
   },
-  async openVideo(file) {
-    const known = (await agent.listSkills()).some((skill) => skill.videos.includes(file));
-    if (known) await shell.openPath(file);
+  async removeExample(id, file) {
+    const skills = await agent.listSkills();
+    if (!skills.find((skill) => skill.id === id)?.examples.some((example) => example.file === file)) return skills;
+    if (file.startsWith(LIBRARY + path.sep)) await shell.trashItem(file);
+    else await unlinkVideo(id, file);
+    return agent.listSkills();
   },
   async deleteSkill(id) {
     await shell.trashItem(agent.customSkillDir(id));
@@ -173,12 +176,14 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
 ]);
 
-/** `media://project/<path>` serves files from the open project and `media://style/<name>/example.mp4` from the style library, with range requests so video can seek. */
+/** `media://project/<path>` serves files from the open project, `media://style/<name>/example.mp4` from the style library
+ * and `media://export/<absolute path>` a video listed under a style, with range requests so video can seek. */
 async function serveMedia(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : root();
+  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'export' ? '/' : root();
   const file = path.join(base, decodeURIComponent(url.pathname));
-  if (!file.startsWith(base + path.sep)) return new Response(null, { status: 403 });
+  const allowed = url.host === 'export' ? Object.values(await styleVideos()).flat().includes(file) : file.startsWith(base + path.sep);
+  if (!allowed) return new Response(null, { status: 403 });
   const size = await stat(file).then((s) => s.size, () => -1);
   if (size < 0) return new Response(null, { status: 404 });
   const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') ?? '');

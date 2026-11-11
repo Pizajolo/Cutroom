@@ -13,6 +13,8 @@ import { agentConfig } from './settings';
 /** Built-in styles ship with the app; the user's own live in ~/.cutroom/library. Both are Claude Code plugins. */
 const BUILTIN = path.resolve(import.meta.dirname, '../../skills');
 
+const EXAMPLE = 'example.mp4';
+
 export async function listSkills(): Promise<Skill[]> {
   await mkdir(path.join(LIBRARY, '.claude-plugin'), { recursive: true });
   await mkdir(path.join(LIBRARY, 'skills'), { recursive: true });
@@ -25,8 +27,13 @@ export async function listSkills(): Promise<Skill[]> {
       const field = (key: string): string => new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(text)?.[1]?.trim() ?? '';
       if (!text) continue;
       const id = `${plugin}:${dir}`;
-      const example = plugin === 'my' && existsSync(path.join(root, 'skills', dir, 'example.mp4')) ? `media://style/${dir}/example.mp4` : undefined;
-      skills.push({ id, name: field('name') || dir, description: field('description'), custom: plugin === 'my', example, videos: videos[id] ?? [] });
+      const saved = path.join(root, 'skills', dir, EXAMPLE);
+      const examples = [
+        ...(plugin === 'my' && existsSync(saved) ? [{ file: saved, src: `media://style/${dir}/${EXAMPLE}`, label: 'Original — the style was saved from this' }] : []),
+        // `…/trip/exports/trip-01.mp4` → "trip / trip-01.mp4"
+        ...(videos[id] ?? []).map((file) => ({ file, src: `media://export${encodeURI(file)}`, label: `${file.split(path.sep).at(-3)} / ${path.basename(file)}` })),
+      ];
+      skills.push({ id, name: field('name') || dir, description: field('description'), custom: plugin === 'my', examples });
     }
   }
   return skills;
@@ -121,6 +128,14 @@ export async function send(root: string, text: string, marks: Mark[], files: str
         permissionMode: 'acceptEdits',
         allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'TodoWrite', ...Object.keys(config.mcpServers).map((name) => `mcp__${name}`)],
         disallowedTools: ['AskUserQuestion', 'WebSearch', 'WebFetch'],
+        // Style files count as sensitive, so Claude Code asks before writing them. Saving styles is the
+        // point of the library: allow it there (and in the project), refuse it anywhere else.
+        canUseTool: async (_tool, input) => {
+          const file = path.resolve(root, String(input.file_path ?? ''));
+          return [root, LIBRARY].some((dir) => file.startsWith(dir + path.sep))
+            ? { behavior: 'allow', updatedInput: input }
+            : { behavior: 'deny', message: 'Cutroom only allows this inside the project and the style library.' };
+        },
         includePartialMessages: true,
       },
     });
