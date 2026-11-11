@@ -1,118 +1,136 @@
-import { useEffect, useState } from 'react';
-import { Film, Keyboard, Redo2, Undo2, Upload } from 'lucide-react';
-import { Sidebar } from './components/Sidebar';
-import { SettingsLeaveDialog } from './components/SettingsLeaveDialog';
-import { Dialog } from './components/Dialog';
-import { Notice, Unavailable } from './components/Notice';
-import { EditorWorkspace } from './editor/EditorWorkspace';
-import { previewClock } from './editor/preview/store';
-import { useSelection } from './editor/selection/store';
-import { keymap, type Shortcut } from './lib/keymap';
-import { useAppInfo } from './lib/useAppInfo';
-import { Home } from './pages/Home';
-import { Projects, ProjectDialog } from './pages/Projects';
-import { WorkspaceSettings } from './pages/WorkspaceSettings';
-import { useEditor } from './editor/store';
-import { useAssistant } from './editor/assistantStore';
-import { ExportDialog } from './editor/ExportDialog';
-import { api } from './lib/api';
-import { Tools } from './pages/Tools';
-import { Accounts } from './pages/Accounts';
-import { Skills, focusChat } from './pages/Skills';
-import { addMarker, jumpEdit, jumpSeconds, setBoundary, toggleLoop } from './editor/timeline/navigation';
-import { SETTINGS_SECTIONS, connectProjects, useNavigation } from './state/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Download, House, Plus, SlidersHorizontal } from 'lucide-react';
+import { EMPTY_TIMELINE } from '../shared/types';
+import type { Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus } from '../shared/types';
+import { Chat } from './Chat';
+import { Features } from './Features';
+import { Home } from './Home';
+import { Preview } from './Preview';
+import { Timeline } from './Timeline';
+import { api } from './lib';
 
-function cycleRegion(direction: number) {
-  const regions = [...document.querySelectorAll<HTMLElement>('[data-workspace-region]')].filter((element) => element.getClientRects().length > 0);
-  const index = regions.findIndex((element) => element === document.activeElement || element.contains(document.activeElement));
-  regions[(index + direction + regions.length) % regions.length]?.focus();
-}
-
-function Settings() {
-  const section = useNavigation((state) => state.settingsSection);
-  const setSection = useNavigation((state) => state.setSettingsSection);
-  return <div className="settings-page"><nav className="settings-nav" aria-label="Settings sections"><h1>Settings</h1>{SETTINGS_SECTIONS.map((name) => <button type="button" key={name} aria-current={section === name ? 'page' : undefined} onClick={() => setSection(name)}>{name}</button>)}</nav>
-    <div key={section} className="settings-content" data-workspace-region tabIndex={-1}><h2>{section}</h2>
-      {section === 'Accounts' ? <Accounts /> : section === 'Tools' ? <Tools /> : <WorkspaceSettings section={section} />}
-    </div>
-  </div>;
-}
+export type PreviewState = { rendering: boolean; version: number; error?: string };
 
 export function App() {
-  const { info, error, retry } = useAppInfo();
-  const destination = useNavigation((state) => state.destination);
-  const project = useNavigation((state) => state.project);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
-  const timeline = useEditor((s) => s.timeline);
-  const pending = useEditor((s) => s.pending);
-  const projectError = useNavigation((s) => s.projectError);
-  useEffect(() => connectProjects(), []);
-  useEffect(() => api.on('agent.event', (event) => useAssistant.getState().receive(event)), []);
-  useEffect(() => {
-    const get = useNavigation.getState;
-    const bindings: Shortcut[] = [
-      { id: 'new-goal', key: 'n', command: true, scope: 'global', run: () => get().focusGoal() },
-      { id: 'open-project', key: 'o', command: true, scope: 'global', run: () => { void get().pickProject(); } },
-      { id: 'new-project', key: 'n', command: true, shift: true, scope: 'global', run: () => get().newProject() },
-      { id: 'chat', key: 'k', command: true, scope: 'global', allowInTextInput: true, run: focusChat },
-      { id: 'undo', key: 'z', command: true, scope: 'editor', enabled: () => !!useEditor.getState().timeline?.canUndo, run: () => { void useEditor.getState().history('undo'); } },
-      { id: 'redo', key: 'z', command: true, shift: true, scope: 'editor', enabled: () => !!useEditor.getState().timeline?.canRedo, run: () => { void useEditor.getState().history('redo'); } },
-      { id: 'settings', key: ',', command: true, scope: 'global', run: () => get().navigate('settings') },
-      { id: 'region-next', key: 'F6', scope: 'global', allowInTextInput: false, run: () => cycleRegion(1) },
-      { id: 'region-previous', key: 'F6', shift: true, scope: 'global', allowInTextInput: false, run: () => cycleRegion(-1) },
-      { id: 'export', key: 'e', command: true, shift: true, scope: 'editor', run: () => setExportOpen(true) },
-      ...([-1, 1] as const).flatMap((direction): Shortcut[] => [
-        { id: `edit-${direction}`, key: direction < 0 ? 'ArrowUp' : 'ArrowDown', scope: 'editor', run: () => jumpEdit(direction) },
-        { id: `marker-${direction}`, key: direction < 0 ? 'ArrowUp' : 'ArrowDown', shift: true, scope: 'editor', run: () => jumpEdit(direction, true) },
-        ...[false, true].map((shift): Shortcut => ({ id: `seconds-${direction}-${shift}`, key: direction < 0 ? 'ArrowLeft' : 'ArrowRight', command: true, shift, scope: 'editor', repeat: true, run: () => jumpSeconds(direction * (shift ? 5 : 1)) })),
-      ]),
-      { id: 'range-in', key: 'i', scope: 'editor', run: () => setBoundary('start') },
-      { id: 'range-out', key: 'o', scope: 'editor', run: () => setBoundary('end') },
-      { id: 'range-clear', key: 'x', scope: 'editor', run: () => useSelection.setState({ range: null }) },
-      { id: 'loop', key: 'l', command: true, scope: 'editor', run: toggleLoop },
-      { id: 'marker-add', key: 'm', scope: 'editor', run: addMarker },
-      { id: 'play', key: ' ', scope: 'editor', enabled: () => previewClock.getSnapshot().duration > 0 && !(document.activeElement instanceof HTMLButtonElement), run: () => previewClock.toggle() },
-      { id: 'reverse', key: 'j', scope: 'editor', run: () => previewClock.shuttle(-1) },
-      { id: 'pause', key: 'k', scope: 'editor', run: () => previewClock.pause() },
-      { id: 'forward', key: 'l', scope: 'editor', run: () => previewClock.shuttle(1) },
-      { id: 'frame-back', key: 'ArrowLeft', scope: 'editor', repeat: true, run: () => previewClock.step(-1) },
-      { id: 'frame-forward', key: 'ArrowRight', scope: 'editor', repeat: true, run: () => previewClock.step(1) },
-      { id: 'frames-back', key: 'ArrowLeft', shift: true, scope: 'editor', repeat: true, run: () => previewClock.step(-10) },
-      { id: 'frames-forward', key: 'ArrowRight', shift: true, scope: 'editor', repeat: true, run: () => previewClock.step(10) },
-      { id: 'start', key: 'Home', scope: 'editor', run: () => previewClock.seek(0) },
-      { id: 'end', key: 'End', scope: 'editor', run: () => previewClock.seek(previewClock.getSnapshot().duration) },
-      { id: 'clear-selection', key: 'Escape', scope: 'editor', run: () => useSelection.getState().clear() },
-    ];
-    const unregister = bindings.map((binding) => keymap.register(binding));
-    const detach = keymap.attach();
-    return () => { detach(); unregister.forEach((remove) => remove()); previewClock.pause(); };
-  }, []);
-  useEffect(() => {
-    keymap.setScopes(destination === 'project' ? ['editor'] : []);
-    if (destination !== 'project') previewClock.pause();
-  }, [destination]);
-  const title = destination === 'project' ? project?.project.name ?? 'Project' : destination === 'home' ? 'Home' : destination === 'projects' ? 'Projects' : destination === 'skills' ? 'Skills' : 'Settings';
-  return <div className="app-shell">
-    <Sidebar info={info} />
-    <div className="main-shell">
-      <header className="titlebar"><div className="breadcrumb"><Film size={16} aria-hidden="true" /><span>Cutroom</span><span className="breadcrumb-divider">/</span><strong title={title}>{title}</strong></div>
-        {destination === 'project' && <div className="titlebar-actions"><span className="quiet">{timeline ? `Saved · revision ${timeline.revision}` : 'Loading edit…'}</span><button type="button" className="icon-button" aria-label="Undo" disabled={pending || !timeline?.canUndo} onClick={() => { void useEditor.getState().history('undo'); }}><Undo2 size={16} /></button><button type="button" className="icon-button" aria-label="Redo" disabled={pending || !timeline?.canRedo} onClick={() => { void useEditor.getState().history('redo'); }}><Redo2 size={16} /></button><button type="button" className="button primary" onClick={() => setExportOpen(true)}><Upload size={14} />Export</button></div>}
-        {destination !== 'project' && <button type="button" className="icon-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}><Keyboard size={16} /></button>}
-      </header>
-      {error && <Notice danger action={<button type="button" className="button" onClick={retry}>Retry</button>}>{error}</Notice>}
-      {projectError && <Notice danger action={<button className="button" onClick={() => { void useNavigation.getState().refreshRecent(); }}>Refresh projects</button>}>{projectError}</Notice>}
-      <main className="main-content" id="main-content">
-        {destination === 'home' ? <Home /> : destination === 'projects' ? <Projects /> : destination === 'project' ? project ? <EditorWorkspace key={project.project.id} project={project.project} /> : <Unavailable title="Open a project first">Choose a project to edit its video.</Unavailable> : destination === 'skills' ? <Skills /> : <Settings />}
+  const [project, setProject] = useState<Project | null>(null);
+  const [timeline, setTimeline] = useState<TimelineData | null>(null);
+  const [preview, setPreview] = useState<PreviewState>({ rendering: false, version: 0 });
+  const [media, setMedia] = useState<MediaFile[]>([]);
+  const [tools, setTools] = useState<ToolStatus[]>([]);
+  const [marks, setMarks] = useState<Mark[]>([]);
+  const [pro, setPro] = useState(() => localStorage.getItem('mode') === 'pro');
+  const [exported, setExported] = useState<{ busy: boolean; file?: string; error?: string }>({ busy: false });
+  const [script, setScript] = useState<Script>({ text: '', pending: false });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const video = useRef<HTMLVideoElement>(null);
+  const sender = useRef<((text: string) => void) | null>(null);
 
-      </main>
+  useEffect(() => {
+    void api.tools().then(setTools);
+    const off = [
+      api.on('timeline', setTimeline),
+      api.on('preview', setPreview),
+      api.on('script', setScript),
+      api.on('media', setMedia),
+      api.on('tools', setTools),
+    ];
+    return () => off.forEach((stop) => stop());
+  }, []);
+  useEffect(() => localStorage.setItem('mode', pro ? 'pro' : 'simple'), [pro]);
+
+  const opened = async (next: Project | null): Promise<void> => {
+    if (!next) return;
+    setMarks([]);
+    setSettingsOpen(false);
+    history.current = { past: [], future: [] };
+    setPreview({ rendering: false, version: 0 });
+    setExported({ busy: false });
+    setTimeline(await api.getTimeline());
+    setScript(await api.getScript());
+    setMedia(await api.listMedia());
+    setProject(next);
+  };
+  const addMark = useCallback((mark: Mark) => setMarks((all) => [...all, mark]), []);
+  // Manual edits are undoable; each one is written to timeline.json, which re-renders the preview.
+  const history = useRef({ past: [] as (TimelineData | null)[], future: [] as (TimelineData | null)[] });
+  const apply = (next: TimelineData | null): void => {
+    setTimeline(next);
+    void api.saveTimeline(next ?? EMPTY_TIMELINE);
+  };
+  const editTimeline = (next: TimelineData): void => {
+    history.current.past.push(timeline);
+    history.current.future = [];
+    apply(next);
+  };
+  const step = (from: 'past' | 'future'): void => {
+    const { [from]: stack, [from === 'past' ? 'future' : 'past']: other } = history.current;
+    if (!stack.length) return;
+    other.push(timeline);
+    apply(stack.pop()!);
+  };
+  const exportVideo = async (): Promise<void> => {
+    setExported({ busy: true });
+    setExported(await api.exportVideo().then((file) => ({ busy: false, file }), (e: Error) => ({ busy: false, error: e.message })));
+  };
+  const drop = (event: React.DragEvent): void => {
+    event.preventDefault();
+    if (project) void api.importFiles([...event.dataTransfer.files].map((file) => api.pathForFile(file)));
+  };
+
+  const missing = tools.filter((tool) => tool.state !== 'ready');
+  const toolNote = missing.length > 0 && (
+    <span className="note" title={missing.map((t) => `${t.name}: ${t.detail ?? t.state}`).join('\n')}>
+      {missing.some((t) => t.state === 'installing') ? 'Installing' : 'Missing'}: {missing.map((t) => t.name).join(', ')}
+    </span>
+  );
+
+  if (!project) return <Home onOpen={opened}>{toolNote}</Home>;
+
+  return (
+    <div className={pro ? 'app pro' : 'app'} onDragOver={(e) => e.preventDefault()} onDrop={drop}>
+      <header>
+        <button className="ghost" title="Projects, styles and settings" onClick={() => void api.closeProject().then(() => setProject(null))}>
+          <House size={16} /> Home
+        </button>
+        <strong>{project.name}</strong>
+        <button className="ghost" title="Copy footage, logos or music into the project" onClick={() => void api.importFiles()}>
+          <Plus size={16} /> Add files
+        </button>
+        {toolNote}
+        <span className="spacer" />
+        {exported.error && <span className="note error" title={exported.error}>Export failed</span>}
+        {exported.file && (
+          <button className="ghost" onClick={() => void api.reveal(exported.file!)}>Show {exported.file}</button>
+        )}
+        <button className={settingsOpen ? 'active' : 'ghost'} title="Features for this project" onClick={() => setSettingsOpen(!settingsOpen)}>
+          <SlidersHorizontal size={16} /> Project settings
+        </button>
+        <div className="switch" role="tablist" aria-label="Interface">
+          <button role="tab" aria-selected={!pro} onClick={() => setPro(false)}>Simple</button>
+          <button role="tab" aria-selected={pro} onClick={() => setPro(true)}>Pro</button>
+        </div>
+        <button className="primary" disabled={!timeline?.clips.length || exported.busy} onClick={() => void exportVideo()}>
+          <Download size={16} /> {exported.busy ? 'Exporting…' : 'Export'}
+        </button>
+      </header>
+      <Preview
+        video={video} timeline={timeline} preview={preview} media={media} marks={marks} onMark={addMark} script={script}
+        onApprove={() => sender.current?.('The script is approved. Create the video.')}
+      />
+      {settingsOpen && (
+        <aside className="project-settings">
+          <strong>Features in this project</strong>
+          <p className="hint">Switch off what Claude should not use here. Defaults and accounts are on Home.</p>
+          <Features scope="project" />
+        </aside>
+      )}
+      <Chat key={project.root} hasEdit={!!timeline?.clips.length} marks={marks} setMarks={setMarks} media={media} sender={sender} />
+      {pro && (
+        <Timeline
+          video={video} timeline={timeline} media={media} onChange={editTimeline} onMark={addMark}
+          onUndo={() => step('past')} onRedo={() => step('future')}
+        />
+      )}
     </div>
-    <SettingsLeaveDialog />
-    <ProjectDialog />
-    {exportOpen && project && <ExportDialog onClose={() => setExportOpen(false)} />}
-    {shortcutsOpen && <Dialog title="Keyboard shortcuts" onClose={() => setShortcutsOpen(false)} footer={<button type="button" className="button" onClick={() => setShortcutsOpen(false)}>Done</button>}>
-      <dl className="shortcut-list">{[['Focus chat', '⌘K'], ['Open / new project', '⌘O / ⇧⌘N'], ['Settings', '⌘,'], ['Undo / redo', '⌘Z / ⇧⌘Z'], ['Play / pause; shuttle', 'Space; J K L'], ['Frame / 10 frames', '← → / ⇧← →'], ['Previous / next edit', '↑ ↓'], ['Jump 1 / 5 seconds', '⌘← → / ⇧⌘← →'], ['Nudge 1 / 10 frames', '⌥← → / ⇧⌥← →'], ['Selection / Cut tool', 'V / C'], ['Split / split all tracks', 'S / ⇧S'], ['Ripple / Snap', 'R / N'], ['Trim start / end', 'Q / W'], ['In / Out / clear range', 'I / O / X'], ['Loop', '⌘L'], ['Marker / previous / next marker', 'M / ⇧↑ / ⇧↓'], ['Select forward / all', 'A / ⌘A'], ['Copy / Cut / Paste / Duplicate', '⌘C / ⌘X / ⌘V / ⌘D'], ['Delete / Ripple delete', 'Backspace / ⇧Backspace'], ['Clip or gap menu', '⇧F10'], ['Next / previous region', 'F6 / ⇧F6']].map(([action, keys]) => <div key={action}><dt>{action}</dt><dd><kbd>{keys}</kbd></dd></div>)}</dl>
-      <p className="field-note">Editing shortcuts stay inactive in text fields. Project actions need an open project connection.</p>
-    </Dialog>}
-  </div>;
+  );
 }

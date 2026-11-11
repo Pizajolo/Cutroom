@@ -1,116 +1,207 @@
-import { app, BrowserWindow, dialog, protocol, session } from 'electron';
-import { homedir } from 'node:os';
+// Electron shell: one window, the project folder, a preview that follows the timeline, and IPC.
+import { createReadStream, watch } from 'node:fs';
+import type { FSWatcher } from 'node:fs';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { emit } from './ipc';
-import { registerStartupIpc } from './ipc/startup';
-import { appResponse } from './protocol';
-import { readManifest } from './tools/manifest';
-import { ToolRegistry } from './tools/registry';
-import { startMediaServer } from './server/mediaServer';
-import { startCompositionServer } from './server/compositionServer';
-import { MediaService } from './media/service';
-import { stopMediaProcesses } from './media/process';
-import { SettingsStore } from './settings/store';
-import { ToolInstaller } from './tools/installer';
-import { WhisperModels } from './whisper/models';
-import { AccountsService } from './accounts/service';
-import { KeychainSecrets } from './secrets/keychain';
-import { ClaudeCodeService } from './claude/service';
-import { configureClaudeAgentEnv } from './claude/env';
-import { WorkflowRuntime } from './projects/runtime';
-import { allowAudioPermission } from './permissions';
+import { Readable } from 'node:stream';
+import { BrowserWindow, app, dialog, ipcMain, protocol, shell } from 'electron';
+import { readTimeline, render } from '../cli/render';
+import { run } from '../cli/run';
+import { PROJECT_DIRS, SCRIPT_FILE, TIMELINE_FILE } from '../shared/types';
+import type { ChatMessage, CutroomApi, Mark, Project, Script, Timeline } from '../shared/types';
+import * as agent from './agent';
+import { forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
+import { claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
+import { ensureTools, toolStatus } from './tools';
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
-const here = path.dirname(fileURLToPath(import.meta.url));
+let win: BrowserWindow | undefined;
+let project: Project | null = null;
+let timeline: Timeline | null = null;
+let watcher: FSWatcher | undefined;
+let previewJob: AbortController | undefined;
+let previewVersion = 0;
 
-function createWindow(): void {
-  const window = new BrowserWindow({
-    title: 'Cutroom', width: 1440, height: 960, minWidth: 1024, minHeight: 680,
-    webPreferences: {
-      preload: path.join(here, '../preload/index.cjs'),
-      contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true,
+const emit = (channel: string, payload: unknown): void => win?.webContents.send(channel, payload);
+const root = (): string => {
+  if (!project) throw new Error('Open a project first.');
+  return project.root;
+};
+
+// --- Preview -----------------------------------------------------------------------------
+
+/** Re-read the timeline, tell the UI, and render a fresh preview (cancelling a stale one). */
+async function refresh(): Promise<void> {
+  previewJob?.abort();
+  const job = (previewJob = new AbortController());
+  try {
+    timeline = await readTimeline(root());
+    emit('timeline', timeline);
+    if (!timeline?.clips.length) return emit('preview', { rendering: false, version: 0 });
+    emit('preview', { rendering: true, version: previewVersion });
+    await render(root(), { preview: true, signal: job.signal });
+    previewVersion = Date.now();
+    emit('preview', { rendering: false, version: previewVersion });
+  } catch (error) {
+    if (!job.signal.aborted) emit('preview', { rendering: false, version: previewVersion, error: (error as Error).message });
+  }
+}
+
+/** The script awaits approval when it is newer than the edit (or there is no edit yet). */
+async function readScript(dir: string): Promise<Script> {
+  const file = path.join(dir, SCRIPT_FILE);
+  const text = await readFile(file, 'utf8').catch(() => '');
+  const [written, edited] = await Promise.all([file, path.join(dir, TIMELINE_FILE)].map((f) => stat(f).then((s) => s.mtimeMs, () => 0)));
+  return { text, pending: !!text && written! > edited! };
+}
+
+/** Watch the project folder: timeline or overlay changes refresh the preview, media changes the file list. */
+function watchProject(dir: string): void {
+  watcher?.close();
+  const changed = new Set<string>();
+  let timer: NodeJS.Timeout | undefined;
+  watcher = watch(dir, { recursive: true }, (_event, file) => {
+    if (!file) return;
+    changed.add(file);
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const files = [...changed];
+      changed.clear();
+      const used = new Set([TIMELINE_FILE, ...(timeline ? [...timeline.overlays, ...timeline.audio].map((i) => i.src) : [])]);
+      if (files.some((f) => used.has(f))) void refresh();
+      if (files.includes(SCRIPT_FILE) || files.includes(TIMELINE_FILE)) emit('script', await readScript(dir));
+      if (files.some((f) => PROJECT_DIRS.some((d) => f.startsWith(`${d}/`)))) emit('media', await listMedia(dir));
+    }, 300);
+  });
+}
+
+async function open(dir: string): Promise<Project> {
+  agent.stop();
+  project = await openProject(dir);
+  timeline = null;
+  watchProject(dir);
+  void refresh();
+  return project;
+}
+
+// --- IPC ---------------------------------------------------------------------------------
+
+const chatFile = (): string => path.join(root(), '.cutroom/chat.json');
+
+const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
+  async openProject() {
+    const picked = await dialog.showOpenDialog(win!, {
+      title: 'Open a folder with your footage',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    return picked.filePaths[0] ? open(picked.filePaths[0]) : null;
+  },
+  recentProjects,
+  openRecent: (dir) => open(dir).catch(() => null),
+  async importFiles(paths) {
+    const files = paths ?? (await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'] })).filePaths;
+    await importFiles(root(), files);
+  },
+  listMedia: () => listMedia(root()),
+  getTimeline: async () => timeline,
+  duration: async (file) =>
+    Number(await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path.join(root(), file)]).catch(() => 0)) || 0,
+  saveTimeline: (next) => writeFile(path.join(root(), TIMELINE_FILE), JSON.stringify(next, null, 2)),
+  loadChat: async () => JSON.parse(await readFile(chatFile(), 'utf8').catch(() => '[]')) as ChatMessage[],
+  saveChat: (messages) => writeFile(chatFile(), JSON.stringify(messages)),
+  send: (text: string, marks: Mark[], files: string[]) =>
+    agent.send(root(), text, marks, files, timeline, (event) => {
+      emit('agent', event);
+      // Catch anything the watcher missed (e.g. a graphic re-rendered in place) once the turn ends.
+      if (event.type === 'done') void refresh();
+    }),
+  stop: async () => agent.stop(),
+  exportVideo: async () => path.relative(root(), await render(root())),
+  reveal: async (file) => shell.showItemInFolder(path.join(root(), file)),
+  async closeProject() {
+    agent.stop();
+    watcher?.close();
+    previewJob?.abort();
+    project = null;
+  },
+  forgetProject,
+  listSkills: agent.listSkills,
+  revealSkill: async (id) => shell.showItemInFolder(agent.skillFile(id)),
+  async deleteSkill(id) {
+    await shell.trashItem(agent.customSkillDir(id));
+    return agent.listSkills();
+  },
+  getSettings: loadSettings,
+  saveSettings,
+  claudeStatus,
+  claudeLogin,
+  codexStatus,
+  codexLogin,
+  voices,
+  micAccess,
+  cloneVoice,
+  deleteVoice,
+  getScript: () => readScript(root()),
+  features: () => features(project?.root),
+  setProjectFeature: (id, on) => setProjectFeature(root(), id, on),
+  getModel: () => modelChoice(root()),
+  setProjectModel: (model) => setProjectModel(root(), model),
+  tools: async () => toolStatus(),
+};
+
+// --- App ---------------------------------------------------------------------------------
+
+const MIME: Record<string, string> = {
+  '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.m4v': 'video/mp4',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
+};
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
+]);
+
+/** `media://project/<path>` serves files from the open project, with range requests so video can seek. */
+async function serveMedia(request: Request): Promise<Response> {
+  const file = path.join(root(), decodeURIComponent(new URL(request.url).pathname));
+  if (!file.startsWith(root() + path.sep)) return new Response(null, { status: 403 });
+  const size = await stat(file).then((s) => s.size, () => -1);
+  if (size < 0) return new Response(null, { status: 404 });
+  const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') ?? '');
+  const start = Number(range?.[1] || 0);
+  const end = Math.min(Number(range?.[2] || size - 1), size - 1);
+  return new Response(Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream, {
+    status: range ? 206 : 200,
+    headers: {
+      'content-type': MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
+      'content-length': String(end - start + 1),
+      'content-range': `bytes ${start}-${end}/${size}`,
+      'accept-ranges': 'bytes',
+      'cache-control': 'no-store',
     },
   });
-  window.webContents.on('will-navigate', (event) => event.preventDefault());
-  window.webContents.on('will-redirect', (event) => event.preventDefault());
-  window.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  const devUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
-  if (devUrl) void window.loadURL(devUrl);
-  else void window.loadURL('app://cutroom/');
 }
 
-if (!app.requestSingleInstanceLock()) app.quit();
-else {
-  app.on('second-instance', () => {
-    const window = BrowserWindow.getAllWindows()[0];
-    if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
+void app.whenReady().then(() => {
+  protocol.handle('media', serveMedia);
+  for (const [name, fn] of Object.entries(api)) {
+    ipcMain.handle(name, (_event, ...args: unknown[]) => (fn as (...a: unknown[]) => unknown)(...args));
+  }
+  win = new BrowserWindow({
+    width: 1320,
+    height: 860,
+    minWidth: 820,
+    minHeight: 560,
+    titleBarStyle: 'hiddenInset',
+    backgroundColor: '#191c20',
+    webPreferences: { preload: path.join(import.meta.dirname, '../preload/index.cjs') },
   });
-  void app.whenReady().then(async () => {
-    const appUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL ? process.env.ELECTRON_RENDERER_URL : 'app://cutroom/';
-    session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-      callback(allowAudioPermission({ permission, origin: details.requestingUrl, mainFrame: details.isMainFrame && BrowserWindow.getAllWindows().some((window) => window.webContents === contents), mediaTypes: 'mediaTypes' in details ? details.mediaTypes : undefined }, appUrl));
-    });
-    // The check API does not specify requested media types; defer to the request handler.
-    session.defaultSession.setPermissionCheckHandler(() => false);
-    const homeDir = path.resolve(process.env.CUTROOM_HOME ?? path.join(homedir(), '.cutroom'));
-    const settings = await SettingsStore.load(homeDir);
-    const resources = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'resources');
-    const manifest = await readManifest(path.join(resources, 'tools-manifest.json'));
-    const registry = new ToolRegistry({
-      home: homeDir, arch: process.arch,
-      bundledRoot: app.isPackaged ? path.join(resources, 'bin') : path.join(resources, 'bin', process.arch),
-      manifest,
-      onChanged: (tools) => emit('tools.changed', tools),
-    });
-    await registry.initialize();
-    const installer = new ToolInstaller({ registry });
-    const models = new WhisperModels({ home: homeDir, pins: manifest.models, settings, onChanged: (models) => emit('models.changed', models) });
-    await models.initialize();
-    const claude = new ClaudeCodeService();
-    const secrets = new KeychainSecrets();
-    const accounts = new AccountsService({ settings, secrets, claudeCode: claude, onChanged: (accounts) => emit('accounts.changed', accounts) });
-    configureClaudeAgentEnv(accounts);
-    const mediaRef: { current?: MediaService } = {};
-    const server = await startMediaServer({
-      projectRoot: (id) => mediaRef.current?.rootFor(id),
-      devOrigin: !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined,
-    });
-    const media = new MediaService({
-      resolveTool: (name) => registry.resolve(name), url: server.url,
-      onChanged: (projectId, rels) => emit('media.changed', { projectId, rels }),
-      onProgress: (progress) => emit('media.progress', progress),
-    });
-    mediaRef.current = media;
-    const compositionsRoot = path.join(here, '../compositions');
-    const compositionServer = await startCompositionServer({ projectRoot: (id) => media.rootFor(id), compositionsRoot, mediaBaseUrl: server.baseUrl, devOrigin: !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined });
-    const workflows = new WorkflowRuntime({ home: homeDir, media, store: settings, secrets, compositionsRoot, compositionBaseUrl: compositionServer.baseUrl, skillsRoot: path.join(resources, 'skills'), resolveModel: (name) => models.resolve(name), resolveTool: (name) => registry.resolve(name), emit });
-    registerStartupIpc({ registry, media, installer, models, accounts, claude, workflows, getInfo: () => ({
-      version: app.getVersion(), platform: process.platform, arch: process.arch,
-      homeDir, mediaBaseUrl: server.baseUrl, compBaseUrl: compositionServer.baseUrl,
-    }) });
-    protocol.handle('app', (request) => appResponse(request, path.join(here, '../renderer'), server.baseUrl, compositionServer.baseUrl));
-    let closing = false; let closed = false;
-    app.on('before-quit', (event) => {
-      if (closed) return;
-      event.preventDefault(); if (closing) return; closing = true;
-      media?.close();
-      void Promise.allSettled([workflows.close(), server.close(), compositionServer.close(), stopMediaProcesses(), installer.close(), models.close(), accounts.close()]).finally(() => { closed = true; app.quit(); });
-    });
-    createWindow();
-    void accounts.verifyConnected();
-    if (process.env.CUTROOM_NO_AUTO_DOWNLOAD !== '1') {
-      void models.ensureDefault().catch(() => undefined);
-      void (async () => {
-        await installer.ensureAll();
-        if (!closing) await installer.checkUpdate('yt-dlp', true).catch(() => undefined);
-      })().catch(() => undefined);
-    }
-    app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-  }).catch(() => {
-    dialog.showErrorBox('Cutroom could not start', 'The local media service or tools directory could not be initialized. Check directory permissions and local network binding permissions.');
-    app.quit();
-  });
-  app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-}
+  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  else void win.loadFile(path.join(import.meta.dirname, '../renderer/index.html'));
+  void ensureTools((tools) => emit('tools', tools));
+});
+
+app.on('window-all-closed', () => {
+  previewJob?.abort();
+  agent.stop();
+  app.quit();
+});

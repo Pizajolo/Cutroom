@@ -1,8 +1,0 @@
-{
-  "id": "captions",
-  "name": "Captions",
-  "engine": "hyperframes",
-  "description": "Word-timed captions with four highlight presets",
-  "durationSec": 5,
-  "entry": "index.html"
-}

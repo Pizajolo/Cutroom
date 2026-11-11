@@ -1,0 +1,182 @@
+import { memo, useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
+import { ArrowUp, Film, Flag, Sparkles, Square, X } from 'lucide-react';
+import type { AgentEvent, ChatMessage, Mark, MediaFile, ModelChoice, Skill } from '../shared/types';
+import { Markdown } from './Markdown';
+import { api, clock } from './lib';
+
+interface Props {
+  hasEdit: boolean;
+  marks: Mark[];
+  setMarks: (marks: Mark[]) => void;
+  media: MediaFile[];
+  /** Lets the rest of the app send a message, e.g. the script's Approve button. */
+  sender: RefObject<((text: string) => void) | null>;
+}
+
+/** Skills that are tools rather than editing styles. */
+const UTILITIES = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate'];
+
+const markLabel = (mark: Mark): string =>
+  mark.itemId ?? (mark.end ? `${clock(mark.start)} – ${clock(mark.end)}` : clock(mark.start));
+
+const fileName = (path: string): string => path.split('/').pop()!;
+
+/** Fold one streamed agent event into the conversation. */
+function reduce(messages: ChatMessage[], event: AgentEvent): ChatMessage[] {
+  const last = messages.at(-1);
+  if (last?.role !== 'assistant') return messages;
+  const parts = [...last.parts];
+  const tail = parts.at(-1);
+  if (event.type === 'text' && tail?.type === 'text') parts[parts.length - 1] = { type: 'text', text: tail.text + event.text };
+  else if (event.type !== 'done') parts.push(event);
+  else if (event.error) parts.push({ type: 'text', text: event.error });
+  return [...messages.slice(0, -1), { ...last, parts, error: event.type === 'done' && !!event.error }];
+}
+
+/** The conversation with Claude. Marks made in the preview or timeline ride along with the next message. */
+export const Chat = memo(function Chat({ hasEdit, marks, setMarks, media, sender }: Props) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skill, setSkill] = useState('');
+  const [model, setModel] = useState<ModelChoice | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [files, setFiles] = useState<string[]>([]);
+  const [picking, setPicking] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    void api.loadChat().then(setMessages);
+    void api.listSkills().then(setSkills);
+    void api.getModel().then(setModel);
+    return api.on('agent', (event) => {
+      setMessages((all) => reduce(all, event));
+      if (event.type === 'done') {
+        setBusy(false);
+        void api.listSkills().then(setSkills); // the turn may have saved a new style
+      }
+    });
+  }, []);
+  useEffect(() => {
+    if (list.current) list.current.scrollTop = list.current.scrollHeight;
+  }, [messages]);
+  // Persist the conversation whenever a turn finishes.
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !busy) void api.saveChat(messages);
+    wasBusy.current = busy;
+  }, [busy, messages]);
+
+  const sendText = (text: string): void => {
+    if (!text || busy) return;
+    setMessages((all) => [...all, { role: 'user', parts: [{ type: 'text', text }], marks, files }, { role: 'assistant', parts: [] }]);
+    setBusy(true);
+    void api.send(skill ? `Use the ${skill} skill.\n\n${text}` : text, marks, files);
+    setMarks([]);
+    setFiles([]);
+    setPicking(false);
+    setSkill('');
+  };
+  sender.current = sendText;
+  const send = (): void => {
+    sendText(draft.trim());
+    if (!busy) setDraft('');
+  };
+  const toggleFile = (path: string): void => setFiles(files.includes(path) ? files.filter((f) => f !== path) : [...files, path]);
+  const footage = media.filter((file) => file.dir === 'raw' && file.kind === 'video');
+  const saveStyle = (): void => {
+    setDraft('Save the style of this edit as a new skill called ');
+    input.current?.focus();
+  };
+
+  return (
+    <section className="chat">
+      <div className="messages" ref={list}>
+        {messages.length === 0 && (
+          <p className="hint">
+            Describe the video you want — “make a 30 second reel from the best moments”. Paste links to videos you like
+            as references. Then mark frames or sections in the preview and say what to change.
+          </p>
+        )}
+        {messages.map((message, i) => (
+          <article key={i} className={`${message.role}${message.error ? ' error' : ''}`}>
+            {message.marks?.map((mark, n) => (
+              <span key={n} className="chip"><Flag size={12} /> {markLabel(mark)}</span>
+            ))}
+            {message.files?.map((file) => (
+              <span key={file} className="chip file"><Film size={12} /> {fileName(file)}</span>
+            ))}
+            {message.parts.map((part, n) =>
+              part.type === 'tool' ? <p key={n} className="tool">{part.text}</p> : <Markdown key={n} text={part.text} />,
+            )}
+            {busy && i === messages.length - 1 && <p className="tool working">Working…</p>}
+          </article>
+        ))}
+      </div>
+      <form className="composer" onSubmit={(e) => (e.preventDefault(), send())}>
+        {picking && (
+          <div className="footage">
+            {footage.map((file) => (
+              <button type="button" key={file.path} className={files.includes(file.path) ? 'selected' : ''} title={fileName(file.path)} onClick={() => toggleFile(file.path)}>
+                <video src={`media://project/${encodeURI(file.path)}#t=0.5`} preload="metadata" muted />
+                <span>{fileName(file.path)}</span>
+              </button>
+            ))}
+            {footage.length === 0 && <p className="hint">No footage in raw/ yet. Drop videos onto the window.</p>}
+          </div>
+        )}
+        {marks.length + files.length > 0 && (
+          <div className="chips">
+            {files.map((file) => (
+              <button type="button" key={file} className="chip file" title="Remove" onClick={() => toggleFile(file)}>
+                <Film size={12} /> {fileName(file)} <X size={12} />
+              </button>
+            ))}
+            {marks.map((mark, i) => (
+              <button type="button" key={i} className="chip" title="Remove mark" onClick={() => setMarks(marks.filter((m) => m !== mark))}>
+                <Flag size={12} /> {markLabel(mark)} <X size={12} />
+              </button>
+            ))}
+          </div>
+        )}
+        <textarea
+          ref={input} rows={3} value={draft} autoFocus
+          placeholder={marks.length ? 'What should change at the marked spots?' : 'Tell Claude what to make or change…'}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
+        />
+        <div className="row">
+          <button type="button" className={picking ? 'active' : 'ghost'} title="Choose the footage Claude should use" onClick={() => setPicking(!picking)}>
+            <Film size={14} /> Footage
+          </button>
+          <select value={skill} onChange={(e) => setSkill(e.target.value)} aria-label="Style" title={skills.find((s) => s.id === skill)?.description}>
+            <option value="">Style: auto</option>
+            {skills.filter((s) => !UTILITIES.includes(s.id)).map((s) => (
+              <option key={s.id} value={s.id}>{s.custom ? '★ ' : ''}{s.name}</option>
+            ))}
+          </select>
+          {model && (
+            <select
+              value={model.project} aria-label="Model" title="Model for this project"
+              onChange={(e) => (setModel({ ...model, project: e.target.value }), void api.setProjectModel(e.target.value))}
+            >
+              <option value="">Model: {model.options.find((o) => o.id === model.default)?.label}</option>
+              {model.options.filter((o) => o.id).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          )}
+          <button type="button" className="ghost" disabled={!hasEdit || busy} title="Save style: keep this look for future videos" aria-label="Save style" onClick={saveStyle}>
+            <Sparkles size={14} />
+          </button>
+          <span className="spacer" />
+          {busy ? (
+            <button type="button" className="primary round" aria-label="Stop" onClick={() => void api.stop()}><Square size={14} /></button>
+          ) : (
+            <button type="submit" className="primary round" aria-label="Send" disabled={!draft.trim()}><ArrowUp size={16} /></button>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+});

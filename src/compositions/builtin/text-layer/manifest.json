@@ -1,8 +1,0 @@
-{
-  "id": "text-layer",
-  "name": "Text layer",
-  "engine": "hyperframes",
-  "description": "Editable text over your footage",
-  "durationSec": 5,
-  "entry": "index.html"
-}

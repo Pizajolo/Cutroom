@@ -1,8 +1,0 @@
-{
-  "id": "lower-third",
-  "name": "Lower third",
-  "engine": "hyperframes",
-  "description": "Introduce a speaker without covering the story",
-  "durationSec": 5,
-  "entry": "index.html"
-}
