@@ -15,9 +15,12 @@ export const CONNECTIONS = {
 } as const satisfies Record<string, { label: string; pricing: Pricing; where: string; llm?: string; models?: string }>;
 export type Connection = keyof typeof CONNECTIONS;
 
+/** Stills through the ChatGPT sign-in: Codex's built-in image tool. No API key. */
+const CODEX_IMAGE = 'codex:image';
+
 /**
  * Every capability the user can switch on or off. `models` lists where a generated-media
- * feature can come from, as `<connection>:<model id>`; the first is the default.
+ * feature can come from, as `<connection>:<model id>`; the default is the first one whose account is connected.
  */
 export const FEATURES = {
   captions: { label: 'Captions and transcripts', group: 'Editing', via: 'Whisper, on this Mac' },
@@ -26,8 +29,8 @@ export const FEATURES = {
   voiceover: { label: 'Voice-over and voice cloning', group: 'Sound', via: 'ElevenLabs' },
   music: { label: 'Generated music', group: 'Sound', via: 'ElevenLabs' },
   sfx: { label: 'Generated sound effects', group: 'Sound', via: 'ElevenLabs' },
-  image: { label: 'Generated stills', group: 'Generated picture', models: ['fal:google/nano-banana-2.1', 'openrouter:openai/gpt-image-2', 'alibaba:wan2.7-image-pro', 'theta:Stable Diffusion XL Turbo'] },
-  edit: { label: 'Stills from a reference image', group: 'Generated picture', models: ['fal:google/nano-banana-2.1/edit', 'openrouter:openai/gpt-image-2', 'theta:Image to Image'] },
+  image: { label: 'Generated stills', group: 'Generated picture', models: ['fal:google/nano-banana-2.1', 'openrouter:openai/gpt-image-2', 'alibaba:wan2.7-image-pro', 'theta:Stable Diffusion XL Turbo', CODEX_IMAGE] },
+  edit: { label: 'Stills from a reference image', group: 'Generated picture', models: ['fal:google/nano-banana-2.1/edit', 'openrouter:openai/gpt-image-2', 'theta:Image to Image', CODEX_IMAGE] },
   textToVideo: { label: 'B-roll from text', group: 'Generated picture', models: ['fal:kling/v4/text-to-video', 'openrouter:google/veo-3.1', 'alibaba:wan2.7-t2v', 'theta:Seedance 2.5'] },
   imageToVideo: { label: 'B-roll from an image', group: 'Generated picture', models: ['fal:kling/v4/image-to-video', 'openrouter:google/veo-3.1', 'alibaba:happyhorse-1.1-i2v', 'theta:Seedance 2.5'] },
   lipsync: { label: 'Lip sync (portrait + audio)', group: 'Generated picture', models: ['fal:minimax/h3-max/lip-sync/image-to-video'] },
@@ -64,9 +67,12 @@ export function featureStates(settings: Settings, offHere: string[], codexSigned
   return (Object.keys(FEATURES) as Feature[]).map((id) => {
     const feature: { label: string; group: string; via?: string; models?: readonly string[] } = FEATURES[id];
     const saved = settings.features[id];
-    const model = feature.models && (saved?.model || feature.models[0]!);
-    const connection = model ? CONNECTIONS[connectionOf(model)] : undefined;
-    const connected = model ? !!settings.keys[connectionOf(model)] : feature.via === 'ElevenLabs' ? eleven : id === 'codex' ? codexSignedIn : true;
+    const reachable = (m: string): boolean => (m.startsWith('codex:') ? codexSignedIn : !!settings.keys[connectionOf(m)]);
+    const model = feature.models && (saved?.model || feature.models.find(reachable) || feature.models[0]!);
+    const connection: { label: string; pricing: Pricing } | undefined = model?.startsWith('codex:')
+      ? { label: 'ChatGPT (Codex)', pricing: 'subscription' }
+      : model ? CONNECTIONS[connectionOf(model)] : undefined;
+    const connected = model ? reachable(model) : feature.via === 'ElevenLabs' ? eleven : id === 'codex' ? codexSignedIn : true;
     const on = saved?.on ?? true;
     return {
       id,

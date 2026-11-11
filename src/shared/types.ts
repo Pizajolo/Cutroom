@@ -4,6 +4,8 @@ import type { Connection, Feature, FeatureState } from './features';
 
 /** The four folders every project has. Everything Cutroom generates lives in `.cutroom/`. */
 export const PROJECT_DIRS = ['raw', 'references', 'exports', 'assets'] as const;
+/** Where the user can put files they add. */
+export type ImportDir = 'raw' | 'references' | 'assets';
 export const TIMELINE_FILE = '.cutroom/timeline.json';
 export const PREVIEW_FILE = '.cutroom/preview.mp4';
 export const SCRIPT_FILE = '.cutroom/script.md';
@@ -148,7 +150,14 @@ export interface Skill {
   description: string;
   /** True for skills the user saved from their own edits. */
   custom: boolean;
+  /** `media://` address of the video the style was saved from, if it has one. */
+  example?: string;
+  /** Exported videos made with this style (absolute paths). */
+  videos: string[];
 }
+
+/** Skills that are tools rather than editing styles. */
+export const UTILITY_SKILLS = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate'];
 
 export interface ToolStatus {
   name: string;
@@ -237,6 +246,8 @@ export interface ChatMessage {
   marks?: Mark[];
   /** Footage the user picked for this request. */
   files?: string[];
+  /** On a reply: the edit as it was before Claude started, so the step can be taken back. */
+  before?: Timeline;
   error?: boolean;
 }
 
@@ -256,7 +267,10 @@ export interface CutroomApi {
   openProject(): Promise<Project | null>;
   recentProjects(): Promise<Project[]>;
   openRecent(root: string): Promise<Project | null>;
-  importFiles(paths?: string[]): Promise<void>;
+  /** Copy files into the project (a file dialog opens without `paths`); without `dir` they are sorted by type. */
+  importFiles(paths?: string[], dir?: ImportDir): Promise<void>;
+  /** Download videos from links into `dir` (default references/). Resolves with one message per failed link. */
+  downloadLinks(urls: string[], dir?: ImportDir): Promise<string[]>;
   pathForFile(file: File): string;
   listMedia(): Promise<MediaFile[]>;
   getTimeline(): Promise<Timeline | null>;
@@ -274,6 +288,12 @@ export interface CutroomApi {
   forgetProject(root: string): Promise<Project[]>;
   listSkills(): Promise<Skill[]>;
   revealSkill(id: string): Promise<void>;
+  /** The style's SKILL.md. */
+  readSkill(id: string): Promise<string>;
+  /** Rewrite one of the user's own styles. */
+  saveSkill(id: string, text: string): Promise<Skill[]>;
+  /** Open a video listed under a style in the default player. */
+  openVideo(path: string): Promise<void>;
   /** Moves a saved style to the Trash. */
   deleteSkill(id: string): Promise<Skill[]>;
   getSettings(): Promise<Settings>;

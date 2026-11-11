@@ -1,6 +1,7 @@
 // The `cutroom` command line. The agent (and the app itself) drive all rendering through it.
 import path from 'node:path';
 import { generate, schema } from './generate';
+import { saveExample } from './project';
 import { render } from './render';
 import { renderRemotion } from './remotion';
 import { transcribe } from './transcribe';
@@ -11,8 +12,9 @@ const HELP = `cutroom — run inside a Cutroom project folder
   cutroom transcribe <file> [--lang xx]   Whisper transcript with word timestamps (default: auto-detect)
   cutroom remotion <entry> <id> <out.mov> [--props '{...}']
                                           Render a Remotion composition to a transparent overlay
+  cutroom style-example <name>            Keep the current video as the example of a saved style
   cutroom generate --schema <provider>:<model>
-                                          Show the inputs a model takes (provider: fal, openrouter, alibaba)
+                                          Show the inputs a model takes (provider: fal, openrouter, alibaba, codex)
   cutroom generate <provider>:<model> '<json>' <out>
                                           Run a model; project files named in the JSON are sent along`;
 
@@ -38,6 +40,11 @@ async function main(): Promise<string> {
       const [entry, id, out] = rest;
       if (!entry || !id || !out) throw new Error("Usage: cutroom remotion <entry> <id> <out.mov> [--props '{...}']");
       return `Rendered ${path.relative(root, await renderRemotion(entry, id, out, props))}`;
+    }
+    case 'style-example': {
+      if (!rest[0]) throw new Error('Usage: cutroom style-example <name>');
+      await render(root, { preview: true });
+      return `Saved ${await saveExample(root, rest[0])}`;
     }
     case 'generate': {
       const model = flag('--schema');

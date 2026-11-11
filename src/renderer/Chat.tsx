@@ -1,21 +1,21 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { ArrowUp, Film, Flag, Sparkles, Square, X } from 'lucide-react';
-import type { AgentEvent, ChatMessage, Mark, MediaFile, ModelChoice, Skill } from '../shared/types';
+import { ArrowUp, Film, Flag, Sparkles, Square, Undo2, X } from 'lucide-react';
+import { EMPTY_TIMELINE, UTILITY_SKILLS } from '../shared/types';
+import type { AgentEvent, ChatMessage, Mark, MediaFile, ModelChoice, Skill, Timeline } from '../shared/types';
 import { Markdown } from './Markdown';
 import { api, clock } from './lib';
 
 interface Props {
-  hasEdit: boolean;
+  timeline: Timeline | null;
+  /** Put an earlier version of the edit back (undoable, like any manual edit). */
+  onRestore: (timeline: Timeline) => void;
   marks: Mark[];
   setMarks: (marks: Mark[]) => void;
   media: MediaFile[];
   /** Lets the rest of the app send a message, e.g. the script's Approve button. */
   sender: RefObject<((text: string) => void) | null>;
 }
-
-/** Skills that are tools rather than editing styles. */
-const UTILITIES = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate'];
 
 const markLabel = (mark: Mark): string =>
   mark.itemId ?? (mark.end ? `${clock(mark.start)} – ${clock(mark.end)}` : clock(mark.start));
@@ -35,7 +35,7 @@ function reduce(messages: ChatMessage[], event: AgentEvent): ChatMessage[] {
 }
 
 /** The conversation with Claude. Marks made in the preview or timeline ride along with the next message. */
-export const Chat = memo(function Chat({ hasEdit, marks, setMarks, media, sender }: Props) {
+export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, media, sender }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [skill, setSkill] = useState('');
@@ -71,7 +71,7 @@ export const Chat = memo(function Chat({ hasEdit, marks, setMarks, media, sender
 
   const sendText = (text: string): void => {
     if (!text || busy) return;
-    setMessages((all) => [...all, { role: 'user', parts: [{ type: 'text', text }], marks, files }, { role: 'assistant', parts: [] }]);
+    setMessages((all) => [...all, { role: 'user', parts: [{ type: 'text', text }], marks, files }, { role: 'assistant', parts: [], before: timeline ?? EMPTY_TIMELINE }]);
     setBusy(true);
     void api.send(skill ? `Use the ${skill} skill.\n\n${text}` : text, marks, files);
     setMarks([]);
@@ -83,6 +83,13 @@ export const Chat = memo(function Chat({ hasEdit, marks, setMarks, media, sender
   const send = (): void => {
     sendText(draft.trim());
     if (!busy) setDraft('');
+  };
+  const hasEdit = !!timeline?.clips.length;
+  /** The edit as it was before reply `i`, if that reply (Claude's step) changed it. */
+  const stepBack = (i: number): Timeline | undefined => {
+    const before = messages[i]!.before;
+    const after = messages.slice(i + 1).find((m) => m.before)?.before ?? timeline ?? EMPTY_TIMELINE;
+    return before && JSON.stringify(before) !== JSON.stringify(after) ? before : undefined;
   };
   const toggleFile = (path: string): void => setFiles(files.includes(path) ? files.filter((f) => f !== path) : [...files, path]);
   const footage = media.filter((file) => file.dir === 'raw' && file.kind === 'video');
@@ -111,7 +118,11 @@ export const Chat = memo(function Chat({ hasEdit, marks, setMarks, media, sender
             {message.parts.map((part, n) =>
               part.type === 'tool' ? <p key={n} className="tool">{part.text}</p> : <Markdown key={n} text={part.text} />,
             )}
-            {busy && i === messages.length - 1 && <p className="tool working">Working…</p>}
+            {busy && i === messages.length - 1 ? <p className="tool working">Working…</p> : stepBack(i) && (
+              <button className="ghost back" title="Put the edit back to how it was before this step" onClick={() => onRestore(stepBack(i)!)}>
+                <Undo2 size={14} /> Go back to before this
+              </button>
+            )}
           </article>
         ))}
       </div>
@@ -153,7 +164,7 @@ export const Chat = memo(function Chat({ hasEdit, marks, setMarks, media, sender
           </button>
           <select value={skill} onChange={(e) => setSkill(e.target.value)} aria-label="Style" title={skills.find((s) => s.id === skill)?.description}>
             <option value="">Style: auto</option>
-            {skills.filter((s) => !UTILITIES.includes(s.id)).map((s) => (
+            {skills.filter((s) => !UTILITY_SKILLS.includes(s.id)).map((s) => (
               <option key={s.id} value={s.id}>{s.custom ? '★ ' : ''}{s.name}</option>
             ))}
           </select>

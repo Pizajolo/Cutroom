@@ -3,6 +3,7 @@ import { Download, House, Plus, SlidersHorizontal } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
 import type { Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus } from '../shared/types';
 import { Chat } from './Chat';
+import { AddFiles } from './AddFiles';
 import { Features } from './Features';
 import { Home } from './Home';
 import { Preview } from './Preview';
@@ -22,6 +23,7 @@ export function App() {
   const [exported, setExported] = useState<{ busy: boolean; file?: string; error?: string }>({ busy: false });
   const [script, setScript] = useState<Script>({ text: '', pending: false });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const sender = useRef<((text: string) => void) | null>(null);
 
@@ -42,6 +44,7 @@ export function App() {
     if (!next) return;
     setMarks([]);
     setSettingsOpen(false);
+    setAdding(false);
     history.current = { past: [], future: [] };
     setPreview({ rendering: false, version: 0 });
     setExported({ busy: false });
@@ -93,7 +96,7 @@ export function App() {
           <House size={16} /> Home
         </button>
         <strong>{project.name}</strong>
-        <button className="ghost" title="Copy footage, logos or music into the project" onClick={() => void api.importFiles()}>
+        <button className={adding ? 'active' : 'ghost'} title="Add footage, logos, music or videos from links" onClick={() => (setAdding(!adding), setSettingsOpen(false))}>
           <Plus size={16} /> Add files
         </button>
         {toolNote}
@@ -102,7 +105,7 @@ export function App() {
         {exported.file && (
           <button className="ghost" onClick={() => void api.reveal(exported.file!)}>Show {exported.file}</button>
         )}
-        <button className={settingsOpen ? 'active' : 'ghost'} title="Features for this project" onClick={() => setSettingsOpen(!settingsOpen)}>
+        <button className={settingsOpen ? 'active' : 'ghost'} title="Features for this project" onClick={() => (setSettingsOpen(!settingsOpen), setAdding(false))}>
           <SlidersHorizontal size={16} /> Project settings
         </button>
         <div className="switch" role="tablist" aria-label="Interface">
@@ -117,6 +120,8 @@ export function App() {
         video={video} timeline={timeline} preview={preview} media={media} marks={marks} onMark={addMark} script={script}
         onApprove={() => sender.current?.('The script is approved. Create the video.')}
       />
+      {(adding || settingsOpen) && <div className="backdrop" onClick={() => (setAdding(false), setSettingsOpen(false))} />}
+      {adding && <AddFiles />}
       {settingsOpen && (
         <aside className="project-settings">
           <strong>Features in this project</strong>
@@ -124,7 +129,7 @@ export function App() {
           <Features scope="project" />
         </aside>
       )}
-      <Chat key={project.root} hasEdit={!!timeline?.clips.length} marks={marks} setMarks={setMarks} media={media} sender={sender} />
+      <Chat key={project.root} timeline={timeline} onRestore={editTimeline} marks={marks} setMarks={setMarks} media={media} sender={sender} />
       {pro && (
         <Timeline
           video={video} timeline={timeline} media={media} onChange={editTimeline} onMark={addMark}

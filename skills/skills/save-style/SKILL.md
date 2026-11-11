@@ -14,6 +14,7 @@ Turn *how* this video was edited into instructions that will work on completely 
    - Format, Structure, Cutting, Captions, Graphics, Audio, and a "Check before replying" list.
    Describe decisions and measurements — shot lengths, pacing, caption size/position/behaviour, fonts, colours, easing, music level — not this project's content.
 4. **Templates** (optional): copy reusable graphics into `<library>/skills/<name>/templates/` with the project's wording replaced by variables or placeholders, and reference them from SKILL.md.
+5. **Keep the video with the style**: run `cutroom style-example <name>` in the project. It stores the current video as the style's example (shown when the user browses their styles) and lists this project's exports under the style.
 
 Rules:
 - No project-specific text, file names, people or brands — unless the user says the style is for that brand, in which case record its colours, fonts and logo usage.

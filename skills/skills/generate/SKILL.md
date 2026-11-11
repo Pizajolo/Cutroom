@@ -1,6 +1,6 @@
 ---
 name: generate
-description: Generate stills and b-roll, lip-synced talking video, and subject cutouts (background removal) with AI models on fal.ai, including camera and lens presets for cinematic prompts. Use when the footage has a gap, the user asks for a generated shot, image, talking head, or to cut a person out of their background, and FAL_KEY is set.
+description: Generate stills and b-roll, lip-synced talking video, and subject cutouts (background removal) with AI models (fal.ai, OpenRouter, Alibaba Cloud, Theta, or the user's ChatGPT sign-in), including camera and lens presets for cinematic prompts. Use when the footage has a gap, the user asks for a generated shot, image, talking head, or to cut a person out of their background.
 ---
 
 # AI generation
@@ -17,6 +17,7 @@ cutroom generate <provider>:<model> '<json input>' <out>     # run it and save t
 - `fal:` — the JSON is the model's input object (see its schema).
 - `openrouter:` — the JSON is the request body without `model`: `{"prompt": …, "aspect_ratio": …}`.
 - `alibaba:` — the JSON is `{"input": {…}, "parameters": {…}}`.
+- `codex:image` — stills through the user's ChatGPT sign-in: `{"prompt": …, "aspect_ratio": "9:16", "images": ["assets/ref.png"]}` (`images` only when editing or building on a reference).
 - `theta:` — no command: use the mcp__theta tools to list models, run inference and fetch the result, then download the file into the project with curl.
 
 Any project file named in the JSON (`"image_url": "assets/portrait.png"`) is sent along automatically. Save results to `assets/`, named for what they show (`assets/broll-city-night.mp4`). Then look at the result (extract frames and Read them) before putting it on the timeline — regenerate if it has artefacts.

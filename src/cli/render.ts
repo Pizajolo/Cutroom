@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { PREVIEW_FILE, TIMELINE_FILE, clipLength, timelineLength } from '../shared/types';
 import type { Clip, Grade, Overlay, Timeline } from '../shared/types';
+import { linkExport } from './project';
 import { run } from './run';
 
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp)$/i;
@@ -186,5 +187,6 @@ export async function render(root: string, opts: { preview?: boolean; signal?: A
   const args = await ffmpegArgs(root, timeline, opts.preview ?? false);
   await run('ffmpeg', [...args, '-f', 'mp4', tmp], { signal: opts.signal });
   await rename(tmp, out);
+  if (!opts.preview) await linkExport(root, out);
   return out;
 }

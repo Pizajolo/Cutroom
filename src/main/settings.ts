@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { safeStorage, systemPreferences } from 'electron';
+import { patchProject, readProject } from '../cli/project';
 import { HOME, run } from '../cli/run';
 import { CONNECTIONS, featureStates, llmProviders } from '../shared/features';
 import type { Connection, Feature, FeatureState } from '../shared/features';
@@ -40,17 +41,6 @@ export async function saveSettings(settings: Settings): Promise<void> {
 }
 
 // --- Models ------------------------------------------------------------------------------
-
-/** Per-project choices: its own model, and features switched off just here. */
-interface ProjectSettings {
-  model?: string;
-  off?: string[];
-}
-const projectFile = (root: string): string => path.join(root, '.cutroom/project.json');
-const readProject = async (root: string): Promise<ProjectSettings> =>
-  JSON.parse(await readFile(projectFile(root), 'utf8').catch(() => '{}')) as ProjectSettings;
-const patchProject = async (root: string, patch: ProjectSettings): Promise<void> =>
-  writeFile(projectFile(root), JSON.stringify({ ...(await readProject(root)), ...patch }, null, 2));
 
 export async function modelChoice(root: string): Promise<ModelChoice> {
   const settings = await loadSettings();

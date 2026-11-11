@@ -3,26 +3,30 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { HOME, run } from '../cli/run';
-import { PREVIEW_FILE, clipLength, clipStarts } from '../shared/types';
+import { LIBRARY, styleVideos, useStyle } from '../cli/project';
+import { run } from '../cli/run';
+import { PREVIEW_FILE, UTILITY_SKILLS, clipLength, clipStarts } from '../shared/types';
 import type { AgentEvent, AudioItem, Mark, Overlay, Skill, Timeline } from '../shared/types';
 import { systemPrompt } from './prompt';
 import { agentConfig } from './settings';
 
 /** Built-in styles ship with the app; the user's own live in ~/.cutroom/library. Both are Claude Code plugins. */
 const BUILTIN = path.resolve(import.meta.dirname, '../../skills');
-const LIBRARY = path.join(HOME, 'library');
 
 export async function listSkills(): Promise<Skill[]> {
   await mkdir(path.join(LIBRARY, '.claude-plugin'), { recursive: true });
   await mkdir(path.join(LIBRARY, 'skills'), { recursive: true });
   await writeFile(path.join(LIBRARY, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'my', description: 'My Cutroom styles' }));
   const skills: Skill[] = [];
+  const videos = await styleVideos();
   for (const [plugin, root] of [['cutroom', BUILTIN], ['my', LIBRARY]] as const) {
     for (const dir of await readdir(path.join(root, 'skills'))) {
       const text = await readFile(path.join(root, 'skills', dir, 'SKILL.md'), 'utf8').catch(() => '');
       const field = (key: string): string => new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(text)?.[1]?.trim() ?? '';
-      if (text) skills.push({ id: `${plugin}:${dir}`, name: field('name') || dir, description: field('description'), custom: plugin === 'my' });
+      if (!text) continue;
+      const id = `${plugin}:${dir}`;
+      const example = plugin === 'my' && existsSync(path.join(root, 'skills', dir, 'example.mp4')) ? `media://style/${dir}/example.mp4` : undefined;
+      skills.push({ id, name: field('name') || dir, description: field('description'), custom: plugin === 'my', example, videos: videos[id] ?? [] });
     }
   }
   return skills;
@@ -130,6 +134,12 @@ export async function send(root: string, text: string, marks: Mark[], files: str
         emit({ type: 'text', text: m.event.delta.text });
       } else if (m.type === 'assistant') {
         for (const block of m.message.content) {
+          // Remember which styles shaped this project, so its exports are listed under them.
+          if (block.type === 'tool_use' && block.name === 'Skill') {
+            const name = String((block.input as { skill?: string }).skill);
+            const style = (await listSkills()).find((s) => s.id === name || s.id.endsWith(`:${name}`));
+            if (style && !UTILITY_SKILLS.includes(style.id)) await useStyle(root, style.id);
+          }
           if (block.type === 'tool_use') emit({ type: 'tool', text: describeTool(block.name, block.input as Record<string, unknown>) });
         }
       } else if (m.type === 'result' && m.is_error) {

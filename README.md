@@ -44,17 +44,19 @@ it changes. `cutroom render` turns it into a video with a single FFmpeg filter g
 
 **Script first.** For a new video Claude looks at the footage and writes a script (`.cutroom/script.md`):
 concept, shot list, sound. You adjust it in the chat and press **Approve & create video**; only then is
-anything cut. The **Footage** button in the chat lets you pick the clips Claude should use.
+anything cut. **Add files** copies files into the folder you pick (or sorts them by type) and downloads videos
+from pasted links — TikTok, Instagram Reels, YouTube — with yt-dlp. The **Footage** button in the chat lets you pick the clips Claude should use.
 
 **Two interfaces, one switch.** *Simple* is the preview and the chat: mark a frame or a section, say what
-should change. *Pro* adds the editor: a media bin to add files, a timeline to move, trim, split, duplicate and reorder
+should change. Under each reply that changed the edit, **Go back to before this** restores the earlier version. *Pro* adds the editor: a media bin to add files, a timeline to move, trim, split, duplicate and reorder
 (with snapping, undo and the usual shortcuts), an inspector for position, speed, volume, fades, crop and
 colour, and a button to mark an item for Claude.
 
 **Styles are skills.** `skills/` holds the built-in library (talking-head short, podcast clip, product
 teaser, montage, explainer) as a Claude Code plugin. When you like a result, **Save style** has Claude
 distil it into a new skill in `~/.cutroom/library/skills/`, which then shows up in the style picker for
-every project.
+every project. The video it was saved from is kept with the style; Home › Styles shows it, lists every video
+exported with that style since, and lets you edit the style's instructions.
 
 **Home** lists your projects and styles. **Features** shows every capability, where it comes from, whether it
 is free, subscription or pay-per-use, and a switch for each; a project's **Project settings** button switches
@@ -71,7 +73,8 @@ Settings:
 - **Connections** — fal.ai, OpenRouter, Alibaba Cloud (pay-as-you-go, Coding Plan, Token Plan) and Theta EdgeCloud,
   each with one API key. They supply generated stills and b-roll, lip sync and cutouts (`cutroom generate`, the
   `generate` skill; Theta through its MCP server); OpenRouter and Alibaba can also run the editor instead of Claude.
-- **Codex** — sign in with your ChatGPT account; Claude can then hand tasks to Codex (bundled, runs as an MCP server).
+- **Codex** — sign in with your ChatGPT account; Claude can then hand tasks to Codex (bundled, runs as an MCP server)
+  and generate stills through ChatGPT's image tool (`codex:image`), with no API key.
 - **MCP servers** — any other command or URL.
 
 Settings are stored encrypted in `~/.cutroom/settings.enc`; a project's model choice in `.cutroom/project.json`.

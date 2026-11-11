@@ -7,10 +7,11 @@ import { Readable } from 'node:stream';
 import { BrowserWindow, app, dialog, ipcMain, protocol, shell } from 'electron';
 import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
-import { PROJECT_DIRS, SCRIPT_FILE, TIMELINE_FILE } from '../shared/types';
+import { LIBRARY } from '../cli/project';
+import { PREVIEW_FILE, PROJECT_DIRS, SCRIPT_FILE, TIMELINE_FILE } from '../shared/types';
 import type { ChatMessage, CutroomApi, Mark, Project, Script, Timeline } from '../shared/types';
 import * as agent from './agent';
-import { forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
+import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
 import { claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
 import { ensureTools, toolStatus } from './tools';
 
@@ -78,6 +79,8 @@ async function open(dir: string): Promise<Project> {
   agent.stop();
   project = await openProject(dir);
   timeline = null;
+  // Start from this project's own last preview (if any), never the previous project's.
+  previewVersion = await stat(path.join(dir, PREVIEW_FILE)).then((s) => Math.round(s.mtimeMs), () => 0);
   watchProject(dir);
   void refresh();
   return project;
@@ -97,10 +100,11 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   },
   recentProjects,
   openRecent: (dir) => open(dir).catch(() => null),
-  async importFiles(paths) {
+  async importFiles(paths, dir) {
     const files = paths ?? (await dialog.showOpenDialog(win!, { properties: ['openFile', 'multiSelections'] })).filePaths;
-    await importFiles(root(), files);
+    await importFiles(root(), files, dir);
   },
+  downloadLinks: (urls, dir) => downloadLinks(root(), urls, dir),
   listMedia: () => listMedia(root()),
   getTimeline: async () => timeline,
   duration: async (file) =>
@@ -126,6 +130,15 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   forgetProject,
   listSkills: agent.listSkills,
   revealSkill: async (id) => shell.showItemInFolder(agent.skillFile(id)),
+  readSkill: (id) => readFile(agent.skillFile(id), 'utf8'),
+  async saveSkill(id, text) {
+    await writeFile(path.join(agent.customSkillDir(id), 'SKILL.md'), text);
+    return agent.listSkills();
+  },
+  async openVideo(file) {
+    const known = (await agent.listSkills()).some((skill) => skill.videos.includes(file));
+    if (known) await shell.openPath(file);
+  },
   async deleteSkill(id) {
     await shell.trashItem(agent.customSkillDir(id));
     return agent.listSkills();
@@ -160,10 +173,12 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
 ]);
 
-/** `media://project/<path>` serves files from the open project, with range requests so video can seek. */
+/** `media://project/<path>` serves files from the open project and `media://style/<name>/example.mp4` from the style library, with range requests so video can seek. */
 async function serveMedia(request: Request): Promise<Response> {
-  const file = path.join(root(), decodeURIComponent(new URL(request.url).pathname));
-  if (!file.startsWith(root() + path.sep)) return new Response(null, { status: 403 });
+  const url = new URL(request.url);
+  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : root();
+  const file = path.join(base, decodeURIComponent(url.pathname));
+  if (!file.startsWith(base + path.sep)) return new Response(null, { status: 403 });
   const size = await stat(file).then((s) => s.size, () => -1);
   if (size < 0) return new Response(null, { status: 404 });
   const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') ?? '');

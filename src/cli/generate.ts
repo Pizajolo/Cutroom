@@ -1,8 +1,9 @@
-// AI generation: stills, b-roll, lip sync, subject cutouts — through fal.ai, OpenRouter or Alibaba Cloud.
+// AI generation: stills, b-roll, lip sync, subject cutouts — through fal.ai, OpenRouter, Alibaba Cloud or the ChatGPT sign-in (Codex).
 // Models all take different inputs, so this stays generic: the provider's own JSON in, one media file out.
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { run } from './run';
 
 const TYPES: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
@@ -150,7 +151,25 @@ const alibaba: Provider = {
     '"endpoint": "<path after /services/aigc/>" (see the model page in Alibaba Cloud Model Studio).',
 };
 
-const PROVIDERS: Record<string, Provider> = { fal, openrouter, alibaba };
+/** Stills through the user's ChatGPT sign-in: Codex has a built-in image tool, so it is asked to make the picture and save it. */
+const codex: Provider = {
+  async run(root, _model, input, out) {
+    if (!isImage(out)) throw new Error('The ChatGPT sign-in generates stills only (png, jpg, webp).');
+    const file = path.resolve(root, out);
+    await mkdir(path.dirname(file), { recursive: true });
+    const references = ((input.images as string[] | undefined) ?? []).map((image) => path.resolve(root, image));
+    const task =
+      `Use your built-in image generation tool (not code, not an API script) to create one image, then save it as ${file} ` +
+      `(convert the format if the extension needs it). Do nothing else.${references.length ? ' The attached images are the reference to work from.' : ''}` +
+      `${input.aspect_ratio ? ` Aspect ratio: ${String(input.aspect_ratio)}.` : ''}\n\nImage: ${String(input.prompt)}`;
+    await run('codex', ['exec', '--skip-git-repo-check', '-s', 'workspace-write', '-C', root, task, ...references.flatMap((image) => ['-i', image])]);
+    if (!existsSync(file)) throw new Error('ChatGPT did not return an image. The user may need to sign in again in Settings › Codex.');
+    return readFile(file);
+  },
+  schema: async () => 'Stills only. Send {"prompt": …, "aspect_ratio"?: "9:16" | "16:9" | "1:1", "images"?: ["assets/reference.png", …]} — "images" are references to edit or build on.',
+};
+
+const PROVIDERS: Record<string, Provider> = { fal, openrouter, alibaba, codex };
 
 /** `fal:kling/v4/text-to-video` → the fal provider and its model id. */
 function resolve(target: string): [Provider, string] {

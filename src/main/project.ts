@@ -2,9 +2,9 @@
 import { constants } from 'node:fs';
 import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { HOME } from '../cli/run';
+import { HOME, run } from '../cli/run';
 import { PROJECT_DIRS } from '../shared/types';
-import type { MediaFile, Project } from '../shared/types';
+import type { ImportDir, MediaFile, Project } from '../shared/types';
 
 const RECENTS = path.join(HOME, 'recents.json');
 const KINDS: [MediaFile['kind'], RegExp][] = [
@@ -18,10 +18,10 @@ const kindOf = (file: string): MediaFile['kind'] => KINDS.find(([, re]) => re.te
 const homeFor = (file: string): string => (kindOf(file) === 'video' ? 'raw' : 'assets');
 
 /** Place a file in the project without ever overwriting: `name.mov`, `name-2.mov`, … */
-async function place(root: string, source: string, move: boolean): Promise<void> {
+async function place(root: string, source: string, move: boolean, dir = homeFor(source)): Promise<void> {
   const { name, ext } = path.parse(source);
   for (let n = 1; ; n++) {
-    const target = path.join(root, homeFor(source), n === 1 ? name + ext : `${name}-${n}${ext}`);
+    const target = path.join(root, dir, n === 1 ? name + ext : `${name}-${n}${ext}`);
     try {
       // Reserve the name first so neither copy nor rename can replace an existing file.
       await writeFile(target, '', { flag: 'wx' });
@@ -56,8 +56,26 @@ export async function recentProjects(): Promise<Project[]> {
   }
 }
 
-export async function importFiles(root: string, files: string[]): Promise<void> {
-  for (const file of files) await place(root, file, false);
+/** Copy files into the project: into `dir`, or sorted by type when none is given. */
+export async function importFiles(root: string, files: string[], dir?: ImportDir): Promise<void> {
+  for (const file of files) await place(root, file, false, dir);
+}
+
+/** Download videos from links (TikTok, Instagram, YouTube, …) with yt-dlp. Returns what went wrong, per failed link. */
+export async function downloadLinks(root: string, urls: string[], dir: ImportDir = 'references'): Promise<string[]> {
+  const failures: string[] = [];
+  for (const url of urls) {
+    if (!/^https?:\/\//i.test(url)) {
+      failures.push(`${url}: not a link`);
+      continue;
+    }
+    // H.264 mp4 up to 1080p plays everywhere; names never collide (`uploader-id.mp4`).
+    const args = ['--no-playlist', '--no-overwrites', '--restrict-filenames', '-S', 'res:1080,vcodec:h264,acodec:m4a'];
+    await run('yt-dlp', [...args, '--merge-output-format', 'mp4', '-o', `${dir}/%(uploader,extractor)s-%(id)s.%(ext)s`, '--', url], { cwd: root }).catch(
+      (error: Error) => failures.push(`${url}: ${error.message.match(/ERROR:.*/)?.[0] ?? error.message}`),
+    );
+  }
+  return failures;
 }
 
 export async function listMedia(root: string): Promise<MediaFile[]> {
