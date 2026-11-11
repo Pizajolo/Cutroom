@@ -141,6 +141,28 @@ header {
 .chat .chip svg { vertical-align: -2px; }
 .composer textarea { max-height: 40vh; overflow-y: auto; field-sizing: content; min-height: 4.5em; }
 .messages .back { align-self: flex-start; color: var(--text-muted); font-size: var(--font-size-small); }
+.library-filter { display: flex; flex-direction: column; gap: var(--space-2); }
+.library-filter .row { display: flex; align-items: center; gap: var(--space-2); }
+.tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+button.tag { height: 22px; border: 1px solid transparent; cursor: pointer; }
+button.tag.on { border-color: var(--accent); color: var(--accent-pressed); }
+.description.faint { color: var(--text-muted); }
+.library-pick { display: flex; flex-direction: column; gap: var(--space-2); max-height: 300px; }
+.library-pick ul { margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.library-pick li button { width: 100%; height: auto; padding: var(--space-1) var(--space-2); justify-content: flex-start; flex-wrap: wrap; gap: var(--space-1) var(--space-2); text-align: left; white-space: normal; border-width: 2px; border-color: transparent; background: none; }
+.library-pick li button.selected { border-color: var(--accent); background: var(--bg-selected); }
+.library-pick .description { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.chat .chip.skill { display: inline-flex; border-color: var(--accent); color: var(--accent-pressed); }
+.chip.skill button { height: auto; padding: 0; border: 0; background: none; color: inherit; font: inherit; gap: var(--space-1); }
+.script img { display: block; height: 200px; border-radius: var(--radius-sm); margin: var(--space-1) 0; }
+.hooks { display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-2); }
+.hooks button { height: auto; padding: var(--space-2); justify-content: space-between; text-align: left; white-space: normal; background: none; color: inherit; border-color: rgb(255 255 255 / 16%); }
+.hooks button.selected { border-color: var(--accent); opacity: 1; }
+.hooks button p { margin: 0; }
+.approve { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-2); color: var(--text-on-canvas-muted); font-size: var(--font-size-small); }
+.versions .list li { gap: var(--space-1); padding: var(--space-1) 0; }
+.favorite, button.favorite { color: var(--feedback); }
+.favorite svg, svg.favorite { fill: currentColor; }
 .backdrop { position: fixed; inset: 0; z-index: calc(var(--z-menu) - 1); }
 
 /* Timeline (Pro) */

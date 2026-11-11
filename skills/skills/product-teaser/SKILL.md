@@ -1,5 +1,6 @@
 ---
 name: product-teaser
+tags: product, brand, titles, fast
 description: Fast 10–25 s teaser or launch video for a product, app or brand — short punchy shots, bold kinetic titles, logo end card. Use for ads, launch posts and announcement videos.
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: podcast-clip
+tags: talking, captions, interview
 description: A self-contained 30–90 s highlight from a long conversation or interview, with captions and a headline. Use for podcasts, interviews, panels and long recordings.
 ---
 

@@ -2,6 +2,7 @@
 import { constants } from 'node:fs';
 import { copyFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { addLedger } from '../cli/project';
 import { HOME, run } from '../cli/run';
 import { PROJECT_DIRS } from '../shared/types';
 import type { ImportDir, MediaFile, Project } from '../shared/types';
@@ -71,7 +72,9 @@ export async function downloadLinks(root: string, urls: string[], dir: ImportDir
     }
     // H.264 mp4 up to 1080p plays everywhere; names never collide (`uploader-id.mp4`).
     const args = ['--no-playlist', '--no-overwrites', '--restrict-filenames', '-S', 'res:1080,vcodec:h264,acodec:m4a'];
-    await run('yt-dlp', [...args, '--merge-output-format', 'mp4', '-o', `${dir}/%(uploader,extractor)s-%(id)s.%(ext)s`, '--', url], { cwd: root }).catch(
+    const license = dir === 'references' ? 'Reference: inspiration only, never used in a video' : 'Someone else\'s video: check the rights before publishing';
+    await run('yt-dlp', [...args, '--merge-output-format', 'mp4', '--print', 'after_move:filepath', '--no-simulate', '-o', `${dir}/%(uploader,extractor)s-%(id)s.%(ext)s`, '--', url], { cwd: root }).then(
+      (out) => addLedger(root, { file: path.relative(root, path.resolve(root, out.trim().split('\n').pop()!)), source: url, license }),
       (error: Error) => failures.push(`${url}: ${error.message.match(/ERROR:.*/)?.[0] ?? error.message}`),
     );
   }

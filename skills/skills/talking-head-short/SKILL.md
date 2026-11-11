@@ -1,5 +1,6 @@
 ---
 name: talking-head-short
+tags: vertical, talking, captions, short-form
 description: Vertical short (Reels / TikTok / Shorts) built around one person talking to camera — tight jump cuts, a strong hook and bold word-by-word captions. Use for selfie-style footage, founder updates, tips and opinions.
 ---
 

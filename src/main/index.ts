@@ -1,14 +1,14 @@
 // Electron shell: one window, the project folder, a preview that follows the timeline, and IPC.
-import { createReadStream, watch } from 'node:fs';
+import { createReadStream, existsSync, watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { BrowserWindow, app, dialog, ipcMain, protocol, shell } from 'electron';
 import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
-import { LIBRARY, styleVideos, unlinkVideo } from '../cli/project';
-import { PREVIEW_FILE, PROJECT_DIRS, SCRIPT_FILE, TIMELINE_FILE } from '../shared/types';
+import { LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
+import { PREVIEW_FILE, PROJECT_DIRS, SCRIPT_FILE, SPOKEN_CUT_FILE, TIMELINE_FILE } from '../shared/types';
 import type { ChatMessage, CutroomApi, Mark, Project, Script, Timeline } from '../shared/types';
 import * as agent from './agent';
 import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
@@ -52,7 +52,7 @@ async function readScript(dir: string): Promise<Script> {
   const file = path.join(dir, SCRIPT_FILE);
   const text = await readFile(file, 'utf8').catch(() => '');
   const [written, edited] = await Promise.all([file, path.join(dir, TIMELINE_FILE)].map((f) => stat(f).then((s) => s.mtimeMs, () => 0)));
-  return { text, pending: !!text && written! > edited! };
+  return { text, pending: !!text && written! > edited!, spokenCut: existsSync(path.join(dir, SPOKEN_CUT_FILE)) };
 }
 
 /** Watch the project folder: timeline or overlay changes refresh the preview, media changes the file list. */
@@ -69,7 +69,7 @@ function watchProject(dir: string): void {
       changed.clear();
       const used = new Set([TIMELINE_FILE, ...(timeline ? [...timeline.overlays, ...timeline.audio].map((i) => i.src) : [])]);
       if (files.some((f) => used.has(f))) void refresh();
-      if (files.includes(SCRIPT_FILE) || files.includes(TIMELINE_FILE)) emit('script', await readScript(dir));
+      if ([SCRIPT_FILE, TIMELINE_FILE, SPOKEN_CUT_FILE].some((f) => files.includes(f))) emit('script', await readScript(dir));
       if (files.some((f) => PROJECT_DIRS.some((d) => f.startsWith(`${d}/`)))) emit('media', await listMedia(dir));
     }, 300);
   });
@@ -112,12 +112,21 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   saveTimeline: (next) => writeFile(path.join(root(), TIMELINE_FILE), JSON.stringify(next, null, 2)),
   loadChat: async () => JSON.parse(await readFile(chatFile(), 'utf8').catch(() => '[]')) as ChatMessage[],
   saveChat: (messages) => writeFile(chatFile(), JSON.stringify(messages)),
-  send: (text: string, marks: Mark[], files: string[]) =>
-    agent.send(root(), text, marks, files, timeline, (event) => {
+  send: (text: string, marks: Mark[], files: string[], skills: string[]) =>
+    agent.send(root(), text, marks, files, skills, timeline, async (event) => {
       emit('agent', event);
-      // Catch anything the watcher missed (e.g. a graphic re-rendered in place) once the turn ends.
-      if (event.type === 'done') void refresh();
+      if (event.type !== 'done') return;
+      // Keep the result of this step as a version, and catch anything the watcher missed (e.g. a graphic re-rendered in place).
+      const after = await readTimeline(root()).catch(() => null);
+      if (after?.clips.length) await addVersion(root(), text.split('\n')[0]!.slice(0, 80), after);
+      void refresh();
     }),
+  async approveSpokenCut() {
+    await rm(path.join(root(), SPOKEN_CUT_FILE), { force: true });
+  },
+  versions: () => readVersions(root()),
+  markFinal: (id) => markFinal(root(), id),
+  ledger: () => readLedger(root()),
   stop: async () => agent.stop(),
   exportVideo: async () => path.relative(root(), await render(root())),
   reveal: async (file) => shell.showItemInFolder(path.join(root(), file)),
@@ -130,6 +139,10 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   forgetProject,
   listSkills: agent.listSkills,
   revealSkill: async (id) => shell.showItemInFolder(agent.skillFile(id)),
+  async toggleFavorite(id) {
+    await toggleFavorite(id);
+    return agent.listSkills();
+  },
   readSkill: (id) => readFile(agent.skillFile(id), 'utf8'),
   async saveSkill(id, text) {
     await writeFile(path.join(agent.customSkillDir(id), 'SKILL.md'), text);

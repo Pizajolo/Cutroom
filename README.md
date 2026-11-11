@@ -42,21 +42,33 @@ exports/     finished videos
 can be cropped, sped up or slowed, faded and colour graded (per item or for the whole video). Claude writes it, the Pro timeline edits it, and the app re-renders the preview whenever
 it changes. `cutroom render` turns it into a video with a single FFmpeg filter graph.
 
-**Script first.** For a new video Claude looks at the footage and writes a script (`.cutroom/script.md`):
-concept, shot list, sound. You adjust it in the chat and press **Approve & create video**; only then is
-anything cut. **Add files** copies files into the folder you pick (or sorts them by type) and downloads videos
-from pasted links — TikTok, Instagram Reels, YouTube — with yt-dlp. The **Footage** button in the chat lets you pick the clips Claude should use.
+**Storyboard first.** For a new video Claude looks at the footage and writes a storyboard (`.cutroom/script.md`):
+concept, three hook options, a shot list with a real frame per shot, sound. You pick a hook, adjust it in the chat and
+press **Approve & create video**; only then is anything cut. For footage where someone talks, Claude first builds the
+**spoken cut** — best takes, no dead air, nothing else — and waits for **Approve spoken cut** before adding visuals.
+**Add files** copies files into the folder you pick (or sorts them by type) and downloads videos from pasted links —
+TikTok, Instagram Reels, YouTube — with yt-dlp. The **Footage** button in the chat lets you pick the clips Claude should use.
+
+**Versions.** Every step of Claude's that changed the edit and every export is kept (`.cutroom/versions.json`). The
+**Versions** button lists them; go back to any, or mark one as final. Under each reply, **Go back to before this** does
+the same for one step.
 
 **Two interfaces, one switch.** *Simple* is the preview and the chat: mark a frame or a section, say what
 should change. Under each reply that changed the edit, **Go back to before this** restores the earlier version. *Pro* adds the editor: a media bin to add files, a timeline to move, trim, split, duplicate and reorder
 (with snapping, undo and the usual shortcuts), an inspector for position, speed, volume, fades, crop and
 colour, and a button to mark an item for Claude.
 
-**Styles are skills.** `skills/` holds the built-in library (talking-head short, podcast clip, product
-teaser, montage, explainer) as a Claude Code plugin. When you like a result, **Save style** has Claude
-distil it into a new skill in `~/.cutroom/library/skills/`, which then shows up in the style picker for
-every project. The video it was saved from is kept with the style; Home › Styles shows it, lists every video
-exported with that style since, and lets you edit the style's instructions.
+**The library: styles and moves.** Both are skills. A *style* is how a whole video is made (`skills/` ships
+talking-head short, podcast clip, product teaser, montage, explainer); a *move* is one technique — word-by-word captions,
+a punch-in, a kinetic title — usable in any video. **Save style** has Claude distil a finished edit into a style *and*
+its moves in `~/.cutroom/library/skills/`; mark a section (or name a moment in a reference) and ask to save just that
+move. Each keeps an example clip. Home › Library filters by kind, tags and text, lets you star favourites (listed first when picking in a project), plays the examples, lists every video
+exported with an entry and lets you edit its instructions. In a project, **Styles & moves** picks several for a
+request; click a picked one to mention it (`@punch-in`) and say where it goes.
+
+**Sources and rights.** Downloads, generated media and anything Claude brings in are recorded with source and licence
+(`.cutroom/ledger.json`), shown under Project settings. HDR footage (iPhone HLG, HDR10) is converted to standard range
+when rendering.
 
 **Home** lists your projects and styles. **Features** shows every capability, where it comes from, whether it
 is free, subscription or pay-per-use, and a switch for each; a project's **Project settings** button switches
@@ -84,12 +96,13 @@ Settings are stored encrypted in `~/.cutroom/settings.enc`; a project's model ch
 ```
 src/shared/types.ts   Timeline format and the window.cutroom API
 src/shared/features.ts  Connections, features and how each is paid for
-src/cli/              The `cutroom` command the agent calls: render, transcribe, remotion, generate
+src/cli/              The `cutroom` command the agent calls: render, transcribe, remotion, generate, style-example, ledger
+  project.ts            per-project settings, versions, sources, style ↔ video links
 src/main/             Electron shell: project folders, tool setup, preview, the agent session
   prompt.ts             what the agent knows about editing in Cutroom
   settings.ts           accounts, models, providers, MCP servers
 src/renderer/         React UI: Home, Settings, Chat, Preview, Timeline (+ Inspector, timelineOps)
-skills/               Built-in editing styles
+skills/               Built-in styles, moves and helper skills
 ```
 
 The agent runs shell commands and edits files in the project folder without asking for each one. It loads

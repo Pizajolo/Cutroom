@@ -1,7 +1,7 @@
 // The `cutroom` command line. The agent (and the app itself) drive all rendering through it.
 import path from 'node:path';
 import { generate, schema } from './generate';
-import { saveExample } from './project';
+import { addLedger, saveExample } from './project';
 import { render } from './render';
 import { renderRemotion } from './remotion';
 import { transcribe } from './transcribe';
@@ -12,7 +12,11 @@ const HELP = `cutroom — run inside a Cutroom project folder
   cutroom transcribe <file> [--lang xx]   Whisper transcript with word timestamps (default: auto-detect)
   cutroom remotion <entry> <id> <out.mov> [--props '{...}']
                                           Render a Remotion composition to a transparent overlay
-  cutroom style-example <name>            Keep the current video as the example of a saved style
+  cutroom style-example <name> [--from s] [--to s] [--src file]
+                                          Keep the current video (or a section, or a section of another file)
+                                          as the example of a saved style or move
+  cutroom ledger <file> --source "…" [--license "…"] [--note "…"]
+                                          Record where a file came from and what may be done with it
   cutroom generate --schema <provider>:<model>
                                           Show the inputs a model takes (provider: fal, openrouter, alibaba, codex)
   cutroom generate <provider>:<model> '<json>' <out>
@@ -42,16 +46,25 @@ async function main(): Promise<string> {
       return `Rendered ${path.relative(root, await renderRemotion(entry, id, out, props))}`;
     }
     case 'style-example': {
-      if (!rest[0]) throw new Error('Usage: cutroom style-example <name>');
-      await render(root, { preview: true });
-      return `Saved ${await saveExample(root, rest[0])}`;
+      const [src, from, to] = [flag('--src'), flag('--from'), flag('--to')];
+      if (!rest[0]) throw new Error('Usage: cutroom style-example <name> [--from s] [--to s] [--src file]');
+      if (!src) await render(root, { preview: true });
+      return `Saved ${await saveExample(root, rest[0], { src, from: from ? Number(from) : undefined, to: to ? Number(to) : undefined })}`;
+    }
+    case 'ledger': {
+      const [source, license, note] = [flag('--source'), flag('--license'), flag('--note')];
+      if (!rest[0] || !source) throw new Error('Usage: cutroom ledger <file> --source "…" [--license "…"] [--note "…"]');
+      await addLedger(root, { file: rest[0], source, license, note });
+      return `Recorded ${rest[0]}`;
     }
     case 'generate': {
       const model = flag('--schema');
       if (model) return schema(model);
       const [id, input, out] = rest;
       if (!id || !input || !out) throw new Error("Usage: cutroom generate <model> '<json>' <out>");
-      return `Saved ${await generate(root, id, JSON.parse(input) as Record<string, unknown>, out)}`;
+      const file = await generate(root, id, JSON.parse(input) as Record<string, unknown>, out);
+      await addLedger(root, { file, source: `Generated with ${id}`, license: 'AI-generated' });
+      return `Saved ${file}`;
     }
     default:
       return HELP;

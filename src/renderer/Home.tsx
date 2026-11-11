@@ -6,7 +6,7 @@ import { Settings } from './Settings';
 import { Styles } from './Styles';
 import { api } from './lib';
 
-type Tab = 'Projects' | 'Styles' | 'Features' | 'Settings';
+type Tab = 'Projects' | 'Library' | 'Features' | 'Settings';
 
 /** The start page: pick a project, look after the style library, connect accounts. */
 export function Home({ onOpen, children }: { onOpen: (project: Project | null) => void; children?: React.ReactNode }) {
@@ -20,7 +20,7 @@ export function Home({ onOpen, children }: { onOpen: (project: Project | null) =
       <header>
         <strong>Cutroom</strong>
         <div className="switch" role="tablist">
-          {(['Projects', 'Styles', 'Features', 'Settings'] as const).map((name) => (
+          {(['Projects', 'Library', 'Features', 'Settings'] as const).map((name) => (
             <button key={name} role="tab" aria-selected={tab === name} onClick={() => setTab(name)}>{name}</button>
           ))}
         </div>
@@ -53,7 +53,7 @@ export function Home({ onOpen, children }: { onOpen: (project: Project | null) =
             </ul>
           </>
         )}
-        {tab === 'Styles' && <Styles />}
+        {tab === 'Library' && <Styles />}
         {tab === 'Features' && (
           <>
             <h1>Features</h1>

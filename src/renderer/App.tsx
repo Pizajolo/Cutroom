@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, House, Plus, SlidersHorizontal } from 'lucide-react';
+import { Download, History, House, Plus, SlidersHorizontal } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
 import type { Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus } from '../shared/types';
 import { Chat } from './Chat';
@@ -7,6 +7,7 @@ import { AddFiles } from './AddFiles';
 import { Features } from './Features';
 import { Home } from './Home';
 import { Preview } from './Preview';
+import { Sources, Versions } from './ProjectPanels';
 import { Timeline } from './Timeline';
 import { api } from './lib';
 
@@ -21,9 +22,10 @@ export function App() {
   const [marks, setMarks] = useState<Mark[]>([]);
   const [pro, setPro] = useState(() => localStorage.getItem('mode') === 'pro');
   const [exported, setExported] = useState<{ busy: boolean; file?: string; error?: string }>({ busy: false });
-  const [script, setScript] = useState<Script>({ text: '', pending: false });
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [script, setScript] = useState<Script>({ text: '', pending: false, spokenCut: false });
+  /** The one popover that is open, if any. */
+  const [panel, setPanel] = useState<'' | 'add' | 'versions' | 'settings'>('');
+  const toggle = (name: typeof panel): void => setPanel(panel === name ? '' : name);
   const video = useRef<HTMLVideoElement>(null);
   const sender = useRef<((text: string) => void) | null>(null);
 
@@ -43,8 +45,7 @@ export function App() {
   const opened = async (next: Project | null): Promise<void> => {
     if (!next) return;
     setMarks([]);
-    setSettingsOpen(false);
-    setAdding(false);
+    setPanel('');
     history.current = { past: [], future: [] };
     setPreview({ rendering: false, version: 0 });
     setExported({ busy: false });
@@ -96,7 +97,7 @@ export function App() {
           <House size={16} /> Home
         </button>
         <strong>{project.name}</strong>
-        <button className={adding ? 'active' : 'ghost'} title="Add footage, logos, music or videos from links" onClick={() => (setAdding(!adding), setSettingsOpen(false))}>
+        <button className={panel === 'add' ? 'active' : 'ghost'} title="Add footage, logos, music or videos from links" onClick={() => toggle('add')}>
           <Plus size={16} /> Add files
         </button>
         {toolNote}
@@ -105,7 +106,10 @@ export function App() {
         {exported.file && (
           <button className="ghost" onClick={() => void api.reveal(exported.file!)}>Show {exported.file}</button>
         )}
-        <button className={settingsOpen ? 'active' : 'ghost'} title="Features for this project" onClick={() => (setSettingsOpen(!settingsOpen), setAdding(false))}>
+        <button className={panel === 'versions' ? 'active' : 'ghost'} title="Earlier versions of this edit" onClick={() => toggle('versions')}>
+          <History size={16} /> Versions
+        </button>
+        <button className={panel === 'settings' ? 'active' : 'ghost'} title="Features and sources of this project" onClick={() => toggle('settings')}>
           <SlidersHorizontal size={16} /> Project settings
         </button>
         <div className="switch" role="tablist" aria-label="Interface">
@@ -118,15 +122,19 @@ export function App() {
       </header>
       <Preview
         video={video} timeline={timeline} preview={preview} media={media} marks={marks} onMark={addMark} script={script}
-        onApprove={() => sender.current?.('The script is approved. Create the video.')}
+        onApprove={() => sender.current?.('The storyboard is approved. Create the video.')}
+        onHook={(n, hook) => sender.current?.(`Use hook ${n} as the opening instead: “${hook}”. Update the storyboard.`)}
+        onApproveSpokenCut={() => void api.approveSpokenCut().then(() => sender.current?.('The spoken cut is approved. Now add the visuals and sound.'))}
       />
-      {(adding || settingsOpen) && <div className="backdrop" onClick={() => (setAdding(false), setSettingsOpen(false))} />}
-      {adding && <AddFiles />}
-      {settingsOpen && (
+      {panel && <div className="backdrop" onClick={() => setPanel('')} />}
+      {panel === 'add' && <AddFiles />}
+      {panel === 'versions' && <Versions current={timeline} onRestore={editTimeline} />}
+      {panel === 'settings' && (
         <aside className="project-settings">
           <strong>Features in this project</strong>
           <p className="hint">Switch off what Claude should not use here. Defaults and accounts are on Home.</p>
           <Features scope="project" />
+          <Sources />
         </aside>
       )}
       <Chat key={project.root} timeline={timeline} onRestore={editTimeline} marks={marks} setMarks={setMarks} media={media} sender={sender} />

@@ -1,22 +1,46 @@
 ---
 name: save-style
-description: Save the style of the current edit as a new reusable skill in the user's library. Use when the user likes the result and asks to save, keep or export the style as a skill.
+description: Save how the current edit was made to the user's library — as a whole-video style, as single moves (a caption treatment, a transition, a title…), or both. Also saves a move seen in a reference video. Use when the user asks to save, keep or export a style, a move or a technique.
 ---
 
-# Save the current style as a skill
+# Save to the library
 
-Turn *how* this video was edited into instructions that will work on completely different footage.
+The library holds two kinds of entry, both skills in `<library>/skills/<name>/SKILL.md` (the library folder is named in your instructions):
 
-1. **Study the finished edit**: .cutroom/timeline.json, the graphics in .cutroom/motion/, and the feedback the user gave in this conversation — what they asked to change is the most valuable part of the style.
-2. **Pick a name**: short kebab-case (use the user's name for it if they gave one). The skill goes in the library folder named in your instructions: `<library>/skills/<name>/SKILL.md`. If that folder already exists, ask before replacing it.
-3. **Write SKILL.md** in the same shape as the built-in styles:
-   - frontmatter: `name`, and a `description` saying what kind of video it makes and when to use it;
-   - Format, Structure, Cutting, Captions, Graphics, Audio, and a "Check before replying" list.
-   Describe decisions and measurements — shot lengths, pacing, caption size/position/behaviour, fonts, colours, easing, music level — not this project's content.
-4. **Templates** (optional): copy reusable graphics into `<library>/skills/<name>/templates/` with the project's wording replaced by variables or placeholders, and reference them from SKILL.md.
-5. **Keep the video with the style**: run `cutroom style-example <name>` in the project. It stores the current video as the style's example (shown when the user browses their styles) and lists this project's exports under the style.
+- a **style** describes a whole video: format, structure, pacing, captions, graphics, sound;
+- a **move** is one reusable technique that can be dropped into any video: a caption treatment, a transition, a title animation, a zoom, a sound accent.
 
-Rules:
-- No project-specific text, file names, people or brands — unless the user says the style is for that brand, in which case record its colours, fonts and logo usage.
-- If reference videos shaped the style, record the principles learned from them (rhythm, structure, treatment), never their footage, audio, wording or exact layouts.
-- Finish by telling the user the style's name and one sentence on what it will do next time.
+Frontmatter for both:
+
+```
+---
+name: <short-kebab-case>
+kind: style | move
+tags: <3–6 comma-separated words people would filter by: captions, transition, title, camera, sound, colour, hook, vertical, product…>
+source: <only for a move learned from someone else's video: creator and link>
+description: <what it makes or does, and when to use it>
+---
+```
+
+Write instructions that work on completely different footage: decisions and measurements (shot lengths, sizes, positions, fonts, colours, easing, timing, levels), not this project's content. No project-specific text, file names, people or brands — unless the user says it is for that brand.
+
+## Saving a style
+
+1. Study the finished edit: .cutroom/timeline.json, the graphics in .cutroom/motion/, and the feedback the user gave — what they asked to change is the most valuable part.
+2. Pick the name (the user's, if they gave one). If the folder exists, ask before replacing it.
+3. Write SKILL.md (`kind: style`): Format, Structure, Cutting, Captions, Graphics, Audio, and a "Check before replying" list. Optional: reusable graphics in `templates/` with the wording replaced by placeholders.
+4. Run `cutroom style-example <name>` — it keeps the current video as the style's example and lists this project's exports under it.
+5. **Then split out its moves**: each distinct technique in the edit that would be useful on its own becomes a move (see below), named `<what-it-is>`, not after the style. Usually 2–4. Skip anything already in the library (list `<library>/skills/` first) and anything generic.
+
+## Saving a move
+
+From the user's own edit (they marked a section, or you are splitting a style):
+1. Write SKILL.md (`kind: move`): what it is, exactly how to build it, when to use and not use it, one check. 10–20 lines.
+2. `cutroom style-example <name> --from <start s> --to <end s>` — keeps that section of the current video as its example. Include a second before and after so the move is seen in context.
+
+From a reference video (someone else's):
+1. Look at the section (extract frames) and describe the principle — rhythm, placement, motion, timing — in your own measurements. Never their wording, footage, audio or exact layout.
+2. Set `source:` to the creator and link.
+3. `cutroom style-example <name> --src references/<file> --from <start s> --to <end s>` — keeps a few seconds of the reference privately, only so the user can see the move when browsing. It is never used in a video.
+
+Finish by telling the user what was saved — the style and each move by name, one line each.

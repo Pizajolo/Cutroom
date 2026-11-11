@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { LIBRARY, styleVideos, useStyle } from '../cli/project';
+import { LIBRARY, readFavorites, styleVideos, useStyle } from '../cli/project';
 import { run } from '../cli/run';
 import { PREVIEW_FILE, UTILITY_SKILLS, clipLength, clipStarts } from '../shared/types';
 import type { AgentEvent, AudioItem, Mark, Overlay, Skill, Timeline } from '../shared/types';
@@ -21,6 +21,7 @@ export async function listSkills(): Promise<Skill[]> {
   await writeFile(path.join(LIBRARY, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'my', description: 'My Cutroom styles' }));
   const skills: Skill[] = [];
   const videos = await styleVideos();
+  const favorites = await readFavorites();
   for (const [plugin, root] of [['cutroom', BUILTIN], ['my', LIBRARY]] as const) {
     for (const dir of await readdir(path.join(root, 'skills'))) {
       const text = await readFile(path.join(root, 'skills', dir, 'SKILL.md'), 'utf8').catch(() => '');
@@ -33,7 +34,11 @@ export async function listSkills(): Promise<Skill[]> {
         // `…/trip/exports/trip-01.mp4` → "trip / trip-01.mp4"
         ...(videos[id] ?? []).map((file) => ({ file, src: `media://export${encodeURI(file)}`, label: `${file.split(path.sep).at(-3)} / ${path.basename(file)}` })),
       ];
-      skills.push({ id, name: field('name') || dir, description: field('description'), custom: plugin === 'my', examples });
+      const tags = field('tags').split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean);
+      skills.push({
+        id, name: field('name') || dir, description: field('description'), custom: plugin === 'my',
+        kind: field('kind') === 'move' ? 'move' : 'style', tags, favorite: favorites.includes(id), source: field('source') || undefined, examples,
+      });
     }
   }
   return skills;
@@ -90,7 +95,7 @@ async function describeMarks(root: string, marks: Mark[], timeline: Timeline | n
 const describeTool = (name: string, input: Record<string, unknown>): string => {
   if (name === 'Bash') return String(input.description ?? input.command ?? 'Running a command').slice(0, 120);
   if (name.startsWith('mcp__')) return name.slice(5).replace(/__/, ': ').replace(/_/g, ' ');
-  if (name === 'Skill') return `Using the ${String(input.skill ?? '').replace(/^.*:/, '')} style`;
+  if (name === 'Skill') return `Using ${String(input.skill ?? '').replace(/^.*:/, '')}`;
   if (typeof input.file_path === 'string') return `${name} ${path.basename(input.file_path)}`;
   return name;
 };
@@ -99,12 +104,20 @@ let turn: AbortController | undefined;
 export const stop = (): void => turn?.abort();
 
 /** Send one user message and stream the agent's reply as events. */
-export async function send(root: string, text: string, marks: Mark[], files: string[], timeline: Timeline | null, emit: (event: AgentEvent) => void): Promise<void> {
+export async function send(root: string, text: string, marks: Mark[], files: string[], skills: string[], timeline: Timeline | null, emit: (event: AgentEvent) => void): Promise<void> {
   const config = await agentConfig(root);
   const sessionFile = path.join(root, '.cutroom/session');
   const resume = await readFile(sessionFile, 'utf8').catch(() => undefined);
   const footage = files.length ? `\n\n<footage>\nThe user selected this footage to use:\n${files.map((f) => `- ${f}`).join('\n')}\n</footage>` : '';
-  const prompt = text + footage + (await describeMarks(root, marks, timeline));
+  // Styles and moves the user picked: a style shapes the whole video, a move goes where the message says.
+  const picked = (await listSkills()).filter((s) => skills.includes(s.id));
+  for (const skill of picked) await useStyle(root, skill.id);
+  const techniques = picked.length
+    ? `\n\n<techniques>\nThe user picked these from their library for this request. Load each with the Skill tool before working. ` +
+      `A style shapes the whole video. A move is applied where the message says (the user refers to it as @name); if it doesn't say, where it fits best — and tell them where you used it.\n` +
+      `${picked.map((s) => `- ${s.id} (${s.kind}, @${s.name})`).join('\n')}\n</techniques>`
+    : '';
+  const prompt = text + techniques + footage + (await describeMarks(root, marks, timeline));
   const controller = (turn = new AbortController());
   let error: string | undefined;
   let started = false;
@@ -166,7 +179,7 @@ export async function send(root: string, text: string, marks: Mark[], files: str
       // A session that can no longer be resumed should not brick the project: start a fresh one.
       if (resume && !started) {
         await rm(sessionFile, { force: true });
-        return send(root, text, marks, files, timeline, emit);
+        return send(root, text, marks, files, skills, timeline, emit);
       }
       error = (cause as Error).message;
     }

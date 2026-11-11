@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { PREVIEW_FILE, TIMELINE_FILE, clipLength, timelineLength } from '../shared/types';
 import type { Clip, Grade, Overlay, Timeline } from '../shared/types';
-import { linkExport } from './project';
+import { addVersion, linkExport } from './project';
 import { run } from './run';
 
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp)$/i;
@@ -48,6 +48,20 @@ async function hasAudio(file: string): Promise<boolean> {
   return out.trim().length > 0;
 }
 
+/**
+ * HDR footage (iPhone HLG, HDR10) looks washed out when treated as normal video, so it is converted to
+ * standard range first. FFmpeg does this through macOS's own converter (VideoToolbox).
+ */
+const HDR_TO_SDR = 'format=p010le,hwupload,scale_vt=color_matrix=bt709:color_primaries=bt709:color_transfer=bt709,hwdownload,format=p010le';
+const hdrCache = new Map<string, Promise<boolean>>();
+function isHdr(file: string): Promise<boolean> {
+  if (!hdrCache.has(file)) {
+    const probe = run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=color_transfer', '-of', 'csv=p=0', file]);
+    hdrCache.set(file, probe.then((out) => /smpte2084|arib-std-b67/.test(out), () => false));
+  }
+  return hdrCache.get(file)!;
+}
+
 async function nextExportPath(root: string): Promise<string> {
   const dir = path.join(root, 'exports');
   await mkdir(dir, { recursive: true });
@@ -72,9 +86,10 @@ function gradeFilters(root: string, g: Grade = {}): string[] {
 }
 
 /** Crop, grade and custom filters of a clip or overlay, applied to its source picture. */
-function look(root: string, item: Clip | Overlay): string[] {
+async function look(root: string, item: Clip | Overlay): Promise<string[]> {
   const c = item.crop;
   return [
+    ...(!IMAGE.test(item.src) && (await isHdr(path.join(root, item.src))) ? [HDR_TO_SDR] : []),
     ...(c ? [`crop=iw*${c.w}:ih*${c.h}:iw*${c.x}:ih*${c.y}`] : []),
     ...gradeFilters(root, item.grade),
     ...(item.filter ? [item.filter] : []),
@@ -113,7 +128,7 @@ export async function ffmpegArgs(root: string, t: Timeline, preview: boolean): P
     const fit = c.fit === 'contain'
       ? `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2`
       : `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`;
-    graph.push(`[${n}:v]${[...look(root, c), fit, 'setsar=1', `setpts=(PTS-STARTPTS)/${speed}`, `fps=${t.fps}`, 'format=yuv420p'].join(',')}[v${n}]`);
+    graph.push(`[${n}:v]${[...(await look(root, c)), fit, 'setsar=1', `setpts=(PTS-STARTPTS)/${speed}`, `fps=${t.fps}`, 'format=yuv420p'].join(',')}[v${n}]`);
     graph.push(
       !image && (await hasAudio(abs(c.src)))
         ? `[${n}:a]${AUDIO},${tempo(speed)}volume=${c.volume ?? 1},apad,atrim=duration=${len},asetpts=PTS-STARTPTS[a${n}]`
@@ -132,7 +147,7 @@ export async function ffmpegArgs(root: string, t: Timeline, preview: boolean): P
     const image = IMAGE.test(o.src);
     inputs.push(...(image ? ['-loop', '1'] : ['-ss', String(o.in ?? 0)]), '-t', String(o.duration), '-i', abs(o.src));
     const chain = [
-      ...look(root, o),
+      ...(await look(root, o)),
       `scale=${o.w ? `${even(o.w * W)}:-2` : `${W}:${H}`}`,
       `fps=${t.fps}`,
       'format=rgba',
@@ -170,10 +185,10 @@ export async function ffmpegArgs(root: string, t: Timeline, preview: boolean): P
   }
 
   return [
-    '-hide_banner', '-loglevel', 'error', '-y', ...inputs,
+    '-hide_banner', '-loglevel', 'error', '-y', '-init_hw_device', 'videotoolbox=vt', '-filter_hw_device', 'vt', ...inputs,
     '-filter_complex', graph.join(';'), '-map', `[${video}]`, '-map', `[${audio}]`,
     '-c:v', 'libx264', '-preset', preview ? 'ultrafast' : 'medium', '-crf', preview ? '28' : '18',
-    '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-t', String(total),
+    '-pix_fmt', 'yuv420p', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-t', String(total),
   ];
 }
 
@@ -187,6 +202,9 @@ export async function render(root: string, opts: { preview?: boolean; signal?: A
   const args = await ffmpegArgs(root, timeline, opts.preview ?? false);
   await run('ffmpeg', [...args, '-f', 'mp4', tmp], { signal: opts.signal });
   await rename(tmp, out);
-  if (!opts.preview) await linkExport(root, out);
+  if (!opts.preview) {
+    await linkExport(root, out);
+    await addVersion(root, 'Export', timeline, path.relative(root, out));
+  }
   return out;
 }

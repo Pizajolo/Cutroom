@@ -123,6 +123,7 @@ export async function agentConfig(root: string): Promise<AgentConfig> {
       : '\nElevenLabs is connected through the mcp__elevenlabs tools. Save results in assets/ and put them on the timeline as audio.';
     if (voice && active('voiceover')) notes += ` The user's own voice is "${voice.name}" (voice_id ${voice.id}): use it for voice-over unless they ask for another.`;
   }
+  if (active('localSfx')) notes += '\nSimple sound effects can be made locally and for free: use the sound-effects skill.';
   if (uses('fal')) env.FAL_KEY = settings.keys.fal;
   if (uses('openrouter')) env.OPENROUTER_API_KEY = settings.keys.openrouter;
   if (uses('alibaba')) env.DASHSCOPE_API_KEY = settings.keys.alibaba;

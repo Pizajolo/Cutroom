@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, Trash2, X } from 'lucide-react';
+import { FolderOpen, Star, Trash2, X } from 'lucide-react';
 import type { Example, Skill } from '../shared/types';
-import { UTILITY_SKILLS } from '../shared/types';
+import { useLibraryFilter } from './LibraryFilter';
 import { api } from './lib';
 
 const tagOf = (skill: Skill): string => (skill.custom ? 'Yours' : 'Built-in');
@@ -29,11 +29,14 @@ function StyleDialog({ skill, onChange, onClose }: { skill: Skill; onChange: (sk
       <section role="dialog" aria-label={skill.name}>
         <header>
           <h2>{skill.name}</h2>
+          <span className="tag">{skill.kind === 'move' ? 'Move' : 'Style'}</span>
           <span className="tag">{tagOf(skill)}</span>
+          {skill.tags.map((tag) => <span key={tag} className="tag">{tag}</span>)}
           <span className="spacer" />
+          <button className={skill.favorite ? 'ghost favorite' : 'ghost'} aria-pressed={skill.favorite} title={skill.favorite ? 'Remove from favourites' : 'Add to favourites'} onClick={() => void api.toggleFavorite(skill.id).then(onChange)}><Star size={16} /></button>
           <button className="ghost" aria-label="Close" onClick={onClose}><X size={16} /></button>
         </header>
-        <p className="description">{skill.description}</p>
+        <p className="description">{skill.description}{skill.source ? ` Learned from ${skill.source}.` : ''}</p>
         <div className="switch" role="tablist">
           {(['Examples', 'Skill'] as const).map((name) => (
             <button key={name} role="tab" aria-selected={tab === name} onClick={() => setTab(name)}>
@@ -76,31 +79,38 @@ function StyleDialog({ skill, onChange, onClose }: { skill: Skill; onChange: (sk
   );
 }
 
-/** The style library: browse, watch the videos made with a style, edit your own. */
+/** The library of styles (whole videos) and moves (single techniques): filter, watch the examples, edit your own. */
 export function Styles() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [open, setOpen] = useState('');
   useEffect(() => void api.listSkills().then(setSkills), []);
+  const [visible, filter] = useLibraryFilter(skills);
   const opened = skills.find((skill) => skill.id === open);
 
   const remove = (skill: Skill): void => {
-    if (confirm(`Move the style “${skill.name}” to the Trash?`)) void api.deleteSkill(skill.id).then(setSkills);
+    if (confirm(`Move “${skill.name}” to the Trash?`)) void api.deleteSkill(skill.id).then(setSkills);
   };
 
   return (
     <>
-      <h1>Styles</h1>
+      <h1>Library</h1>
       <p className="hint">
-        Styles are skills Claude follows when editing. To add your own, finish an edit you like and press “Save style” in the chat.
-        Click a style to see its example videos and instructions.
+        A style is how a whole video is made; a move is one technique — a caption treatment, a transition, a title — you can use in any video.
+        To add your own, finish an edit you like and press “Save style” in the chat, or mark a section and ask Claude to save it as a move.
       </p>
+      {filter}
       <ul className="list">
-        {skills.filter((skill) => !UTILITY_SKILLS.includes(skill.id)).map((skill) => (
+        {visible.length === 0 && <li className="hint">Nothing matches.</li>}
+        {visible.map((skill) => (
           <li key={skill.id}>
             <button className="ghost grow tall" onClick={() => setOpen(skill.id)}>
-              <strong>{skill.name}</strong> <span className="tag">{tagOf(skill)}</span>
+              <strong>{skill.name}</strong> <span className="tag">{skill.kind === 'move' ? 'Move' : 'Style'}</span> <span className="tag">{tagOf(skill)}</span>
               {skill.examples.length > 0 && <span className="tag">{skill.examples.length} example{skill.examples.length > 1 ? 's' : ''}</span>}
               <span className="description">{skill.description}</span>
+              {skill.tags.length > 0 && <span className="description faint">{skill.tags.join(' · ')}</span>}
+            </button>
+            <button className={skill.favorite ? 'ghost favorite' : 'ghost'} aria-pressed={skill.favorite} title={skill.favorite ? 'Remove from favourites' : 'Favourite: listed first when you pick styles and moves in a project'} onClick={() => void api.toggleFavorite(skill.id).then(setSkills)}>
+              <Star size={14} />
             </button>
             {skill.custom && <button className="ghost" title="Move to Trash" onClick={() => remove(skill)}><Trash2 size={14} /></button>}
           </li>

@@ -1,5 +1,6 @@
 ---
 name: montage
+tags: music, b-roll, no-talking
 description: Music-driven montage of the best moments — travel, events, behind the scenes, recaps. Little or no talking; rhythm and feeling carry it. Use when the footage is mostly b-roll.
 ---
 

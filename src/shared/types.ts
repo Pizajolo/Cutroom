@@ -9,6 +9,8 @@ export type ImportDir = 'raw' | 'references' | 'assets';
 export const TIMELINE_FILE = '.cutroom/timeline.json';
 export const PREVIEW_FILE = '.cutroom/preview.mp4';
 export const SCRIPT_FILE = '.cutroom/script.md';
+/** Exists while a spoken cut waits for the user's approval. */
+export const SPOKEN_CUT_FILE = '.cutroom/spoken-cut';
 
 /** Colour correction. Every field is optional; omitted = unchanged. */
 export interface Grade {
@@ -150,6 +152,13 @@ export interface Skill {
   description: string;
   /** True for skills the user saved from their own edits. */
   custom: boolean;
+  /** A style shapes a whole video; a move is one technique that can be used in any video. */
+  kind: 'style' | 'move';
+  tags: string[];
+  /** Starred by the user: listed first when picking styles and moves in a project. */
+  favorite: boolean;
+  /** For a move learned from someone else's video: creator and link. */
+  source?: string;
   /** Videos that show the style: the one it was saved from, then every export made with it. */
   examples: Example[];
 }
@@ -163,7 +172,7 @@ export interface Example {
 }
 
 /** Skills that are tools rather than editing styles. */
-export const UTILITY_SKILLS = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate'];
+export const UTILITY_SKILLS = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate', 'cutroom:sound-effects'];
 
 export interface ToolStatus {
   name: string;
@@ -252,15 +261,42 @@ export interface ChatMessage {
   marks?: Mark[];
   /** Footage the user picked for this request. */
   files?: string[];
+  /** Styles and moves the user picked for this request (skill ids). */
+  skills?: string[];
   /** On a reply: the edit as it was before Claude started, so the step can be taken back. */
   before?: Timeline;
   error?: boolean;
+}
+
+/** A kept state of the edit: one of Claude's steps, or an export. */
+export interface Version {
+  id: number;
+  /** ISO time. */
+  at: string;
+  /** What led to it: the user's request, or "Export". */
+  label: string;
+  timeline: Timeline;
+  /** Project-relative path of the exported video, for exports. */
+  file?: string;
+  final?: boolean;
+}
+
+/** Where a file that the user did not shoot came from, and what may be done with it. */
+export interface LedgerEntry {
+  /** Project-relative path. */
+  file: string;
+  /** A link, a creator, or the model that generated it. */
+  source: string;
+  license?: string;
+  note?: string;
 }
 
 /** The written plan for the video. `pending` = written or changed since the last edit, so it awaits approval. */
 export interface Script {
   text: string;
   pending: boolean;
+  /** The speech-only cut is ready and waits for approval before visuals are added. */
+  spokenCut: boolean;
 }
 
 export type AgentEvent =
@@ -285,8 +321,16 @@ export interface CutroomApi {
   saveTimeline(timeline: Timeline): Promise<void>;
   loadChat(): Promise<ChatMessage[]>;
   saveChat(messages: ChatMessage[]): Promise<void>;
-  send(text: string, marks: Mark[], files: string[]): Promise<void>;
+  send(text: string, marks: Mark[], files: string[], skills: string[]): Promise<void>;
   getScript(): Promise<Script>;
+  /** The user accepts the speech-only cut; Claude may add visuals. */
+  approveSpokenCut(): Promise<void>;
+  /** Every kept state of the edit, oldest first. */
+  versions(): Promise<Version[]>;
+  /** Mark a version as the final one (or clear the mark). */
+  markFinal(id: number): Promise<Version[]>;
+  /** Where everything the user did not shoot came from. */
+  ledger(): Promise<LedgerEntry[]>;
   stop(): Promise<void>;
   exportVideo(): Promise<string>;
   reveal(path: string): Promise<void>;
@@ -294,6 +338,8 @@ export interface CutroomApi {
   forgetProject(root: string): Promise<Project[]>;
   listSkills(): Promise<Skill[]>;
   revealSkill(id: string): Promise<void>;
+  /** Star or unstar a style or move. */
+  toggleFavorite(id: string): Promise<Skill[]>;
   /** The style's SKILL.md. */
   readSkill(id: string): Promise<string>;
   /** Rewrite one of the user's own styles. */

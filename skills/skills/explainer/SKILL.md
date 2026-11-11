@@ -1,5 +1,6 @@
 ---
 name: explainer
+tags: landscape, tutorial, narration
 description: Landscape YouTube-style explainer or tutorial of 1–5 minutes — clean narration, chapter titles, on-screen callouts for key terms. Use for how-tos, walkthroughs, educational and screen-recording content.
 ---
 

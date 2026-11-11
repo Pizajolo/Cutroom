@@ -1,8 +1,9 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { ArrowUp, Film, Flag, Sparkles, Square, Undo2, X } from 'lucide-react';
-import { EMPTY_TIMELINE, UTILITY_SKILLS } from '../shared/types';
+import { ArrowUp, Film, Flag, Library, Sparkles, Square, Star, Undo2, X } from 'lucide-react';
+import { EMPTY_TIMELINE } from '../shared/types';
 import type { AgentEvent, ChatMessage, Mark, MediaFile, ModelChoice, Skill, Timeline } from '../shared/types';
+import { useLibraryFilter } from './LibraryFilter';
 import { Markdown } from './Markdown';
 import { api, clock } from './lib';
 
@@ -38,12 +39,14 @@ function reduce(messages: ChatMessage[], event: AgentEvent): ChatMessage[] {
 export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, media, sender }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
-  const [skill, setSkill] = useState('');
+  /** Styles and moves picked for the next message (skill ids). */
+  const [picked, setPicked] = useState<string[]>([]);
   const [model, setModel] = useState<ModelChoice | null>(null);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<string[]>([]);
-  const [picking, setPicking] = useState(false);
+  const [picking, setPicking] = useState<'' | 'footage' | 'library'>('');
+  const [listed, filter] = useLibraryFilter(skills);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -71,13 +74,13 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
 
   const sendText = (text: string): void => {
     if (!text || busy) return;
-    setMessages((all) => [...all, { role: 'user', parts: [{ type: 'text', text }], marks, files }, { role: 'assistant', parts: [], before: timeline ?? EMPTY_TIMELINE }]);
+    setMessages((all) => [...all, { role: 'user', parts: [{ type: 'text', text }], marks, files, skills: picked }, { role: 'assistant', parts: [], before: timeline ?? EMPTY_TIMELINE }]);
     setBusy(true);
-    void api.send(skill ? `Use the ${skill} skill.\n\n${text}` : text, marks, files);
+    void api.send(text, marks, files, picked);
     setMarks([]);
     setFiles([]);
-    setPicking(false);
-    setSkill('');
+    setPicking('');
+    setPicked([]);
   };
   sender.current = sendText;
   const send = (): void => {
@@ -92,9 +95,18 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
     return before && JSON.stringify(before) !== JSON.stringify(after) ? before : undefined;
   };
   const toggleFile = (path: string): void => setFiles(files.includes(path) ? files.filter((f) => f !== path) : [...files, path]);
+  const togglePick = (id: string): void => setPicked(picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id]);
+  const nameOf = (id: string): string => skills.find((s) => s.id === id)?.name ?? id;
+  /** Put "@name" where the cursor is, so the message can say where a move goes. */
+  const mention = (id: string): void => {
+    const el = input.current!;
+    const word = `@${nameOf(id)} `;
+    setDraft(draft.slice(0, el.selectionStart) + word + draft.slice(el.selectionEnd));
+    el.focus();
+  };
   const footage = media.filter((file) => file.dir === 'raw' && file.kind === 'video');
   const saveStyle = (): void => {
-    setDraft('Save the style of this edit as a new skill called ');
+    setDraft('Save the style of this edit, and its moves, to my library. Call the style ');
     input.current?.focus();
   };
 
@@ -115,6 +127,9 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
             {message.files?.map((file) => (
               <span key={file} className="chip file"><Film size={12} /> {fileName(file)}</span>
             ))}
+            {message.skills?.map((id) => (
+              <span key={id} className="chip skill"><Sparkles size={12} /> {nameOf(id)}</span>
+            ))}
             {message.parts.map((part, n) =>
               part.type === 'tool' ? <p key={n} className="tool">{part.text}</p> : <Markdown key={n} text={part.text} />,
             )}
@@ -127,7 +142,7 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
         ))}
       </div>
       <form className="composer" onSubmit={(e) => (e.preventDefault(), send())}>
-        {picking && (
+        {picking === 'footage' && (
           <div className="footage">
             {footage.map((file) => (
               <button type="button" key={file.path} className={files.includes(file.path) ? 'selected' : ''} title={fileName(file.path)} onClick={() => toggleFile(file.path)}>
@@ -138,8 +153,31 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
             {footage.length === 0 && <p className="hint">No footage in raw/ yet. Drop videos onto the window.</p>}
           </div>
         )}
-        {marks.length + files.length > 0 && (
+        {picking === 'library' && (
+          <div className="library-pick">
+            {filter}
+            <ul>
+              {listed.map((s) => (
+                <li key={s.id}>
+                  <button type="button" className={picked.includes(s.id) ? 'selected' : ''} title={s.description} onClick={() => togglePick(s.id)}>
+                    {s.favorite && <Star size={12} className="favorite" />}
+                    <strong>{s.name}</strong> <span className="tag">{s.kind === 'move' ? 'Move' : 'Style'}</span>
+                    <span className="description">{s.description}</span>
+                  </button>
+                </li>
+              ))}
+              {listed.length === 0 && <li className="hint">Nothing matches.</li>}
+            </ul>
+          </div>
+        )}
+        {marks.length + files.length + picked.length > 0 && (
           <div className="chips">
+            {picked.map((id) => (
+              <span key={id} className="chip skill">
+                <button type="button" title="Mention it in your message, to say where it goes" onClick={() => mention(id)}><Sparkles size={12} /> @{nameOf(id)}</button>
+                <button type="button" title="Remove" aria-label={`Remove ${nameOf(id)}`} onClick={() => togglePick(id)}><X size={12} /></button>
+              </span>
+            ))}
             {files.map((file) => (
               <button type="button" key={file} className="chip file" title="Remove" onClick={() => toggleFile(file)}>
                 <Film size={12} /> {fileName(file)} <X size={12} />
@@ -159,15 +197,12 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
         />
         <div className="row">
-          <button type="button" className={picking ? 'active' : 'ghost'} title="Choose the footage Claude should use" onClick={() => setPicking(!picking)}>
+          <button type="button" className={picking === 'footage' ? 'active' : 'ghost'} title="Choose the footage Claude should use" onClick={() => setPicking(picking === 'footage' ? '' : 'footage')}>
             <Film size={14} /> Footage
           </button>
-          <select value={skill} onChange={(e) => setSkill(e.target.value)} aria-label="Style" title={skills.find((s) => s.id === skill)?.description}>
-            <option value="">Style: auto</option>
-            {skills.filter((s) => !UTILITY_SKILLS.includes(s.id)).map((s) => (
-              <option key={s.id} value={s.id}>{s.custom ? '★ ' : ''}{s.name}</option>
-            ))}
-          </select>
+          <button type="button" className={picking === 'library' ? 'active' : 'ghost'} title="Choose styles and moves from your library; click a chosen one to mention it in your message" onClick={() => setPicking(picking === 'library' ? '' : 'library')}>
+            <Library size={14} /> Styles &amp; moves
+          </button>
           {model && (
             <select
               value={model.project} aria-label="Model" title="Model for this project"

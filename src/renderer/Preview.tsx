@@ -16,13 +16,43 @@ interface Props {
   onMark: (mark: Mark) => void;
   script: Script;
   onApprove: () => void;
+  /** The user picked another opening from the storyboard's hook options. */
+  onHook: (n: number, hook: string) => void;
+  onApproveSpokenCut: () => void;
 }
 
-/** The plan for the video. Nothing is cut until the user approves it. */
-function ScriptPage({ script, onApprove }: Pick<Props, 'script' | 'onApprove'>) {
+/** The storyboard. Nothing is cut until the user approves it; the opening can be swapped for another hook option. */
+function ScriptPage({ script, onApprove, onHook }: Pick<Props, 'script' | 'onApprove' | 'onHook'>) {
+  // "## Hooks" holds a numbered list of openings; the one in use is marked "(in script)".
+  const lines = script.text.split('\n');
+  const start = lines.findIndex((line) => /^## Hooks\s*$/.test(line));
+  const next = lines.findIndex((line, i) => i > start && line.startsWith('## '));
+  const end = start < 0 ? 0 : next < 0 ? lines.length : next;
+  const before = lines.slice(0, Math.max(start, 0)).join('\n');
+  const after = lines.slice(end).join('\n');
+  const options = lines.slice(start + 1, end).flatMap((line) => {
+    const item = /^\d+\.\s+(.*)$/.exec(line)?.[1];
+    return item ? [{ text: item.replace(/\*\*\(in script\)\*\*|\(in script\)/i, '').trim(), chosen: /\(in script\)/i.test(item) }] : [];
+  });
   return (
     <div className="script">
-      <article><Markdown text={script.text} /></article>
+      <article>
+        <Markdown text={before} />
+        {options.length > 0 && (
+          <>
+            <h3>Hooks</h3>
+            <div className="hooks">
+              {options.map((option, n) => (
+                <button key={n} className={option.chosen ? 'selected' : ''} disabled={option.chosen || !script.pending} title={option.chosen ? 'The opening in the storyboard' : 'Use this opening instead'} onClick={() => onHook(n + 1, option.text)}>
+                  <Markdown text={option.text} />
+                  {option.chosen && <span className="tag ok">In storyboard</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        <Markdown text={after} />
+      </article>
       {script.pending && (
         <footer>
           <span className="hint">Ask for changes in the chat, or</span>
@@ -34,7 +64,7 @@ function ScriptPage({ script, onApprove }: Pick<Props, 'script' | 'onApprove'>) 
 }
 
 /** The edit as the user sees it, with the controls for pointing at what they like or dislike. */
-export function Preview({ video, timeline, preview, media, marks, onMark, script, onApprove }: Props) {
+export function Preview({ video, timeline, preview, media, marks, onMark, script, onApprove, onHook, onApproveSpokenCut }: Props) {
   const time = useVideoTime(video);
   const [playing, setPlaying] = useState(false);
   const [rangeStart, setRangeStart] = useState<number | null>(null);
@@ -61,7 +91,7 @@ export function Preview({ video, timeline, preview, media, marks, onMark, script
   };
 
   if (!preview.version && script.text) {
-    return <section className="preview"><ScriptPage script={script} onApprove={onApprove} /></section>;
+    return <section className="preview"><ScriptPage script={script} onApprove={onApprove} onHook={onHook} /></section>;
   }
   if (!preview.version) {
     return (
@@ -83,13 +113,19 @@ export function Preview({ video, timeline, preview, media, marks, onMark, script
     <section className="preview">
       <div className="stage">
         <video ref={video} onClick={toggle} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
-        {showScript && <ScriptPage script={script} onApprove={onApprove} />}
+        {showScript && <ScriptPage script={script} onApprove={onApprove} onHook={onHook} />}
         {(preview.rendering || preview.error) && (
           <span className={preview.error ? 'badge error' : 'badge'} title={preview.error}>
             {preview.error ? 'Preview failed' : 'Updating…'}
           </span>
         )}
       </div>
+      {script.spokenCut && (
+        <div className="approve">
+          <span>Spoken cut: only the speech so far. Ask for changes in the chat, or</span>
+          <button className="primary" onClick={onApproveSpokenCut}><Check size={16} /> Approve spoken cut</button>
+        </div>
+      )}
       <div className="scrub">
         <input
           type="range" min={0} max={length} step={0.01} value={Math.min(time, length)} aria-label="Position"
@@ -108,7 +144,7 @@ export function Preview({ video, timeline, preview, media, marks, onMark, script
         <span className="spacer" />
         {script.text && (
           <button className={showScript ? 'active' : ''} title="The plan this video follows" onClick={() => setShowScript(!showScript)}>
-            <FileText size={14} /> Script
+            <FileText size={14} /> Storyboard
           </button>
         )}
         <button title="Point Claude at this exact frame" onClick={() => onMark({ start: time })}>
