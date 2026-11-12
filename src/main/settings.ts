@@ -9,7 +9,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { safeStorage, systemPreferences } from 'electron';
 import { patchProject, readProject } from '../cli/project';
 import { HOME, run } from '../cli/run';
-import { CONNECTIONS, featureStates, llmProviders } from '../shared/features';
+import { CONNECTIONS, LOCAL_CUTOUT, featureStates, llmProviders } from '../shared/features';
 import type { Connection, Feature, FeatureState } from '../shared/features';
 import { modelOptions } from '../shared/types';
 import type { ClaudeStatus, ModelChoice, Settings, Voice } from '../shared/types';
@@ -134,7 +134,10 @@ export async function agentConfig(root: string): Promise<AgentConfig> {
     mcpServers.codex = { command: 'codex', args: ['mcp-server'] };
     notes += '\nOpenAI Codex is connected through the mcp__codex tools. Use it only when the user asks for Codex or for a second opinion.';
   }
-  const generated = states.filter((s) => s.active && s.model);
+  if (states.some((s) => s.id === 'cutout' && s.active && s.model === LOCAL_CUTOUT)) {
+    notes += '\nSubject cutouts and stickers are made on this Mac, free: use the cutout skill.';
+  }
+  const generated = states.filter((s) => s.active && s.model && !s.model.startsWith('local:'));
   if (generated.length) {
     notes += `\nAI generation is connected: use the generate skill. The user's model for each task:\n${generated.map((s) => `  ${s.label}: ${s.model}`).join('\n')}`;
   }

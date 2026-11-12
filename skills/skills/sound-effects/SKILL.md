@@ -29,6 +29,6 @@ Vary them to suit the video: frequency for pitch, `d` and the `exp(-N*t)` decay 
 
 - Sparse and motivated: accent the few moments that matter (a title landing, the one big transition, the reveal). Never every cut.
 - Time each to the frame of the event; for whoosh and riser, line up the peak or the end, not the start.
-- Speech stays dominant: `volume` 0.2–0.5 under a voice, up to 0.8 on its own. Listen to the mix by checking levels (`ffmpeg -i .cutroom/preview.mp4 -af volumedetect -f null -`): no clipping.
+- Speech stays dominant: `volume` 0.2–0.5 under a voice, up to 0.8 on its own. Listen to the mix by checking levels (`ffmpeg -i <workspace>/preview.mp4 -af volumedetect -f null -`): no clipping.
 - When cuts move, move the effects with them.
 - Record them once in the sources list: `cutroom ledger assets/sfx --source "Made locally with FFmpeg" --license "Own work"`.

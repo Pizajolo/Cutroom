@@ -1,20 +1,20 @@
-// Renders `.cutroom/timeline.json` to a video with a single FFmpeg filter graph.
+// Renders a cut's timeline.json to a video with a single FFmpeg filter graph.
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename } from 'node:fs/promises';
 import path from 'node:path';
-import { PREVIEW_FILE, TIMELINE_FILE, clipLength, timelineLength } from '../shared/types';
+import { clipLength, cutFiles, timelineLength } from '../shared/types';
 import type { Clip, Grade, Overlay, Timeline } from '../shared/types';
-import { addVersion, linkExport } from './project';
+import { addVersion, linkExport, readCuts } from './project';
 import { run } from './run';
 
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp)$/i;
 const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
 
-/** Read and validate the project's timeline. Returns null when there is none yet. */
-export async function readTimeline(root: string): Promise<Timeline | null> {
+/** Read and validate a cut's timeline. Returns null when there is none yet. */
+export async function readTimeline(root: string, cut: string): Promise<Timeline | null> {
   let text: string;
   try {
-    text = await readFile(path.join(root, TIMELINE_FILE), 'utf8');
+    text = await readFile(path.join(root, cutFiles(cut).timeline), 'utf8');
   } catch {
     return null;
   }
@@ -52,9 +52,9 @@ async function hasAudio(file: string): Promise<boolean> {
  * HDR footage (iPhone HLG, HDR10) looks washed out when treated as normal video, so it is converted to
  * standard range first. FFmpeg does this through macOS's own converter (VideoToolbox).
  */
-const HDR_TO_SDR = 'format=p010le,hwupload,scale_vt=color_matrix=bt709:color_primaries=bt709:color_transfer=bt709,hwdownload,format=p010le';
+export const HDR_TO_SDR = 'format=p010le,hwupload,scale_vt=color_matrix=bt709:color_primaries=bt709:color_transfer=bt709,hwdownload,format=p010le';
 const hdrCache = new Map<string, Promise<boolean>>();
-function isHdr(file: string): Promise<boolean> {
+export function isHdr(file: string): Promise<boolean> {
   if (!hdrCache.has(file)) {
     const probe = run('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=color_transfer', '-of', 'csv=p=0', file]);
     hdrCache.set(file, probe.then((out) => /smpte2084|arib-std-b67/.test(out), () => false));
@@ -62,10 +62,13 @@ function isHdr(file: string): Promise<boolean> {
   return hdrCache.get(file)!;
 }
 
-async function nextExportPath(root: string): Promise<string> {
+/** `exports/trip-01.mp4` for the first cut, `exports/trip-german-01.mp4` for one called "German". */
+async function nextExportPath(root: string, cut: string): Promise<string> {
   const dir = path.join(root, 'exports');
   await mkdir(dir, { recursive: true });
-  const name = path.basename(root).replace(/[^\w-]+/g, '-').replace(/^-+/, '') || 'export';
+  const cuts = await readCuts(root);
+  const label = cuts[0]?.id === cut ? '' : (cuts.find((c) => c.id === cut)?.name ?? cut);
+  const name = [path.basename(root), label].filter(Boolean).join('-').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'export';
   const taken = new Set(await readdir(dir));
   for (let n = 1; ; n++) {
     const file = `${name}-${String(n).padStart(2, '0')}.mp4`;
@@ -192,11 +195,11 @@ export async function ffmpegArgs(root: string, t: Timeline, preview: boolean): P
   ];
 }
 
-/** Render the timeline. Returns the path of the written file. */
-export async function render(root: string, opts: { preview?: boolean; signal?: AbortSignal } = {}): Promise<string> {
-  const timeline = await readTimeline(root);
-  if (!timeline) throw new Error(`No timeline yet. Write ${TIMELINE_FILE} first.`);
-  const out = opts.preview ? path.join(root, PREVIEW_FILE) : await nextExportPath(root);
+/** Render a cut's timeline. Returns the path of the written file. */
+export async function render(root: string, cut: string, opts: { preview?: boolean; signal?: AbortSignal } = {}): Promise<string> {
+  const timeline = await readTimeline(root, cut);
+  if (!timeline) throw new Error(`No timeline yet. Write ${cutFiles(cut).timeline} first.`);
+  const out = opts.preview ? path.join(root, cutFiles(cut).preview) : await nextExportPath(root, cut);
   // Write next to the target, then rename, so a half-written file is never played or shipped.
   const tmp = path.join(path.dirname(out), `.rendering-${process.pid}-${path.basename(out)}`);
   const args = await ffmpegArgs(root, timeline, opts.preview ?? false);
@@ -204,7 +207,7 @@ export async function render(root: string, opts: { preview?: boolean; signal?: A
   await rename(tmp, out);
   if (!opts.preview) {
     await linkExport(root, out);
-    await addVersion(root, 'Export', timeline, path.relative(root, out));
+    await addVersion(root, cut, 'Export', timeline, path.relative(root, out));
   }
   return out;
 }

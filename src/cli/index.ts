@@ -1,14 +1,15 @@
 // The `cutroom` command line. The agent (and the app itself) drive all rendering through it.
 import path from 'node:path';
+import { CUTOUT_USAGE, cutout } from './cutout';
 import { generate, schema } from './generate';
-import { addLedger, saveExample } from './project';
+import { activeCut, addLedger, saveExample } from './project';
 import { render } from './render';
 import { renderRemotion } from './remotion';
 import { transcribe } from './transcribe';
 
 const HELP = `cutroom — run inside a Cutroom project folder
 
-  cutroom render [--preview]              Render .cutroom/timeline.json to exports/ (or the in-app preview)
+  cutroom render [--preview]              Render the cut's timeline.json to exports/ (or the in-app preview)
   cutroom transcribe <file> [--lang xx]   Whisper transcript with word timestamps (default: auto-detect)
   cutroom remotion <entry> <id> <out.mov> [--props '{...}']
                                           Render a Remotion composition to a transparent overlay
@@ -17,6 +18,9 @@ const HELP = `cutroom — run inside a Cutroom project folder
                                           as the example of a saved style or move
   cutroom ledger <file> --source "…" [--license "…"] [--note "…"]
                                           Record where a file came from and what may be done with it
+  ${CUTOUT_USAGE.replaceAll('\n       ', '\n  ')}
+                                          Cut the subject out on this Mac: a sticker (.png, from a picture or
+                                          the frame at --at) or a video with the background gone (.mov)
   cutroom generate --schema <provider>:<model>
                                           Show the inputs a model takes (provider: fal, openrouter, alibaba, codex)
   cutroom generate <provider>:<model> '<json>' <out>
@@ -31,7 +35,7 @@ async function main(): Promise<string> {
   const root = process.cwd();
   switch (command) {
     case 'render': {
-      const out = await render(root, { preview: rest.includes('--preview') });
+      const out = await render(root, await activeCut(root), { preview: rest.includes('--preview') });
       return `Rendered ${path.relative(root, out)}`;
     }
     case 'transcribe': {
@@ -48,8 +52,9 @@ async function main(): Promise<string> {
     case 'style-example': {
       const [src, from, to] = [flag('--src'), flag('--from'), flag('--to')];
       if (!rest[0]) throw new Error('Usage: cutroom style-example <name> [--from s] [--to s] [--src file]');
-      if (!src) await render(root, { preview: true });
-      return `Saved ${await saveExample(root, rest[0], { src, from: from ? Number(from) : undefined, to: to ? Number(to) : undefined })}`;
+      const cut = await activeCut(root);
+      if (!src) await render(root, cut, { preview: true });
+      return `Saved ${await saveExample(root, cut, rest[0], { src, from: from ? Number(from) : undefined, to: to ? Number(to) : undefined })}`;
     }
     case 'ledger': {
       const [source, license, note] = [flag('--source'), flag('--license'), flag('--note')];
@@ -57,6 +62,8 @@ async function main(): Promise<string> {
       await addLedger(root, { file: rest[0], source, license, note });
       return `Recorded ${rest[0]}`;
     }
+    case 'cutout':
+      return cutout(root, rest);
     case 'generate': {
       const model = flag('--schema');
       if (model) return schema(model);

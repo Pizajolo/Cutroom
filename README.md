@@ -34,22 +34,30 @@ raw/         source footage (never modified)
 references/  videos you like — inspiration, never copied
 assets/      logos, images, music
 exports/     finished videos
-.cutroom/    timeline.json, graphics, transcripts, chat — everything Cutroom generates
+.cutroom/    everything Cutroom generates: transcripts, sources, and cuts/<id>/ per chat
+             (timeline.json, graphics, storyboard, chat, versions)
 ```
 
-**The edit is one file,** `.cutroom/timeline.json`: a main track of clips back to back; layers on top
+**Several chats, one footage.** A project holds any number of chats (the tabs above the chat), and each has its own
+edit, so one set of raw footage can become a 60 s cut, a 15 s teaser and a vertical version. **Split from here**
+under any reply starts a new chat from that point: Claude remembers the conversation up to there, the edit goes back
+to how that reply left it, and graphics, cutouts and voice-over are copied, so the two chats never change each other's
+files. Make the video once, split, and ask for German subtitles. Exports are named after the chat
+(`exports/trip-German-01.mp4`); the first chat keeps the plain name.
+
+**The edit is one file per chat,** `.cutroom/cuts/<id>/timeline.json`: a main track of clips back to back; layers on top
 (b-roll, picture-in-picture, cutouts, graphics) that can overlap freely; audio underneath. Clips and layers
 can be cropped, sped up or slowed, faded and colour graded (per item or for the whole video). Claude writes it, the Pro timeline edits it, and the app re-renders the preview whenever
 it changes. `cutroom render` turns it into a video with a single FFmpeg filter graph.
 
-**Storyboard first.** For a new video Claude looks at the footage and writes a storyboard (`.cutroom/script.md`):
+**Storyboard first.** For a new video Claude looks at the footage and writes a storyboard (`script.md` in the chat's folder):
 concept, three hook options, a shot list with a real frame per shot, sound. You pick a hook, adjust it in the chat and
 press **Approve & create video**; only then is anything cut. For footage where someone talks, Claude first builds the
 **spoken cut** — best takes, no dead air, nothing else — and waits for **Approve spoken cut** before adding visuals.
 **Add files** copies files into the folder you pick (or sorts them by type) and downloads videos from pasted links —
 TikTok, Instagram Reels, YouTube — with yt-dlp. The **Footage** button in the chat lets you pick the clips Claude should use.
 
-**Versions.** Every step of Claude's that changed the edit and every export is kept (`.cutroom/versions.json`). The
+**Versions.** Every step of Claude's that changed the edit and every export is kept, per chat (`versions.json`). The
 **Versions** button lists them; go back to any, or mark one as final. Under each reply, **Go back to before this** does
 the same for one step.
 
@@ -65,6 +73,12 @@ its moves in `~/.cutroom/library/skills/`; mark a section (or name a moment in a
 move. Each keeps an example clip. Home › Library filters by kind, tags and text, lets you star favourites (listed first when picking in a project), plays the examples, lists every video
 exported with an entry and lets you edit its instructions. In a project, **Styles & moves** picks several for a
 request; click a picked one to mention it (`@punch-in`) and say where it goes.
+
+**Cutouts and stickers, on this Mac.** `cutroom cutout` lifts the subject out of a clip (a transparent `.mov`) or a
+frame (a `.png`, optionally with a white sticker outline) with Apple's Vision framework: free, offline, no account.
+It is a small Swift helper (`native/cutout.swift`) that Cutroom compiles on first launch, which needs Apple's command
+line tools. Used for text behind the subject, new backgrounds and the `sticker` move. Features lets you switch
+cutouts to a fal.ai model instead for difficult footage.
 
 **Sources and rights.** Downloads, generated media and anything Claude brings in are recorded with source and licence
 (`.cutroom/ledger.json`), shown under Project settings. HDR footage (iPhone HLG, HDR10) is converted to standard range
@@ -83,7 +97,7 @@ Settings:
   voice-over, music, sound effects. Record yourself in Settings to clone your own voice; the voice you tick
   is the one Claude uses for voice-over.
 - **Connections** — fal.ai, OpenRouter, Alibaba Cloud (pay-as-you-go, Coding Plan, Token Plan) and Theta EdgeCloud,
-  each with one API key. They supply generated stills and b-roll, lip sync and cutouts (`cutroom generate`, the
+  each with one API key. They supply generated stills and b-roll, lip sync and, if you prefer a cloud model, cutouts (`cutroom generate`, the
   `generate` skill; Theta through its MCP server); OpenRouter and Alibaba can also run the editor instead of Claude.
 - **Codex** — sign in with your ChatGPT account; Claude can then hand tasks to Codex (bundled, runs as an MCP server)
   and generate stills through ChatGPT's image tool (`codex:image`), with no API key.
@@ -96,13 +110,15 @@ Settings are stored encrypted in `~/.cutroom/settings.enc`; a project's model ch
 ```
 src/shared/types.ts   Timeline format and the window.cutroom API
 src/shared/features.ts  Connections, features and how each is paid for
-src/cli/              The `cutroom` command the agent calls: render, transcribe, remotion, generate, style-example, ledger
+src/cli/              The `cutroom` command the agent calls: render, transcribe, remotion, cutout, generate, style-example, ledger
   project.ts            per-project settings, versions, sources, style ↔ video links
 src/main/             Electron shell: project folders, tool setup, preview, the agent session
+  cuts.ts               chats in a project: new, split, rename, and moving older projects into the first one
   prompt.ts             what the agent knows about editing in Cutroom
   settings.ts           accounts, models, providers, MCP servers
 src/renderer/         React UI: Home, Settings, Chat, Preview, Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
+native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
 ```
 
 The agent runs shell commands and edits files in the project folder without asking for each one. It loads

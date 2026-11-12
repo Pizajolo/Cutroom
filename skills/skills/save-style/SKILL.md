@@ -26,7 +26,7 @@ Write instructions that work on completely different footage: decisions and meas
 
 ## Saving a style
 
-1. Study the finished edit: .cutroom/timeline.json, the graphics in .cutroom/motion/, and the feedback the user gave — what they asked to change is the most valuable part.
+1. Study the finished edit: <workspace>/timeline.json, the graphics in <workspace>/motion/, and the feedback the user gave — what they asked to change is the most valuable part.
 2. Pick the name (the user's, if they gave one). If the folder exists, ask before replacing it.
 3. Write SKILL.md (`kind: style`): Format, Structure, Cutting, Captions, Graphics, Audio, and a "Check before replying" list. Optional: reusable graphics in `templates/` with the wording replaced by placeholders.
 4. Run `cutroom style-example <name>` — it keeps the current video as the style's example and lists this project's exports under it.

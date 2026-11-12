@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RefObject } from 'react';
 import { Check, FileText, Flag, Pause, Play } from 'lucide-react';
-import { timelineLength } from '../shared/types';
+import { cutFiles, timelineLength } from '../shared/types';
 import type { Mark, MediaFile, Script, Timeline } from '../shared/types';
 import type { PreviewState } from './App';
 import { Markdown } from './Markdown';
@@ -9,6 +9,8 @@ import { clock, useVideoTime } from './lib';
 
 interface Props {
   video: RefObject<HTMLVideoElement | null>;
+  /** The chat whose edit is shown. */
+  cut: string;
   timeline: Timeline | null;
   preview: PreviewState;
   media: MediaFile[];
@@ -64,7 +66,7 @@ function ScriptPage({ script, onApprove, onHook }: Pick<Props, 'script' | 'onApp
 }
 
 /** The edit as the user sees it, with the controls for pointing at what they like or dislike. */
-export function Preview({ video, timeline, preview, media, marks, onMark, script, onApprove, onHook, onApproveSpokenCut }: Props) {
+export function Preview({ video, cut, timeline, preview, media, marks, onMark, script, onApprove, onHook, onApproveSpokenCut }: Props) {
   const time = useVideoTime(video);
   const [playing, setPlaying] = useState(false);
   const [rangeStart, setRangeStart] = useState<number | null>(null);
@@ -79,9 +81,9 @@ export function Preview({ video, timeline, preview, media, marks, onMark, script
     const el = video.current;
     if (!el || !preview.version) return;
     const at = el.currentTime;
-    el.src = `media://project/.cutroom/preview.mp4?v=${preview.version}`;
+    el.src = `media://project/${cutFiles(cut).preview}?v=${preview.version}`;
     el.currentTime = at;
-  }, [preview.version, video]);
+  }, [preview.version, video, cut]);
 
   const toggle = (): void => void (video.current?.paused ? video.current.play() : video.current?.pause());
   const markRange = (): void => {

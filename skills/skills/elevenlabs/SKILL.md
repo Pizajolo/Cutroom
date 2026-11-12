@@ -41,7 +41,7 @@ curl -sf -H "$H" -H "Content-Type: application/json" -o assets/whoosh.mp3 \
 
 **Clone a voice** — only from recordings of the user's own voice, or a voice they confirm they have permission to use. Ask if it is not clear whose voice it is; never clone from `references/`.
 ```sh
-ffmpeg -v error -i raw/<clip> -vn -ac 1 -ar 44100 .cutroom/tmp/sample.mp3   # 1–3 minutes of clean speech
-curl -sf -H "$H" $API/v1/voices/add -F "name=<name>" -F "files=@.cutroom/tmp/sample.mp3"   # → voice_id
+ffmpeg -v error -i raw/<clip> -vn -ac 1 -ar 44100 <workspace>/tmp/sample.mp3   # 1–3 minutes of clean speech
+curl -sf -H "$H" $API/v1/voices/add -F "name=<name>" -F "files=@<workspace>/tmp/sample.mp3"   # → voice_id
 ```
 The new voice joins the user's library and works with voice-over above.

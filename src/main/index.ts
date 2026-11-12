@@ -8,15 +8,18 @@ import { BrowserWindow, app, dialog, ipcMain, protocol, shell } from 'electron';
 import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
 import { LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
-import { PREVIEW_FILE, PROJECT_DIRS, SCRIPT_FILE, SPOKEN_CUT_FILE, TIMELINE_FILE } from '../shared/types';
-import type { ChatMessage, CutroomApi, Mark, Project, Script, Timeline } from '../shared/types';
+import { PROJECT_DIRS, cutFiles } from '../shared/types';
+import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Timeline } from '../shared/types';
 import * as agent from './agent';
+import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
 import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
 import { claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
 import { ensureTools, toolStatus } from './tools';
 
 let win: BrowserWindow | undefined;
 let project: Project | null = null;
+/** The cut (chat + edit) on screen. */
+let cut = '';
 let timeline: Timeline | null = null;
 let watcher: FSWatcher | undefined;
 let previewJob: AbortController | undefined;
@@ -35,11 +38,11 @@ async function refresh(): Promise<void> {
   previewJob?.abort();
   const job = (previewJob = new AbortController());
   try {
-    timeline = await readTimeline(root());
+    timeline = await readTimeline(root(), cut);
     emit('timeline', timeline);
     if (!timeline?.clips.length) return emit('preview', { rendering: false, version: 0 });
     emit('preview', { rendering: true, version: previewVersion });
-    await render(root(), { preview: true, signal: job.signal });
+    await render(root(), cut, { preview: true, signal: job.signal });
     previewVersion = Date.now();
     emit('preview', { rendering: false, version: previewVersion });
   } catch (error) {
@@ -49,10 +52,11 @@ async function refresh(): Promise<void> {
 
 /** The script awaits approval when it is newer than the edit (or there is no edit yet). */
 async function readScript(dir: string): Promise<Script> {
-  const file = path.join(dir, SCRIPT_FILE);
+  const files = cutFiles(cut);
+  const file = path.join(dir, files.script);
   const text = await readFile(file, 'utf8').catch(() => '');
-  const [written, edited] = await Promise.all([file, path.join(dir, TIMELINE_FILE)].map((f) => stat(f).then((s) => s.mtimeMs, () => 0)));
-  return { text, pending: !!text && written! > edited!, spokenCut: existsSync(path.join(dir, SPOKEN_CUT_FILE)) };
+  const [written, edited] = await Promise.all([file, path.join(dir, files.timeline)].map((f) => stat(f).then((s) => s.mtimeMs, () => 0)));
+  return { text, pending: !!text && written! > edited!, spokenCut: existsSync(path.join(dir, files.spokenCut)) };
 }
 
 /** Watch the project folder: timeline or overlay changes refresh the preview, media changes the file list. */
@@ -67,28 +71,48 @@ function watchProject(dir: string): void {
     timer = setTimeout(async () => {
       const files = [...changed];
       changed.clear();
-      const used = new Set([TIMELINE_FILE, ...(timeline ? [...timeline.overlays, ...timeline.audio].map((i) => i.src) : [])]);
+      const own = cutFiles(cut);
+      const used = new Set([own.timeline, ...(timeline ? [...timeline.overlays, ...timeline.audio].map((i) => i.src) : [])]);
       if (files.some((f) => used.has(f))) void refresh();
-      if ([SCRIPT_FILE, TIMELINE_FILE, SPOKEN_CUT_FILE].some((f) => files.includes(f))) emit('script', await readScript(dir));
+      if ([own.script, own.timeline, own.spokenCut].some((f) => files.includes(f))) emit('script', await readScript(dir));
       if (files.some((f) => PROJECT_DIRS.some((d) => f.startsWith(`${d}/`)))) emit('media', await listMedia(dir));
     }, 300);
   });
 }
 
+/** Put a cut on screen: its edit, preview and script. */
+async function show(id: string): Promise<void> {
+  previewJob?.abort();
+  cut = id;
+  timeline = null;
+  // Start from this cut's own last preview (if any), never the previous one's.
+  previewVersion = await stat(path.join(root(), cutFiles(cut).preview)).then((s) => Math.round(s.mtimeMs), () => 0);
+  void refresh();
+  emit('script', await readScript(root()));
+}
+
 async function open(dir: string): Promise<Project> {
   agent.stop();
-  project = await openProject(dir);
-  timeline = null;
-  // Start from this project's own last preview (if any), never the previous project's.
-  previewVersion = await stat(path.join(dir, PREVIEW_FILE)).then((s) => Math.round(s.mtimeMs), () => 0);
+  const next = await openProject(dir);
+  await ensureCuts(dir);
+  project = next;
   watchProject(dir);
-  void refresh();
+  await show((await listCuts(dir)).active);
   return project;
 }
 
+/** Change which cut is on screen. Not while Claude works: its replies belong to the cut it was asked in. */
+async function switchTo(cuts: Cuts): Promise<Cuts> {
+  if (cuts.active !== cut) await show(cuts.active);
+  return cuts;
+}
+const idle = (): void => {
+  if (agent.running()) throw new Error('Wait until Claude has finished, or stop it.');
+};
+
 // --- IPC ---------------------------------------------------------------------------------
 
-const chatFile = (): string => path.join(root(), '.cutroom/chat.json');
+const chatFile = (): string => path.join(root(), cutFiles(cut).chat);
 
 const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   async openProject() {
@@ -109,26 +133,39 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   getTimeline: async () => timeline,
   duration: async (file) =>
     Number(await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path.join(root(), file)]).catch(() => 0)) || 0,
-  saveTimeline: (next) => writeFile(path.join(root(), TIMELINE_FILE), JSON.stringify(next, null, 2)),
+  saveTimeline: (next) => writeFile(path.join(root(), cutFiles(cut).timeline), JSON.stringify(next, null, 2)),
+  cuts: () => listCuts(root()),
+  switchCut: async (id) => (idle(), switchTo(await setActive(root(), id))),
+  newCut: async (name) => (idle(), switchTo(await newCut(root(), name))),
+  splitCut: async (message, name) => (idle(), switchTo(await splitCut(root(), cut, message, name))),
+  renameCut: (id, name) => renameCut(root(), id, name),
+  async deleteCut(id) {
+    idle();
+    const cuts = await dropCut(root(), id);
+    await shell.trashItem(path.join(root(), cutFiles(id).dir)).catch(() => {});
+    return switchTo(cuts);
+  },
   loadChat: async () => JSON.parse(await readFile(chatFile(), 'utf8').catch(() => '[]')) as ChatMessage[],
   saveChat: (messages) => writeFile(chatFile(), JSON.stringify(messages)),
-  send: (text: string, marks: Mark[], files: string[], skills: string[]) =>
-    agent.send(root(), text, marks, files, skills, timeline, async (event) => {
+  send(text: string, marks: Mark[], files: string[], skills: string[]) {
+    const [dir, at] = [root(), cut];
+    return agent.send(dir, at, text, marks, files, skills, timeline, async (event) => {
       emit('agent', event);
       if (event.type !== 'done') return;
       // Keep the result of this step as a version, and catch anything the watcher missed (e.g. a graphic re-rendered in place).
-      const after = await readTimeline(root()).catch(() => null);
-      if (after?.clips.length) await addVersion(root(), text.split('\n')[0]!.slice(0, 80), after);
-      void refresh();
-    }),
-  async approveSpokenCut() {
-    await rm(path.join(root(), SPOKEN_CUT_FILE), { force: true });
+      const after = await readTimeline(dir, at).catch(() => null);
+      if (after?.clips.length) await addVersion(dir, at, text.split('\n')[0]!.slice(0, 80), after);
+      if (project?.root === dir && cut === at) void refresh();
+    });
   },
-  versions: () => readVersions(root()),
-  markFinal: (id) => markFinal(root(), id),
+  async approveSpokenCut() {
+    await rm(path.join(root(), cutFiles(cut).spokenCut), { force: true });
+  },
+  versions: () => readVersions(root(), cut),
+  markFinal: (id) => markFinal(root(), cut, id),
   ledger: () => readLedger(root()),
   stop: async () => agent.stop(),
-  exportVideo: async () => path.relative(root(), await render(root())),
+  exportVideo: async () => path.relative(root(), await render(root(), cut)),
   reveal: async (file) => shell.showItemInFolder(path.join(root(), file)),
   async closeProject() {
     agent.stop();

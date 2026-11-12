@@ -6,11 +6,36 @@ import type { Connection, Feature, FeatureState } from './features';
 export const PROJECT_DIRS = ['raw', 'references', 'exports', 'assets'] as const;
 /** Where the user can put files they add. */
 export type ImportDir = 'raw' | 'references' | 'assets';
-export const TIMELINE_FILE = '.cutroom/timeline.json';
-export const PREVIEW_FILE = '.cutroom/preview.mp4';
-export const SCRIPT_FILE = '.cutroom/script.md';
-/** Exists while a spoken cut waits for the user's approval. */
-export const SPOKEN_CUT_FILE = '.cutroom/spoken-cut';
+
+/**
+ * A project holds several cuts: each is one chat with its own edit, kept in `.cutroom/cuts/<id>/`.
+ * Footage, transcripts, sources and project settings are shared by all of them.
+ */
+export interface Cut {
+  id: string;
+  name: string;
+  /** The cut this one was split from. */
+  from?: string;
+}
+
+/** Project-relative paths of one cut's files. */
+export function cutFiles(cut: string) {
+  const dir = `.cutroom/cuts/${cut}`;
+  return {
+    dir,
+    timeline: `${dir}/timeline.json`,
+    preview: `${dir}/preview.mp4`,
+    script: `${dir}/script.md`,
+    /** Exists while a spoken cut waits for the user's approval. */
+    spokenCut: `${dir}/spoken-cut`,
+    versions: `${dir}/versions.json`,
+    chat: `${dir}/chat.json`,
+    /** Claude's session id, so the conversation continues where it left off. */
+    session: `${dir}/session`,
+    /** Set on a cut that was split off and has not talked to Claude yet: where its session branches. */
+    fork: `${dir}/fork.json`,
+  };
+}
 
 /** Colour correction. Every field is optional; omitted = unchanged. */
 export interface Grade {
@@ -172,7 +197,7 @@ export interface Example {
 }
 
 /** Skills that are tools rather than editing styles. */
-export const UTILITY_SKILLS = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate', 'cutroom:sound-effects'];
+export const UTILITY_SKILLS = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate', 'cutroom:sound-effects', 'cutroom:cutout'];
 
 export interface ToolStatus {
   name: string;
@@ -265,6 +290,8 @@ export interface ChatMessage {
   skills?: string[];
   /** On a reply: the edit as it was before Claude started, so the step can be taken back. */
   before?: Timeline;
+  /** On a reply: the last entry of this turn in Claude's session, where a split from here branches off. */
+  uuid?: string;
   error?: boolean;
 }
 
@@ -302,7 +329,13 @@ export interface Script {
 export type AgentEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; text: string }
-  | { type: 'done'; error?: string };
+  | { type: 'done'; error?: string; uuid?: string };
+
+/** The cuts of the open project and the one being worked on. */
+export interface Cuts {
+  cuts: Cut[];
+  active: string;
+}
 
 /** `window.cutroom`, exposed by the preload script. */
 export interface CutroomApi {
@@ -319,6 +352,17 @@ export interface CutroomApi {
   /** Duration of a media file in seconds (0 for images). */
   duration(path: string): Promise<number>;
   saveTimeline(timeline: Timeline): Promise<void>;
+  /** The open project's cuts (one chat and edit each). */
+  cuts(): Promise<Cuts>;
+  /** Work on another cut: its chat, edit and preview. */
+  switchCut(id: string): Promise<Cuts>;
+  /** A new, empty chat on the same footage. */
+  newCut(name: string): Promise<Cuts>;
+  /** Branch the active cut after reply `message` (an index into its chat) into a new cut, and switch to it. */
+  splitCut(message: number, name: string): Promise<Cuts>;
+  renameCut(id: string, name: string): Promise<Cuts>;
+  /** Moves the cut's folder to the Trash. The last cut cannot be removed. */
+  deleteCut(id: string): Promise<Cuts>;
   loadChat(): Promise<ChatMessage[]>;
   saveChat(messages: ChatMessage[]): Promise<void>;
   send(text: string, marks: Mark[], files: string[], skills: string[]): Promise<void>;

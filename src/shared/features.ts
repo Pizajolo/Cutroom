@@ -17,10 +17,12 @@ export type Connection = keyof typeof CONNECTIONS;
 
 /** Stills through the ChatGPT sign-in: Codex's built-in image tool. No API key. */
 const CODEX_IMAGE = 'codex:image';
+/** Cutouts with Apple's Vision framework, on this Mac. No account. */
+export const LOCAL_CUTOUT = 'local:apple-vision';
 
 /**
  * Every capability the user can switch on or off. `models` lists where a generated-media
- * feature can come from, as `<connection>:<model id>`; the default is the first one whose account is connected.
+ * feature can come from, as `<connection>:<model id>` (`local:` runs on this Mac); the default is the first one that is reachable.
  */
 export const FEATURES = {
   captions: { label: 'Captions and transcripts', group: 'Editing', via: 'Whisper, on this Mac' },
@@ -35,7 +37,7 @@ export const FEATURES = {
   textToVideo: { label: 'B-roll from text', group: 'Generated picture', models: ['fal:kling/v4/text-to-video', 'openrouter:google/veo-3.1', 'alibaba:wan2.7-t2v', 'theta:Seedance 2.5'] },
   imageToVideo: { label: 'B-roll from an image', group: 'Generated picture', models: ['fal:kling/v4/image-to-video', 'openrouter:google/veo-3.1', 'alibaba:happyhorse-1.1-i2v', 'theta:Seedance 2.5'] },
   lipsync: { label: 'Lip sync (portrait + audio)', group: 'Generated picture', models: ['fal:minimax/h3-max/lip-sync/image-to-video'] },
-  cutout: { label: 'Subject cutout', group: 'Generated picture', models: ['fal:lightricks/ltx-2.5/alpha-gen'] },
+  cutout: { label: 'Subject cutouts and stickers', group: 'Generated picture', models: [LOCAL_CUTOUT, 'fal:lightricks/ltx-2.5/alpha-gen'] },
   codex: { label: 'Codex (second agent)', group: 'Other', via: 'ChatGPT account' },
 } as const satisfies Record<string, { label: string; group: string; via?: string; models?: readonly string[] }>;
 export type Feature = keyof typeof FEATURES;
@@ -68,11 +70,13 @@ export function featureStates(settings: Settings, offHere: string[], codexSigned
   return (Object.keys(FEATURES) as Feature[]).map((id) => {
     const feature: { label: string; group: string; via?: string; models?: readonly string[] } = FEATURES[id];
     const saved = settings.features[id];
-    const reachable = (m: string): boolean => (m.startsWith('codex:') ? codexSignedIn : !!settings.keys[connectionOf(m)]);
+    const reachable = (m: string): boolean => (m.startsWith('local:') ? true : m.startsWith('codex:') ? codexSignedIn : !!settings.keys[connectionOf(m)]);
     const model = feature.models && (saved?.model || feature.models.find(reachable) || feature.models[0]!);
-    const connection: { label: string; pricing: Pricing } | undefined = model?.startsWith('codex:')
-      ? { label: 'ChatGPT (Codex)', pricing: 'subscription' }
-      : model ? CONNECTIONS[connectionOf(model)] : undefined;
+    const connection: { label: string; pricing: Pricing } | undefined = model?.startsWith('local:')
+      ? { label: 'On this Mac', pricing: 'free' }
+      : model?.startsWith('codex:')
+        ? { label: 'ChatGPT (Codex)', pricing: 'subscription' }
+        : model ? CONNECTIONS[connectionOf(model)] : undefined;
     const connected = model ? reachable(model) : feature.via === 'ElevenLabs' ? eleven : id === 'codex' ? codexSignedIn : true;
     const on = saved?.on ?? true;
     return {

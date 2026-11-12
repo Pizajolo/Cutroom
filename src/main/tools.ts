@@ -1,15 +1,18 @@
-// The editing toolbox: FFmpeg, Whisper and yt-dlp binaries, plus launchers for the
+// The editing toolbox: FFmpeg, Whisper and yt-dlp binaries, the cutout helper, plus launchers for the
 // bundled `cutroom` CLI and HyperFrames. Everything ends up on PATH for the agent.
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { chmod, mkdir, rename, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { CUTOUT_BIN } from '../cli/cutout';
 import { HOME, run } from '../cli/run';
 import { WHISPER_MODEL } from '../cli/transcribe';
 import type { ToolStatus } from '../shared/types';
 
 const BIN = path.join(HOME, 'bin');
 const YT_DLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
+/** The Swift source of the cutout helper ships with the app and is compiled here, so it always fits this Mac. */
+const CUTOUT_SOURCE = path.resolve(import.meta.dirname, '../../native/cutout.swift');
 const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin';
 
 // Apps launched from Finder get a bare PATH, so add the usual install locations.
@@ -51,6 +54,16 @@ const TOOLS: { name: string; ready: () => boolean; install?: () => Promise<void>
     },
   },
   { name: 'yt-dlp', ready: () => !!find('yt-dlp'), install: () => download(YT_DLP_URL, path.join(BIN, 'yt-dlp')) },
+  {
+    name: 'Cutouts',
+    // Rebuilt whenever the source is newer, e.g. after an update.
+    ready: () => existsSync(CUTOUT_BIN) && statSync(CUTOUT_BIN).mtimeMs >= statSync(CUTOUT_SOURCE).mtimeMs,
+    install: async () => {
+      await run('swiftc', ['-O', CUTOUT_SOURCE, '-o', CUTOUT_BIN]).catch(() => {
+        throw new Error('Needs Apple’s command line tools: run "xcode-select --install", then restart Cutroom');
+      });
+    },
+  },
   // Bundled as npm dependencies.
   { name: 'Remotion', ready: () => true },
   { name: 'HyperFrames', ready: () => true },

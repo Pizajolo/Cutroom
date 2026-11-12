@@ -27,3 +27,7 @@ export function useVideoTime(video: RefObject<HTMLVideoElement | null>): number 
   }, [video]);
   return time;
 }
+
+/** Tell the user why a call to the main process failed, without Electron's "Error invoking remote method" wrapper. */
+export const failed = (error: Error): void =>
+  alert(error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));

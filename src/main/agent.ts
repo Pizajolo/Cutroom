@@ -3,10 +3,12 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import { LIBRARY, readFavorites, styleVideos, useStyle } from '../cli/project';
 import { run } from '../cli/run';
-import { PREVIEW_FILE, UTILITY_SKILLS, clipLength, clipStarts } from '../shared/types';
+import { UTILITY_SKILLS, clipLength, clipStarts, cutFiles } from '../shared/types';
 import type { AgentEvent, AudioItem, Mark, Overlay, Skill, Timeline } from '../shared/types';
+import type { Fork } from './cuts';
 import { systemPrompt } from './prompt';
 import { agentConfig } from './settings';
 
@@ -56,7 +58,7 @@ export const skillFile = (id: string): string =>
 const seconds = (t: number): string => `${t.toFixed(2)}s`;
 
 /** Turn the user's marks into text the agent can act on, with a screenshot of each marked moment. */
-async function describeMarks(root: string, marks: Mark[], timeline: Timeline | null): Promise<string> {
+async function describeMarks(root: string, cut: string, marks: Mark[], timeline: Timeline | null): Promise<string> {
   if (!timeline || marks.length === 0) return '';
   const starts = clipStarts(timeline);
   const lines: string[] = [];
@@ -77,11 +79,11 @@ async function describeMarks(root: string, marks: Mark[], timeline: Timeline | n
       ...timed('overlay', timeline.overlays),
       ...timed('audio', timeline.audio),
     ];
-    const shot = `.cutroom/marks/mark-${Date.now()}-${i}.jpg`;
-    const preview = path.join(root, PREVIEW_FILE);
+    const shot = `${cutFiles(cut).dir}/marks/mark-${Date.now()}-${i}.jpg`;
+    const preview = path.join(root, cutFiles(cut).preview);
     let screenshot = '';
     if (existsSync(preview)) {
-      await mkdir(path.join(root, '.cutroom/marks'), { recursive: true });
+      await mkdir(path.dirname(path.join(root, shot)), { recursive: true });
       await run('ffmpeg', ['-v', 'error', '-ss', String(mark.start), '-i', preview, '-frames:v', '1', '-q:v', '3', path.join(root, shot)])
         .then(() => (screenshot = ` — screenshot: ${shot}`))
         .catch(() => {});
@@ -101,13 +103,50 @@ const describeTool = (name: string, input: Record<string, unknown>): string => {
 };
 
 let turn: AbortController | undefined;
+let working = false;
 export const stop = (): void => turn?.abort();
+/** True while Claude is answering a message. */
+export const running = (): boolean => working;
 
-/** Send one user message and stream the agent's reply as events. */
-export async function send(root: string, text: string, marks: Mark[], files: string[], skills: string[], timeline: Timeline | null, emit: (event: AgentEvent) => void): Promise<void> {
+/** What a split-off cut's first message tells Claude about where it now works. */
+const splitNote = (fork: Fork, dir: string): string =>
+  fork.parent === undefined
+    ? `<moved>\nThis edit's files moved from ${fork.parentDir}/ to ${dir}/ (timeline.json, motion/, storyboard/, tmp/, …). ` +
+      `Earlier messages mention the old paths: use the new ones. Transcripts stayed in .cutroom/transcripts/.\n</moved>\n\n`
+    : `<split>\nThe user split this conversation off the version called "${fork.parent}" to make a separate version of the video. ` +
+      `Everything in ${fork.parentDir}/ was copied to ${dir}/, which is this version's own folder from now on. ` +
+      `Earlier messages mention ${fork.parentDir}/: that belongs to the other version — never change anything there.` +
+      (fork.wentOn
+        ? ` The other version went on after the split point, and the copied graphics are as they are now. This chat ends ${fork.ends ? `with your reply that begins “${fork.ends}”` : 'where you remember it ending'}: ` +
+          'nothing after that applies here, and timeline.json is the edit as that reply left it.'
+        : '') +
+      '\n</split>\n\n';
+
+/** Writing into another cut's folder would change a different video: refuse it. */
+const stayInCut = (root: string, cut: string) => async (input: HookInput) => {
+  const file = input.hook_event_name === 'PreToolUse' ? (input.tool_input as { file_path?: string; notebook_path?: string }) : {};
+  const target = path.relative(root, path.resolve(root, String(file.file_path ?? file.notebook_path ?? '')));
+  const other = /^\.cutroom\/cuts\/([^/]+)\//.exec(target)?.[1];
+  if (!other || other === cut) return {};
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse' as const,
+      permissionDecision: 'deny' as const,
+      permissionDecisionReason: `${target} belongs to another version of the video. This chat works in ${cutFiles(cut).dir}/.`,
+    },
+  };
+};
+
+/** Send one user message to a cut's chat and stream the agent's reply as events. */
+export async function send(root: string, cut: string, text: string, marks: Mark[], files: string[], skills: string[], timeline: Timeline | null, emit: (event: AgentEvent) => void): Promise<void> {
   const config = await agentConfig(root);
-  const sessionFile = path.join(root, '.cutroom/session');
-  const resume = await readFile(sessionFile, 'utf8').catch(() => undefined);
+  const paths = cutFiles(cut);
+  const sessionFile = path.join(root, paths.session);
+  const forkFile = path.join(root, paths.fork);
+  const fork = JSON.parse(await readFile(forkFile, 'utf8').catch(() => 'null')) as Fork | null;
+  const own = await readFile(sessionFile, 'utf8').catch(() => undefined);
+  // A cut split off another continues the parent's conversation from the reply it was split at, as a branch of its own.
+  const branch = !own && fork?.session ? { resume: fork.session, forkSession: true, resumeSessionAt: fork.at } : own ? { resume: own } : {};
   const footage = files.length ? `\n\n<footage>\nThe user selected this footage to use:\n${files.map((f) => `- ${f}`).join('\n')}\n</footage>` : '';
   // Styles and moves the user picked: a style shapes the whole video, a move goes where the message says.
   const picked = (await listSkills()).filter((s) => skills.includes(s.id));
@@ -117,21 +156,26 @@ export async function send(root: string, text: string, marks: Mark[], files: str
       `A style shapes the whole video. A move is applied where the message says (the user refers to it as @name); if it doesn't say, where it fits best — and tell them where you used it.\n` +
       `${picked.map((s) => `- ${s.id} (${s.kind}, @${s.name})`).join('\n')}\n</techniques>`
     : '';
-  const prompt = text + techniques + footage + (await describeMarks(root, marks, timeline));
+  const prompt = (fork ? splitNote(fork, paths.dir) : '') + text + techniques + footage + (await describeMarks(root, cut, marks, timeline));
   const controller = (turn = new AbortController());
+  working = true;
   let error: string | undefined;
   let started = false;
+  /** The last entry of this turn in the session: a later split from this reply branches off here. */
+  let uuid: string | undefined;
   try {
     const messages = query({
       prompt,
       options: {
         cwd: root,
-        resume,
+        ...branch,
         abortController: controller,
-        env: config.env,
+        // `cutroom render` and friends work on this cut.
+        env: { ...config.env, CUTROOM_CUT: cut },
         model: config.model,
         mcpServers: config.mcpServers,
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(LIBRARY) + config.notes },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(LIBRARY, paths.dir) + config.notes },
+        hooks: { PreToolUse: [{ matcher: 'Write|Edit|MultiEdit|NotebookEdit', hooks: [stayInCut(root, cut)] }] },
         // Only Cutroom's own instructions and skills — not the user's personal Claude Code setup.
         settingSources: [],
         plugins: [{ type: 'local', path: BUILTIN }, { type: 'local', path: LIBRARY }],
@@ -156,8 +200,10 @@ export async function send(root: string, text: string, marks: Mark[], files: str
       if (m.type === 'system' && m.subtype === 'init') {
         started = true;
         await writeFile(sessionFile, m.session_id);
+        await rm(forkFile, { force: true });
       }
       if ('parent_tool_use_id' in m && m.parent_tool_use_id) continue;
+      if ((m.type === 'assistant' || m.type === 'user') && m.uuid) uuid = m.uuid;
       if (m.type === 'stream_event' && m.event.type === 'content_block_delta' && m.event.delta.type === 'text_delta') {
         emit({ type: 'text', text: m.event.delta.text });
       } else if (m.type === 'assistant') {
@@ -176,13 +222,15 @@ export async function send(root: string, text: string, marks: Mark[], files: str
     }
   } catch (cause) {
     if (!controller.signal.aborted) {
-      // A session that can no longer be resumed should not brick the project: start a fresh one.
-      if (resume && !started) {
+      // A session that can no longer be resumed (or branched) should not brick the chat: start a fresh one.
+      if (branch.resume && !started) {
         await rm(sessionFile, { force: true });
-        return send(root, text, marks, files, skills, timeline, emit);
+        if (fork?.session) await writeFile(forkFile, JSON.stringify({ ...fork, session: undefined }));
+        return send(root, cut, text, marks, files, skills, timeline, emit);
       }
       error = (cause as Error).message;
     }
   }
-  emit({ type: 'done', error });
+  working = false;
+  emit({ type: 'done', error, uuid });
 }

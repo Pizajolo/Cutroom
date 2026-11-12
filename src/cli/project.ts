@@ -2,8 +2,8 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { PREVIEW_FILE } from '../shared/types';
-import type { LedgerEntry, Timeline, Version } from '../shared/types';
+import { cutFiles } from '../shared/types';
+import type { Cut, LedgerEntry, Timeline, Version } from '../shared/types';
 import { HOME, run } from './run';
 
 /** The user's own styles: a Claude Code plugin folder. */
@@ -16,12 +16,31 @@ export interface ProjectSettings {
   off?: string[];
   /** Styles (skill ids) this project's video was made or saved with. */
   styles?: string[];
+  /** The cut the user is working on. */
+  cut?: string;
 }
 const projectFile = (root: string): string => path.join(root, '.cutroom/project.json');
 export const readProject = async (root: string): Promise<ProjectSettings> =>
   JSON.parse(await readFile(projectFile(root), 'utf8').catch(() => '{}')) as ProjectSettings;
 export const patchProject = async (root: string, patch: ProjectSettings): Promise<void> =>
   writeFile(projectFile(root), JSON.stringify({ ...(await readProject(root)), ...patch }, null, 2));
+
+// --- Cuts: one chat and one edit each, on the same footage ------------------------------------
+
+const cutsFile = (root: string): string => path.join(root, '.cutroom/cuts.json');
+export const readCuts = async (root: string): Promise<Cut[]> =>
+  JSON.parse(await readFile(cutsFile(root), 'utf8').catch(() => '[]')) as Cut[];
+export const writeCuts = (root: string, cuts: Cut[]): Promise<void> => writeFile(cutsFile(root), JSON.stringify(cuts, null, 2));
+
+/**
+ * The cut a command works on: the agent's own (CUTROOM_CUT, set for each session), else the one open in the app.
+ * Projects from before cuts existed have none yet; the app moves their edit into "main" when it opens them.
+ */
+export async function activeCut(root: string): Promise<string> {
+  const cuts = await readCuts(root);
+  const wanted = process.env.CUTROOM_CUT ?? (await readProject(root)).cut;
+  return cuts.find((c) => c.id === wanted)?.id ?? cuts[0]?.id ?? 'main';
+}
 
 const FAVORITES = path.join(LIBRARY, 'favorites.json');
 /** Ids of the styles and moves the user starred. */
@@ -64,10 +83,10 @@ export async function linkExport(root: string, file: string): Promise<void> {
  * Keep an example video next to a style or move, and link the project to it.
  * Without `clip` it is the whole current preview; with it, a section of the preview or of another file (`src`).
  */
-export async function saveExample(root: string, name: string, clip: { src?: string; from?: number; to?: number } = {}): Promise<string> {
+export async function saveExample(root: string, cut: string, name: string, clip: { src?: string; from?: number; to?: number } = {}): Promise<string> {
   const dir = path.join(LIBRARY, 'skills', name);
   if (!/^[\w-]+$/.test(name) || !existsSync(path.join(dir, 'SKILL.md'))) throw new Error(`No style or move called "${name}" in the library. Write its SKILL.md first.`);
-  const source = path.resolve(root, clip.src ?? PREVIEW_FILE);
+  const source = path.resolve(root, clip.src ?? cutFiles(cut).preview);
   const out = path.join(dir, 'example.mp4');
   if (clip.from === undefined && clip.to === undefined && !clip.src) await copyFile(source, out);
   else {
@@ -79,26 +98,26 @@ export async function saveExample(root: string, name: string, clip: { src?: stri
   return out;
 }
 
-// --- Versions: every step that changed the edit, and every export ---------------------------
+// --- Versions: every step that changed a cut's edit, and every export -----------------------
 
-const versionsFile = (root: string): string => path.join(root, '.cutroom/versions.json');
-export const readVersions = async (root: string): Promise<Version[]> =>
-  JSON.parse(await readFile(versionsFile(root), 'utf8').catch(() => '[]')) as Version[];
+const versionsFile = (root: string, cut: string): string => path.join(root, cutFiles(cut).versions);
+export const readVersions = async (root: string, cut: string): Promise<Version[]> =>
+  JSON.parse(await readFile(versionsFile(root, cut), 'utf8').catch(() => '[]')) as Version[];
 
 /** Record the edit as a new version, unless nothing changed since the last one. Exports (`file`) are always recorded. */
-export async function addVersion(root: string, label: string, timeline: Timeline, file?: string): Promise<Version[]> {
-  const versions = await readVersions(root);
+export async function addVersion(root: string, cut: string, label: string, timeline: Timeline, file?: string): Promise<Version[]> {
+  const versions = await readVersions(root, cut);
   const last = versions.at(-1);
   if (!file && last && JSON.stringify(last.timeline) === JSON.stringify(timeline)) return versions;
   versions.push({ id: (last?.id ?? 0) + 1, at: new Date().toISOString(), label, timeline, file });
-  await writeFile(versionsFile(root), JSON.stringify(versions));
+  await writeFile(versionsFile(root, cut), JSON.stringify(versions));
   return versions;
 }
 
 /** Mark one version as the final one (or clear the mark if it already is). */
-export async function markFinal(root: string, id: number): Promise<Version[]> {
-  const versions = (await readVersions(root)).map((v) => ({ ...v, final: v.id === id && !v.final ? true : undefined }));
-  await writeFile(versionsFile(root), JSON.stringify(versions));
+export async function markFinal(root: string, cut: string, id: number): Promise<Version[]> {
+  const versions = (await readVersions(root, cut)).map((v) => ({ ...v, final: v.id === id && !v.final ? true : undefined }));
+  await writeFile(versionsFile(root, cut), JSON.stringify(versions));
   return versions;
 }
 

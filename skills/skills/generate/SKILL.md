@@ -55,8 +55,10 @@ Only for the user themselves or people they confirm have agreed. Say clearly in 
 
 ## Subject cutout
 
-The cutout model removes the background from a video and returns a file with transparency.
-- Input: a clip, trimmed first with ffmpeg to just the part you need (`.cutroom/tmp/`), to save time and cost.
-- Ask for the `.mov` output (`<out>` ending in `.mov`): it carries the alpha channel. Save it in `.cutroom/motion/`.
-- Use it as an overlay: over a new background clip or image, over graphics, or with a title placed *between* the background and the cutout (title overlay first, cutout overlay after it) for the text-behind-subject effect.
+If your instructions say cutouts are made on this Mac, use the cutout skill instead of this section: it is free and needs no upload.
+
+Otherwise the user chose a cutout model, which removes the background from a video and returns a file with transparency.
+- Input: a clip, trimmed first with ffmpeg to just the part you need (`<workspace>/tmp/`), to save time and cost.
+- Ask for the `.mov` output (`<out>` ending in `.mov`): it carries the alpha channel. Save it in `<workspace>/motion/`.
+- Placing it (text behind the subject, new background, floating subject) works as the cutout skill describes.
 - For green-screen footage no model is needed: set `"key": "#00ff00"` on the overlay.

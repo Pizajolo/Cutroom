@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, History, House, Plus, SlidersHorizontal } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
-import type { Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus } from '../shared/types';
+import type { Cuts, Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus } from '../shared/types';
 import { Chat } from './Chat';
 import { AddFiles } from './AddFiles';
 import { Features } from './Features';
@@ -15,6 +15,8 @@ export type PreviewState = { rendering: boolean; version: number; error?: string
 
 export function App() {
   const [project, setProject] = useState<Project | null>(null);
+  /** The project's chats, each with its own edit, and the one on screen. */
+  const [cuts, setCuts] = useState<Cuts>({ cuts: [], active: '' });
   const [timeline, setTimeline] = useState<TimelineData | null>(null);
   const [preview, setPreview] = useState<PreviewState>({ rendering: false, version: 0 });
   const [media, setMedia] = useState<MediaFile[]>([]);
@@ -42,17 +44,26 @@ export function App() {
   }, []);
   useEffect(() => localStorage.setItem('mode', pro ? 'pro' : 'simple'), [pro]);
 
-  const opened = async (next: Project | null): Promise<void> => {
-    if (!next) return;
+  /** Forget everything that belonged to the edit on screen before. */
+  const reset = async (): Promise<void> => {
     setMarks([]);
     setPanel('');
     history.current = { past: [], future: [] };
-    setPreview({ rendering: false, version: 0 });
     setExported({ busy: false });
     setTimeline(await api.getTimeline());
     setScript(await api.getScript());
+  };
+  const opened = async (next: Project | null): Promise<void> => {
+    if (!next) return;
+    await reset();
+    setCuts(await api.cuts());
     setMedia(await api.listMedia());
     setProject(next);
+  };
+  /** Another chat was opened, made or split off: show its edit. */
+  const changeCuts = async (next: Cuts): Promise<void> => {
+    if (next.active !== cuts.active) await reset();
+    setCuts(next);
   };
   const addMark = useCallback((mark: Mark) => setMarks((all) => [...all, mark]), []);
   // Manual edits are undoable; each one is written to timeline.json, which re-renders the preview.
@@ -106,7 +117,7 @@ export function App() {
         {exported.file && (
           <button className="ghost" onClick={() => void api.reveal(exported.file!)}>Show {exported.file}</button>
         )}
-        <button className={panel === 'versions' ? 'active' : 'ghost'} title="Earlier versions of this edit" onClick={() => toggle('versions')}>
+        <button className={panel === 'versions' ? 'active' : 'ghost'} title="Earlier versions of this chat’s edit" onClick={() => toggle('versions')}>
           <History size={16} /> Versions
         </button>
         <button className={panel === 'settings' ? 'active' : 'ghost'} title="Features and sources of this project" onClick={() => toggle('settings')}>
@@ -121,7 +132,7 @@ export function App() {
         </button>
       </header>
       <Preview
-        video={video} timeline={timeline} preview={preview} media={media} marks={marks} onMark={addMark} script={script}
+        video={video} cut={cuts.active} timeline={timeline} preview={preview} media={media} marks={marks} onMark={addMark} script={script}
         onApprove={() => sender.current?.('The storyboard is approved. Create the video.')}
         onHook={(n, hook) => sender.current?.(`Use hook ${n} as the opening instead: “${hook}”. Update the storyboard.`)}
         onApproveSpokenCut={() => void api.approveSpokenCut().then(() => sender.current?.('The spoken cut is approved. Now add the visuals and sound.'))}
@@ -137,7 +148,10 @@ export function App() {
           <Sources />
         </aside>
       )}
-      <Chat key={project.root} timeline={timeline} onRestore={editTimeline} marks={marks} setMarks={setMarks} media={media} sender={sender} />
+      <Chat
+        key={project.root} cuts={cuts} onCuts={(next) => void changeCuts(next)}
+        timeline={timeline} onRestore={editTimeline} marks={marks} setMarks={setMarks} media={media} sender={sender}
+      />
       {pro && (
         <Timeline
           video={video} timeline={timeline} media={media} onChange={editTimeline} onMark={addMark}

@@ -1,13 +1,17 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { ArrowUp, Film, Flag, Library, Sparkles, Square, Star, Undo2, X } from 'lucide-react';
+import { ArrowUp, Film, Flag, GitBranch, Library, Sparkles, Square, Star, Undo2, X } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
-import type { AgentEvent, ChatMessage, Mark, MediaFile, ModelChoice, Skill, Timeline } from '../shared/types';
+import type { AgentEvent, ChatMessage, Cuts, Mark, MediaFile, ModelChoice, Skill, Timeline } from '../shared/types';
+import { CutTabs } from './CutTabs';
 import { useLibraryFilter } from './LibraryFilter';
 import { Markdown } from './Markdown';
-import { api, clock } from './lib';
+import { api, clock, failed } from './lib';
 
 interface Props {
+  /** The project's chats; this one shows `cuts.active`. */
+  cuts: Cuts;
+  onCuts: (cuts: Cuts) => void;
   timeline: Timeline | null;
   /** Put an earlier version of the edit back (undoable, like any manual edit). */
   onRestore: (timeline: Timeline) => void;
@@ -32,11 +36,12 @@ function reduce(messages: ChatMessage[], event: AgentEvent): ChatMessage[] {
   if (event.type === 'text' && tail?.type === 'text') parts[parts.length - 1] = { type: 'text', text: tail.text + event.text };
   else if (event.type !== 'done') parts.push(event);
   else if (event.error) parts.push({ type: 'text', text: event.error });
-  return [...messages.slice(0, -1), { ...last, parts, error: event.type === 'done' && !!event.error }];
+  const done = event.type === 'done' ? { error: !!event.error, uuid: event.uuid } : {};
+  return [...messages.slice(0, -1), { ...last, parts, ...done }];
 }
 
 /** The conversation with Claude. Marks made in the preview or timeline ride along with the next message. */
-export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, media, sender }: Props) {
+export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, marks, setMarks, media, sender }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   /** Styles and moves picked for the next message (skill ids). */
@@ -46,12 +51,21 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<string[]>([]);
   const [picking, setPicking] = useState<'' | 'footage' | 'library'>('');
+  /** A chat whose name is being edited: one just made or split off. */
+  const [renaming, setRenaming] = useState('');
   const [listed, filter] = useLibraryFilter(skills);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
 
+  // Each chat has its own conversation; a fresh one starts with an empty composer.
   useEffect(() => {
     void api.loadChat().then(setMessages);
+    setDraft('');
+    setFiles([]);
+    setPicked([]);
+    setPicking('');
+  }, [cuts.active]);
+  useEffect(() => {
     void api.listSkills().then(setSkills);
     void api.getModel().then(setModel);
     return api.on('agent', (event) => {
@@ -94,6 +108,11 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
     const after = messages.slice(i + 1).find((m) => m.before)?.before ?? timeline ?? EMPTY_TIMELINE;
     return before && JSON.stringify(before) !== JSON.stringify(after) ? before : undefined;
   };
+  /** Branch this chat after reply `i` into a new one, e.g. to make the same video with subtitles in another language. */
+  const split = (i: number): void => {
+    const name = cuts.cuts.find((c) => c.id === cuts.active)?.name ?? 'Chat';
+    void api.splitCut(i, `${name} 2`).then((next) => (onCuts(next), setRenaming(next.active)), failed);
+  };
   const toggleFile = (path: string): void => setFiles(files.includes(path) ? files.filter((f) => f !== path) : [...files, path]);
   const togglePick = (id: string): void => setPicked(picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id]);
   const nameOf = (id: string): string => skills.find((s) => s.id === id)?.name ?? id;
@@ -112,6 +131,7 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
 
   return (
     <section className="chat">
+      <CutTabs cuts={cuts} onCuts={onCuts} busy={busy} renaming={renaming} setRenaming={setRenaming} />
       <div className="messages" ref={list}>
         {messages.length === 0 && (
           <p className="hint">
@@ -133,10 +153,17 @@ export const Chat = memo(function Chat({ timeline, onRestore, marks, setMarks, m
             {message.parts.map((part, n) =>
               part.type === 'tool' ? <p key={n} className="tool">{part.text}</p> : <Markdown key={n} text={part.text} />,
             )}
-            {busy && i === messages.length - 1 ? <p className="tool working">Working…</p> : stepBack(i) && (
-              <button className="ghost back" title="Put the edit back to how it was before this step" onClick={() => onRestore(stepBack(i)!)}>
-                <Undo2 size={14} /> Go back to before this
-              </button>
+            {busy && i === messages.length - 1 ? <p className="tool working">Working…</p> : message.role === 'assistant' && (
+              <div className="reply-actions">
+                {stepBack(i) && (
+                  <button className="ghost back" title="Put the edit back to how it was before this step" onClick={() => onRestore(stepBack(i)!)}>
+                    <Undo2 size={14} /> Go back to before this
+                  </button>
+                )}
+                <button className="ghost back" disabled={busy} title="Continue from here in a new chat with its own copy of the edit — for another language, length or platform. This chat stays as it is." onClick={() => split(i)}>
+                  <GitBranch size={14} /> Split from here
+                </button>
+              </div>
             )}
           </article>
         ))}
