@@ -1,6 +1,6 @@
 // Renders a cut's timeline.json to a video with a single FFmpeg filter graph.
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { clipLength, cutFiles, timelineLength } from '../shared/types';
 import type { Clip, Grade, Overlay, Timeline } from '../shared/types';
@@ -195,16 +195,34 @@ export async function ffmpegArgs(root: string, t: Timeline, preview: boolean): P
   ];
 }
 
-/** Render a cut's timeline. Returns the path of the written file. */
-export async function render(root: string, cut: string, opts: { preview?: boolean; signal?: AbortSignal } = {}): Promise<string> {
+/** Render a cut's timeline. Returns the path of the written file. `onProgress` gets the share that is done, 0–1. */
+export async function render(
+  root: string,
+  cut: string,
+  opts: { preview?: boolean; signal?: AbortSignal; onProgress?: (done: number) => void } = {},
+): Promise<string> {
   const timeline = await readTimeline(root, cut);
   if (!timeline) throw new Error(`No timeline yet. Write ${cutFiles(cut).timeline} first.`);
   const out = opts.preview ? path.join(root, cutFiles(cut).preview) : await nextExportPath(root, cut);
   // Write next to the target, then rename, so a half-written file is never played or shipped.
   const tmp = path.join(path.dirname(out), `.rendering-${process.pid}-${path.basename(out)}`);
   const args = await ffmpegArgs(root, timeline, opts.preview ?? false);
-  await run('ffmpeg', [...args, '-f', 'mp4', tmp], { signal: opts.signal });
-  await rename(tmp, out);
+  const total = timelineLength(timeline);
+  try {
+    // `-progress` reports the output time reached (in microseconds, under either name) about twice a second.
+    await run('ffmpeg', [...args, ...(opts.onProgress ? ['-progress', 'pipe:1', '-nostats'] : []), '-f', 'mp4', tmp], {
+      signal: opts.signal,
+      onOutput: (chunk) => {
+        const at = [...chunk.matchAll(/out_time_(?:us|ms)=(\d+)/g)].at(-1)?.[1];
+        if (at) opts.onProgress?.(Math.min(1, Number(at) / 1e6 / total));
+      },
+    });
+    await rename(tmp, out);
+  } catch (error) {
+    // A cancelled or failed render leaves nothing behind.
+    await rm(tmp, { force: true });
+    throw error;
+  }
   if (!opts.preview) {
     await linkExport(root, out);
     await addVersion(root, cut, 'Export', timeline, path.relative(root, out));

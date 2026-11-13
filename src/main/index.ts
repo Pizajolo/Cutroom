@@ -24,6 +24,7 @@ let timeline: Timeline | null = null;
 let watcher: FSWatcher | undefined;
 let previewJob: AbortController | undefined;
 let previewVersion = 0;
+let exporting = false;
 
 const emit = (channel: string, payload: unknown): void => win?.webContents.send(channel, payload);
 const root = (): string => {
@@ -165,7 +166,17 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   markFinal: (id) => markFinal(root(), cut, id),
   ledger: () => readLedger(root()),
   stop: async () => agent.stop(),
-  exportVideo: async () => path.relative(root(), await render(root(), cut)),
+  async exportVideo() {
+    if (exporting) throw new Error('An export is already running.');
+    const dir = root();
+    exporting = true;
+    emit('export', 0);
+    try {
+      return path.relative(dir, await render(dir, cut, { onProgress: (done) => emit('export', done) }));
+    } finally {
+      exporting = false;
+    }
+  },
   reveal: async (file) => shell.showItemInFolder(path.join(root(), file)),
   async closeProject() {
     agent.stop();

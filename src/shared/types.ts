@@ -376,6 +376,7 @@ export interface CutroomApi {
   /** Where everything the user did not shoot came from. */
   ledger(): Promise<LedgerEntry[]>;
   stop(): Promise<void>;
+  /** Render the cut to exports/. Resolves with the project-relative path; progress arrives on the 'export' channel. */
   exportVideo(): Promise<string>;
   reveal(path: string): Promise<void>;
   closeProject(): Promise<void>;
@@ -418,6 +419,8 @@ export interface CutroomApi {
   on(channel: 'script', fn: (script: Script) => void): () => void;
   on(channel: 'timeline', fn: (timeline: Timeline | null) => void): () => void;
   on(channel: 'preview', fn: (state: { rendering: boolean; version: number; error?: string }) => void): () => void;
+  /** How much of the running export is done, 0–1. */
+  on(channel: 'export', fn: (done: number) => void): () => void;
   on(channel: 'media', fn: (files: MediaFile[]) => void): () => void;
   on(channel: 'tools', fn: (tools: ToolStatus[]) => void): () => void;
 }

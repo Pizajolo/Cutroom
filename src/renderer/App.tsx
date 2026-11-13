@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, History, House, Plus, SlidersHorizontal } from 'lucide-react';
+import { Download, FolderOpen, History, House, Plus, SlidersHorizontal, X } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
 import type { Cuts, Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus } from '../shared/types';
 import { Chat } from './Chat';
@@ -23,7 +23,8 @@ export function App() {
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [marks, setMarks] = useState<Mark[]>([]);
   const [pro, setPro] = useState(() => localStorage.getItem('mode') === 'pro');
-  const [exported, setExported] = useState<{ busy: boolean; file?: string; error?: string }>({ busy: false });
+  /** The export: how far the running one is (0–1), then the finished file. `open` shows it in a dialog. */
+  const [exported, setExported] = useState<{ busy: boolean; done?: number; file?: string; error?: string; open?: boolean }>({ busy: false });
   const [script, setScript] = useState<Script>({ text: '', pending: false, spokenCut: false });
   /** The one popover that is open, if any. */
   const [panel, setPanel] = useState<'' | 'add' | 'versions' | 'settings'>('');
@@ -38,6 +39,7 @@ export function App() {
       api.on('preview', setPreview),
       api.on('script', setScript),
       api.on('media', setMedia),
+      api.on('export', (done) => setExported((now) => (now.busy ? { ...now, done } : now))),
       api.on('tools', setTools),
     ];
     return () => off.forEach((stop) => stop());
@@ -49,7 +51,8 @@ export function App() {
     setMarks([]);
     setPanel('');
     history.current = { past: [], future: [] };
-    setExported({ busy: false });
+    // An export that is still running keeps reporting.
+    setExported((now) => (now.busy ? now : { busy: false }));
     setTimeline(await api.getTimeline());
     setScript(await api.getScript());
   };
@@ -84,8 +87,8 @@ export function App() {
     apply(stack.pop()!);
   };
   const exportVideo = async (): Promise<void> => {
-    setExported({ busy: true });
-    setExported(await api.exportVideo().then((file) => ({ busy: false, file }), (e: Error) => ({ busy: false, error: e.message })));
+    setExported({ busy: true, done: 0 });
+    setExported(await api.exportVideo().then((file) => ({ busy: false, file, open: true }), (e: Error) => ({ busy: false, error: e.message })));
   };
   const drop = (event: React.DragEvent): void => {
     event.preventDefault();
@@ -115,7 +118,7 @@ export function App() {
         <span className="spacer" />
         {exported.error && <span className="note error" title={exported.error}>Export failed</span>}
         {exported.file && (
-          <button className="ghost" onClick={() => void api.reveal(exported.file!)}>Show {exported.file}</button>
+          <button className="ghost" title="Watch the exported video" onClick={() => setExported({ ...exported, open: true })}>Show {exported.file}</button>
         )}
         <button className={panel === 'versions' ? 'active' : 'ghost'} title="Earlier versions of this chat’s edit" onClick={() => toggle('versions')}>
           <History size={16} /> Versions
@@ -128,8 +131,9 @@ export function App() {
           <button role="tab" aria-selected={pro} onClick={() => setPro(true)}>Pro</button>
         </div>
         <button className="primary" disabled={!timeline?.clips.length || exported.busy} onClick={() => void exportVideo()}>
-          <Download size={16} /> {exported.busy ? 'Exporting…' : 'Export'}
+          <Download size={16} /> {exported.busy ? `Exporting… ${Math.floor((exported.done ?? 0) * 100)}%` : 'Export'}
         </button>
+        {exported.busy && <progress className="export-progress" value={exported.done ?? 0} />}
       </header>
       <Preview
         video={video} cut={cuts.active} timeline={timeline} preview={preview} media={media} marks={marks} onMark={addMark} script={script}
@@ -137,6 +141,23 @@ export function App() {
         onHook={(n, hook) => sender.current?.(`Use hook ${n} as the opening instead: “${hook}”. Update the storyboard.`)}
         onApproveSpokenCut={() => void api.approveSpokenCut().then(() => sender.current?.('The spoken cut is approved. Now add the visuals and sound.'))}
       />
+      {exported.open && exported.file && (
+        <div className="modal" onClick={() => setExported({ ...exported, open: false })}>
+          <section className="exported" role="dialog" aria-label="Export finished" onClick={(e) => e.stopPropagation()}>
+            <header>
+              <strong>Export finished</strong>
+              <span className="note">{exported.file}</span>
+              <span className="spacer" />
+              <button className="ghost round" title="Close" onClick={() => setExported({ ...exported, open: false })}><X size={16} /></button>
+            </header>
+            <video src={`media://project/${encodeURI(exported.file)}`} controls autoPlay />
+            <footer>
+              <button onClick={() => setExported({ ...exported, open: false })}>Close</button>
+              <button className="primary" onClick={() => void api.reveal(exported.file!)}><FolderOpen size={16} /> Open in Folder</button>
+            </footer>
+          </section>
+        </div>
+      )}
       {panel && <div className="backdrop" onClick={() => setPanel('')} />}
       {panel === 'add' && <AddFiles />}
       {panel === 'versions' && <Versions current={timeline} onRestore={editTimeline} />}
