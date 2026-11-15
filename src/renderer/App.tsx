@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, FolderOpen, History, House, Plus, SlidersHorizontal, X } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
-import type { Cuts, Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus } from '../shared/types';
+import type { Cuts, Mark, MediaFile, Project, Script, Timeline as TimelineData, ToolStatus, Update } from '../shared/types';
 import { Chat } from './Chat';
 import { AddFiles } from './AddFiles';
 import { Features } from './Features';
 import { Home } from './Home';
+import { Onboarding } from './Onboarding';
 import { Preview } from './Preview';
 import { Sources, Versions } from './ProjectPanels';
 import { Timeline } from './Timeline';
+import { UpdateNotice } from './Update';
 import { api } from './lib';
 
 export type PreviewState = { rendering: boolean; version: number; error?: string };
@@ -29,11 +31,19 @@ export function App() {
   /** The one popover that is open, if any. */
   const [panel, setPanel] = useState<'' | 'add' | 'versions' | 'settings'>('');
   const toggle = (name: typeof panel): void => setPanel(panel === name ? '' : name);
+  /** The first-run guide: shown at start only while no account is connected, or when asked for with the Guide button. */
+  const [guide, setGuide] = useState(false);
+  /** Counts closings of the guide, so Settings on Home reloads what it saved. */
+  const [guided, setGuided] = useState(0);
+  /** A newer release found on GitHub at start. */
+  const [update, setUpdate] = useState<Update | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const sender = useRef<((text: string) => void) | null>(null);
 
   useEffect(() => {
     void api.tools().then(setTools);
+    void api.brain().then((brain) => !brain.any && setGuide(true));
+    void api.checkUpdate().then((found) => found && found.version !== localStorage.getItem('skipUpdate') && setUpdate(found));
     const off = [
       api.on('timeline', setTimeline),
       api.on('preview', setPreview),
@@ -102,7 +112,13 @@ export function App() {
     </span>
   );
 
-  if (!project) return <Home onOpen={opened}>{toolNote}</Home>;
+  const dialogs = guide ? (
+    <Onboarding onClose={() => (setGuide(false), setGuided((n) => n + 1))} />
+  ) : update && (
+    <UpdateNotice update={update} onClose={(skip) => (skip && localStorage.setItem('skipUpdate', update.version), setUpdate(null))} />
+  );
+
+  if (!project) return <><Home onOpen={opened} onGuide={() => setGuide(true)} settingsKey={guided}>{toolNote}</Home>{dialogs}</>;
 
   return (
     <div className={pro ? 'app pro' : 'app'} onDragOver={(e) => e.preventDefault()} onDrop={drop}>
@@ -179,6 +195,7 @@ export function App() {
           onUndo={() => step('past')} onRedo={() => step('future')}
         />
       )}
+      {dialogs}
     </div>
   );
 }

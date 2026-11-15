@@ -271,6 +271,27 @@ export interface ClaudeStatus {
   detail: string;
 }
 
+/** What is connected, for the first-run guide and the chat. */
+export interface Brain {
+  /** Something can run the editor: Claude (sign-in or API key), or the provider of the chosen model. */
+  ready: boolean;
+  /** Another provider with models is connected, so a different model could be chosen. */
+  alternatives: boolean;
+  /** Any account at all is connected. */
+  any: boolean;
+}
+
+/** A newer release of Cutroom on GitHub. */
+export interface Update {
+  version: string;
+  /** The version that is running. */
+  current: string;
+  /** The release notes (markdown); may be empty. */
+  notes: string;
+  /** The installer, or the release page. */
+  url: string;
+}
+
 export interface Voice {
   id: string;
   name: string;
@@ -401,6 +422,12 @@ export interface CutroomApi {
   /** Codex is reached through Claude Code; sign-in is OpenAI's own browser login. */
   codexStatus(): Promise<ClaudeStatus>;
   codexLogin(): Promise<ClaudeStatus>;
+  /** Whether a model is connected that can answer in the chat (of the open project, if any). */
+  brain(): Promise<Brain>;
+  /** Looks on GitHub for a newer release. Null when up to date or unreachable. */
+  checkUpdate(): Promise<Update | null>;
+  /** Opens the download of that release in the browser. */
+  downloadUpdate(): Promise<void>;
   /** The voices in the connected ElevenLabs account. */
   voices(apiKey: string): Promise<Voice[]>;
   /** Asks macOS for microphone access. */

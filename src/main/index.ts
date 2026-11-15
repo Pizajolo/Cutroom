@@ -13,8 +13,9 @@ import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Timeline } f
 import * as agent from './agent';
 import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
 import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
-import { claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
+import { brain, claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
 import { ensureTools, toolStatus } from './tools';
+import { checkUpdate, downloadUpdate } from './updates';
 
 let win: BrowserWindow | undefined;
 let project: Project | null = null;
@@ -223,6 +224,9 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   getModel: () => modelChoice(root()),
   setProjectModel: (model) => setProjectModel(root(), model),
   tools: async () => toolStatus(),
+  brain: () => brain(project?.root),
+  checkUpdate,
+  downloadUpdate,
 };
 
 // --- App ---------------------------------------------------------------------------------

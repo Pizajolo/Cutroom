@@ -71,8 +71,8 @@ function VoiceRecorder({ apiKey, onCreated }: { apiKey: string; onCreated: (voic
   );
 }
 
-/** Connections and defaults. Changes apply to the next message sent to Claude. */
-export function Settings() {
+/** Connections and defaults. Changes apply to the next message sent to Claude. `children` join the Save button. */
+export function Settings({ children }: { children?: React.ReactNode }) {
   const [saved, setSaved] = useState<SettingsData | null>(null);
   const [draft, setDraft] = useState<SettingsData | null>(null);
   const [claude, setClaude] = useState<ClaudeStatus | null>(null);
@@ -114,6 +114,7 @@ export function Settings() {
         <span className="spacer" />
         {error && <span className="note error">{error}</span>}
         <button className="primary" disabled={draft === saved}>Save</button>
+        {children}
       </div>
 
       <section>

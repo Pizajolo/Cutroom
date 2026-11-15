@@ -260,3 +260,26 @@ button.tag.on { border-color: var(--accent); color: var(--accent-pressed); }
 .exported footer { display: flex; justify-content: flex-end; gap: var(--space-2); }
 .exported .note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .exported video { min-height: 0; max-width: 100%; max-height: 65vh; border-radius: var(--radius-md); background: var(--bg-frame); }
+
+/* Dialogs that fit their content: the first-run guide and the update notice */
+.modal > section.dialog { width: min(560px, 92vw); height: auto; max-height: 88vh; }
+.modal > section.guide { width: min(640px, 92vw); height: min(600px, 88vh); }
+.dialog footer { display: flex; align-items: center; gap: var(--space-2); }
+.dialog .body { line-height: var(--line-height-prose); overflow-wrap: anywhere; user-select: text; }
+.dialog h3 { margin: var(--space-2) 0 0; font-size: var(--font-size-emphasis); }
+.dialog .body > h3:first-child { margin-top: 0; }
+.guide .task { flex: 0 0 190px; color: var(--text-secondary); }
+.guide dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); }
+.guide dt { font-weight: var(--weight-semibold); }
+.guide dd { margin: 0; color: var(--text-secondary); }
+/* Settings opened from the chat */
+.modal .settings h1 { margin: 0; font-size: var(--font-size-heading); }
+.modal .settings h2 { margin: 0; font-size: var(--font-size-emphasis); }
+.modal .settings > .row { position: sticky; top: 0; z-index: 1; padding-bottom: var(--space-2); background: var(--bg-panel-raised); }
+/* Chat: a message held back because no model is connected */
+.warning {
+  display: flex; flex-direction: column; gap: var(--space-2); flex-shrink: 0; margin: 0 var(--space-3) var(--space-2); padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warning); border-radius: var(--radius-md); background: var(--warning-bg); font-size: var(--font-size-small);
+}
+.warning svg { vertical-align: -2px; color: var(--warning); }
+.warning .row { display: flex; align-items: center; gap: var(--space-2); }

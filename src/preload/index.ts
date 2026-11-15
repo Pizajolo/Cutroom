@@ -6,7 +6,7 @@ const METHODS = [
   'openProject', 'recentProjects', 'openRecent', 'importFiles', 'downloadLinks', 'listMedia', 'getTimeline', 'saveTimeline',
   'cuts', 'switchCut', 'newCut', 'splitCut', 'renameCut', 'deleteCut', 'loadChat', 'saveChat', 'send', 'stop', 'exportVideo', 'reveal', 'listSkills', 'tools',
   'closeProject', 'forgetProject', 'revealSkill', 'readSkill', 'toggleFavorite', 'saveSkill', 'removeExample', 'deleteSkill', 'getSettings', 'saveSettings', 'claudeStatus',
-  'claudeLogin', 'codexStatus', 'codexLogin', 'voices', 'micAccess', 'cloneVoice', 'deleteVoice', 'getScript', 'approveSpokenCut', 'versions', 'markFinal', 'ledger', 'features', 'setProjectFeature', 'duration', 'getModel', 'setProjectModel',
+  'claudeLogin', 'codexStatus', 'codexLogin', 'voices', 'micAccess', 'cloneVoice', 'deleteVoice', 'getScript', 'approveSpokenCut', 'versions', 'markFinal', 'ledger', 'features', 'setProjectFeature', 'duration', 'getModel', 'setProjectModel', 'brain', 'checkUpdate', 'downloadUpdate',
 ] as const;
 
 const api = {

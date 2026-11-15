@@ -105,6 +105,17 @@ Settings:
 
 Settings are stored encrypted in `~/.cutroom/settings.enc`; a project's model choice in `.cutroom/project.json`.
 
+**Getting started guide.** On first launch, and at every start while no account is connected, a short guide asks you
+to connect Claude (or ChatGPT, ElevenLabs and the other providers) and shows where everything is. Reopen it with
+**Guide** on Home. If you send a message while no model is connected, the chat holds it back and offers
+**Connect now**, which opens Settings in place.
+
+**Updates.** At start Cutroom asks GitHub for the latest release of this repository
+(`api.github.com/repos/Pizajolo/Cutroom/releases/latest`) and, if its tag (`v0.3.0`) is higher than the running
+version (`version` in `package.json`), offers the download with the release notes as "What's new". To ship an update:
+bump `version`, publish a GitHub release tagged `v<version>`, write the notes, and attach a `.dmg` if there is one
+(otherwise the popup opens the release page). Drafts and pre-releases are ignored.
+
 ## Code map
 
 ```
@@ -116,7 +127,8 @@ src/main/             Electron shell: project folders, tool setup, preview, the 
   cuts.ts               chats in a project: new, split, rename, and moving older projects into the first one
   prompt.ts             what the agent knows about editing in Cutroom
   settings.ts           accounts, models, providers, MCP servers
-src/renderer/         React UI: Home, Settings, Chat, Preview, Timeline (+ Inspector, timelineOps)
+  updates.ts            the check for a newer release on GitHub
+src/renderer/         React UI: Home, Onboarding, Settings, Chat, Preview, Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
 native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
 ```

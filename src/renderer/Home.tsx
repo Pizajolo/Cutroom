@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, X } from 'lucide-react';
+import { CircleHelp, FolderOpen, X } from 'lucide-react';
 import type { Project } from '../shared/types';
 import { Features } from './Features';
 import { Settings } from './Settings';
@@ -9,7 +9,13 @@ import { api } from './lib';
 type Tab = 'Projects' | 'Library' | 'Features' | 'Settings';
 
 /** The start page: pick a project, look after the style library, connect accounts. */
-export function Home({ onOpen, children }: { onOpen: (project: Project | null) => void; children?: React.ReactNode }) {
+export function Home({ onOpen, onGuide, settingsKey, children }: {
+  onOpen: (project: Project | null) => void;
+  onGuide: () => void;
+  /** Changes when settings were saved elsewhere (the guide), so the Settings tab reloads them. */
+  settingsKey?: number;
+  children?: React.ReactNode;
+}) {
   const [tab, setTab] = useState<Tab>('Projects');
   const [projects, setProjects] = useState<Project[]>([]);
 
@@ -26,6 +32,7 @@ export function Home({ onOpen, children }: { onOpen: (project: Project | null) =
         </div>
         <span className="spacer" />
         {children}
+        <button className="ghost" title="How Cutroom works and what to connect" onClick={onGuide}><CircleHelp size={16} /> Guide</button>
       </header>
       <div className="page">
         {tab === 'Projects' && (
@@ -64,7 +71,7 @@ export function Home({ onOpen, children }: { onOpen: (project: Project | null) =
             <Features scope="everywhere" />
           </>
         )}
-        {tab === 'Settings' && <Settings />}
+        {tab === 'Settings' && <Settings key={settingsKey} />}
       </div>
     </main>
   );
