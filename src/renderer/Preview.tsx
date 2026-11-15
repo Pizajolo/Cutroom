@@ -98,7 +98,12 @@ export function Preview({ video, cut, timeline, preview, media, marks, onMark, s
   if (!preview.version) {
     return (
       <section className="preview empty">
-        {preview.rendering ? <p>Rendering the first preview…</p> : <p>Your edit will appear here. Tell Claude what to make.</p>}
+        {preview.rendering ? (
+          <p>
+            {preview.stage === 'proxies' ? 'Preparing your footage for fast previews (once per file)' : 'Rendering the first preview'}…
+            {preview.progress !== undefined && ` ${Math.round(preview.progress * 100)}%`}
+          </p>
+        ) : <p>Your edit will appear here. Tell Claude what to make.</p>}
         {preview.error && <p className="note error">{preview.error}</p>}
         <ul>
           {media.map((file) => (
@@ -118,7 +123,10 @@ export function Preview({ video, cut, timeline, preview, media, marks, onMark, s
         {showScript && <ScriptPage script={script} onApprove={onApprove} onHook={onHook} />}
         {(preview.rendering || preview.error) && (
           <span className={preview.error ? 'badge error' : 'badge'} title={preview.error}>
-            {preview.error ? 'Preview failed' : 'Updating…'}
+            {preview.error
+              ? 'Preview failed'
+              : `${preview.stage === 'proxies' ? 'Preparing footage' : 'Updating'}…${preview.progress !== undefined ? ` ${Math.round(preview.progress * 100)}%` : ''}`}
+            {!preview.error && preview.progress !== undefined && <i className="progress" style={{ width: `${preview.progress * 100}%` }} />}
           </span>
         )}
       </div>

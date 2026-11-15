@@ -13,7 +13,8 @@ import { Timeline } from './Timeline';
 import { UpdateNotice } from './Update';
 import { api } from './lib';
 
-export type PreviewState = { rendering: boolean; version: number; error?: string };
+export type { PreviewState } from '../shared/types';
+import type { PreviewState } from '../shared/types';
 
 export function App() {
   const [project, setProject] = useState<Project | null>(null);

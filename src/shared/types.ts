@@ -76,6 +76,10 @@ export interface Clip extends Look {
   volume?: number;
   /** `cover` (default) fills the frame and crops; `contain` shows everything with bars. */
   fit?: 'cover' | 'contain';
+  /** Picture switched off: the clip still takes its time, shown as black. */
+  hidden?: boolean;
+  /** Its sound switched off. */
+  muted?: boolean;
   label?: string;
 }
 
@@ -91,6 +95,8 @@ export interface Overlay extends Look {
   duration: number;
   /** Offset into the source video, default 0. */
   in?: number;
+  /** Playback speed of a video layer, default 1. `duration` is output time, so it covers `duration × speed` of the source. */
+  speed?: number;
   /** Placement as fractions of the frame (top-left x/y, width). Omitted = full frame. */
   x?: number;
   y?: number;
@@ -104,6 +110,9 @@ export interface Overlay extends Look {
   fadeOut?: number;
   /** Green-screen colour to make transparent, e.g. `#00ff00`. */
   key?: string;
+  /** Switched off: not drawn (its sound, if any, still plays unless muted). */
+  hidden?: boolean;
+  muted?: boolean;
   label?: string;
 }
 
@@ -119,7 +128,32 @@ export interface AudioItem {
   volume?: number;
   fadeIn?: number;
   fadeOut?: number;
+  muted?: boolean;
   label?: string;
+}
+
+/** The preview render: whether one is running and how far along (0–1), the version on screen, and any error. */
+export interface PreviewState {
+  rendering: boolean;
+  version: number;
+  error?: string;
+  progress?: number;
+  /** `proxies`: making light copies of heavy footage first (once per file). */
+  stage?: 'proxies' | 'render';
+}
+
+export type TrackName = 'clips' | 'overlays' | 'audio';
+
+/** Switches on a whole track, as in any editor's track header. */
+export interface TrackState {
+  /** Picture off for everything on the track. */
+  hidden?: boolean;
+  /** Sound off for everything on the track. */
+  muted?: boolean;
+  /** Only soloed tracks are heard, while any track is soloed. */
+  solo?: boolean;
+  /** Protected from changes, by the user and by Claude. */
+  locked?: boolean;
 }
 
 export interface Timeline {
@@ -131,6 +165,17 @@ export interface Timeline {
   clips: Clip[];
   overlays: Overlay[];
   audio: AudioItem[];
+  tracks?: Partial<Record<TrackName, TrackState>>;
+}
+
+/** Whether an item is seen and heard, after its own switches and its track's (mute, hide, solo). */
+export function playState(t: Timeline, track: TrackName, item: { hidden?: boolean; muted?: boolean }): { visible: boolean; audible: boolean } {
+  const state = t.tracks?.[track] ?? {};
+  const soloing = Object.values(t.tracks ?? {}).some((s) => s?.solo);
+  return {
+    visible: !item.hidden && !state.hidden,
+    audible: !item.muted && !state.muted && (!soloing || !!state.solo),
+  };
 }
 
 export const EMPTY_TIMELINE: Timeline = { width: 1080, height: 1920, fps: 30, clips: [], overlays: [], audio: [] };
@@ -445,7 +490,7 @@ export interface CutroomApi {
   on(channel: 'agent', fn: (event: AgentEvent) => void): () => void;
   on(channel: 'script', fn: (script: Script) => void): () => void;
   on(channel: 'timeline', fn: (timeline: Timeline | null) => void): () => void;
-  on(channel: 'preview', fn: (state: { rendering: boolean; version: number; error?: string }) => void): () => void;
+  on(channel: 'preview', fn: (state: PreviewState) => void): () => void;
   /** How much of the running export is done, 0–1. */
   on(channel: 'export', fn: (done: number) => void): () => void;
   on(channel: 'media', fn: (files: MediaFile[]) => void): () => void;

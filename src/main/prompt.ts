@@ -51,6 +51,12 @@ changes. The user can also change it in the timeline view, so re-read it before 
   overlay of the next shot with a fadeIn.
 - audio is mixed under the clips. "in" is the offset into the source; duration, fadeIn and
   fadeOut are optional.
+- Switches the user sets in the timeline view: "hidden": true on a clip or overlay (a hidden
+  clip keeps its time and shows black), "muted": true on any item, and "speed" on video overlays
+  too ("duration" stays output time). "tracks": { "clips" | "overlays" | "audio":
+  { hidden, muted, solo, locked } } switches a whole track; while any track is soloed only soloed
+  tracks are heard. Leave these as the user set them unless asked. Never change items on a
+  locked track — tell the user to unlock it first.
 - Colour: "grade" on the timeline grades all main-track footage; "grade" on a clip or overlay
   grades just that one. Fields: brightness (-1..1), contrast (0..2), saturation (0..3),
   gamma, temperature (Kelvin, 6500 = neutral, lower = warmer), lut (a .cube file). "crop"

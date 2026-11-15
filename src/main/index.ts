@@ -44,7 +44,14 @@ async function refresh(): Promise<void> {
     emit('timeline', timeline);
     if (!timeline?.clips.length) return emit('preview', { rendering: false, version: 0 });
     emit('preview', { rendering: true, version: previewVersion });
-    await render(root(), cut, { preview: true, signal: job.signal });
+    // How far along it is, for the "Updating… 42%" badge. At most a few updates a second.
+    let last = 0;
+    const onProgress = (done: number, stage: 'proxies' | 'render'): void => {
+      if (job.signal.aborted || Date.now() - last < 250) return;
+      last = Date.now();
+      emit('preview', { rendering: true, version: previewVersion, progress: done, stage });
+    };
+    await render(root(), cut, { preview: true, signal: job.signal, onProgress });
     previewVersion = Date.now();
     emit('preview', { rendering: false, version: previewVersion });
   } catch (error) {

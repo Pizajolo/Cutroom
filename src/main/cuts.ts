@@ -25,7 +25,7 @@ export interface Fork {
 }
 
 /** What `.cutroom/` holds for every cut alike. Anything else in there belonged to the single edit of an older project. */
-const SHARED = ['cuts', 'cuts.json', 'project.json', 'ledger.json', 'transcripts'];
+const SHARED = ['cuts', 'cuts.json', 'project.json', 'ledger.json', 'transcripts', 'proxies'];
 const LEGACY_PATH = /\.cutroom\/(?!cuts\/|cuts\.json|project\.json|ledger\.json|transcripts\/)/g;
 /** The files of a cut that name its other files. */
 const INDEXES = ['script.md', 'selects.md', 'chat.json', 'versions.json', 'timeline.json'];
