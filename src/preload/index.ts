@@ -9,7 +9,7 @@ const METHODS = [
   'claudeLogin', 'codexStatus', 'codexLogin', 'voices', 'micAccess', 'cloneVoice', 'deleteVoice', 'getScript', 'approveSpokenCut', 'versions', 'markFinal', 'ledger', 'features', 'setProjectFeature', 'duration', 'getModel', 'setProjectModel',
   'marketAccount', 'marketLogin', 'marketLogout', 'marketSetServer', 'marketOpenWeb', 'marketBrowse', 'marketDetail', 'marketInstall', 'marketUninstall',
   'marketInstalled', 'marketFavorites', 'marketSetFavorite', 'marketReview', 'marketDeleteReview', 'marketReport', 'marketBuy', 'marketPublish', 'marketMine',
-  'marketUpdateOwn',
+  'marketUpdateOwn', 'brain', 'checkUpdate', 'downloadUpdate',
 ] as const;
 
 const api = {

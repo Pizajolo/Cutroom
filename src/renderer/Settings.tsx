@@ -159,6 +159,7 @@ export function Settings() {
         <span className="spacer" />
         {error && <span className="note error">{error}</span>}
         <button className="primary" disabled={draft === saved}>Save</button>
+        {children}
       </div>
 
       <section>

@@ -12,7 +12,7 @@ import { HOME, run } from '../cli/run';
 import { CONNECTIONS, LOCAL_CUTOUT, featureStates, llmProviders } from '../shared/features';
 import type { Connection, Feature, FeatureState } from '../shared/features';
 import { modelOptions } from '../shared/types';
-import type { ClaudeStatus, ModelChoice, Settings, Voice } from '../shared/types';
+import type { Brain, ClaudeStatus, ModelChoice, Settings, Voice } from '../shared/types';
 
 const FILE = path.join(HOME, 'settings.enc');
 const DEFAULTS: Settings = {
@@ -192,6 +192,17 @@ export const codexStatus = (): Promise<ClaudeStatus> =>
 
 /** OpenAI's own browser sign-in (ChatGPT account). Resolves when the browser flow finishes. */
 export const codexLogin = (): Promise<ClaudeStatus> => run('codex', ['login']).then(codexStatus, codexStatus);
+
+/** What can run the editor right now. `root` is the open project, whose own model choice counts. */
+export async function brain(root?: string): Promise<Brain> {
+  const settings = await loadSettings();
+  const providers = llmProviders(settings).filter((p) => p.models.length);
+  const model = root ? await modelChoice(root).then((choice) => choice.project || choice.default) : settings.model;
+  const claude = settings.claude.auth === 'api-key' ? !!settings.claude.apiKey : (await claudeStatus()).loggedIn;
+  const any =
+    claude || providers.length > 0 || Object.values(settings.keys).some(Boolean) || !!settings.elevenlabs.apiKey || (await codexStatus()).loggedIn;
+  return { ready: claude || providers.some((p) => model.startsWith(`${p.name}/`)), alternatives: providers.length > 0, any };
+}
 
 const ELEVEN = 'https://api.elevenlabs.io/v1';
 async function eleven<T>(apiKey: string, route: string, init: RequestInit = {}): Promise<T> {

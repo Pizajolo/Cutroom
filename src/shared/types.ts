@@ -76,6 +76,10 @@ export interface Clip extends Look {
   volume?: number;
   /** `cover` (default) fills the frame and crops; `contain` shows everything with bars. */
   fit?: 'cover' | 'contain';
+  /** Picture switched off: the clip still takes its time, shown as black. */
+  hidden?: boolean;
+  /** Its sound switched off. */
+  muted?: boolean;
   label?: string;
 }
 
@@ -91,6 +95,8 @@ export interface Overlay extends Look {
   duration: number;
   /** Offset into the source video, default 0. */
   in?: number;
+  /** Playback speed of a video layer, default 1. `duration` is output time, so it covers `duration × speed` of the source. */
+  speed?: number;
   /** Placement as fractions of the frame (top-left x/y, width). Omitted = full frame. */
   x?: number;
   y?: number;
@@ -104,6 +110,9 @@ export interface Overlay extends Look {
   fadeOut?: number;
   /** Green-screen colour to make transparent, e.g. `#00ff00`. */
   key?: string;
+  /** Switched off: not drawn (its sound, if any, still plays unless muted). */
+  hidden?: boolean;
+  muted?: boolean;
   label?: string;
 }
 
@@ -119,7 +128,32 @@ export interface AudioItem {
   volume?: number;
   fadeIn?: number;
   fadeOut?: number;
+  muted?: boolean;
   label?: string;
+}
+
+/** The preview render: whether one is running and how far along (0–1), the version on screen, and any error. */
+export interface PreviewState {
+  rendering: boolean;
+  version: number;
+  error?: string;
+  progress?: number;
+  /** `proxies`: making light copies of heavy footage first (once per file). */
+  stage?: 'proxies' | 'render';
+}
+
+export type TrackName = 'clips' | 'overlays' | 'audio';
+
+/** Switches on a whole track, as in any editor's track header. */
+export interface TrackState {
+  /** Picture off for everything on the track. */
+  hidden?: boolean;
+  /** Sound off for everything on the track. */
+  muted?: boolean;
+  /** Only soloed tracks are heard, while any track is soloed. */
+  solo?: boolean;
+  /** Protected from changes, by the user and by Claude. */
+  locked?: boolean;
 }
 
 export interface Timeline {
@@ -131,6 +165,17 @@ export interface Timeline {
   clips: Clip[];
   overlays: Overlay[];
   audio: AudioItem[];
+  tracks?: Partial<Record<TrackName, TrackState>>;
+}
+
+/** Whether an item is seen and heard, after its own switches and its track's (mute, hide, solo). */
+export function playState(t: Timeline, track: TrackName, item: { hidden?: boolean; muted?: boolean }): { visible: boolean; audible: boolean } {
+  const state = t.tracks?.[track] ?? {};
+  const soloing = Object.values(t.tracks ?? {}).some((s) => s?.solo);
+  return {
+    visible: !item.hidden && !state.hidden,
+    audible: !item.muted && !state.muted && (!soloing || !!state.solo),
+  };
 }
 
 export const EMPTY_TIMELINE: Timeline = { width: 1080, height: 1920, fps: 30, clips: [], overlays: [], audio: [] };
@@ -373,6 +418,27 @@ export interface ClaudeStatus {
   detail: string;
 }
 
+/** What is connected, for the first-run guide and the chat. */
+export interface Brain {
+  /** Something can run the editor: Claude (sign-in or API key), or the provider of the chosen model. */
+  ready: boolean;
+  /** Another provider with models is connected, so a different model could be chosen. */
+  alternatives: boolean;
+  /** Any account at all is connected. */
+  any: boolean;
+}
+
+/** A newer release of Cutroom on GitHub. */
+export interface Update {
+  version: string;
+  /** The version that is running. */
+  current: string;
+  /** The release notes (markdown); may be empty. */
+  notes: string;
+  /** The installer, or the release page. */
+  url: string;
+}
+
 export interface Voice {
   id: string;
   name: string;
@@ -503,6 +569,12 @@ export interface CutroomApi {
   /** Codex is reached through Claude Code; sign-in is OpenAI's own browser login. */
   codexStatus(): Promise<ClaudeStatus>;
   codexLogin(): Promise<ClaudeStatus>;
+  /** Whether a model is connected that can answer in the chat (of the open project, if any). */
+  brain(): Promise<Brain>;
+  /** Looks on GitHub for a newer release. Null when up to date or unreachable. */
+  checkUpdate(): Promise<Update | null>;
+  /** Opens the download of that release in the browser. */
+  downloadUpdate(): Promise<void>;
   /** The voices in the connected ElevenLabs account. */
   voices(apiKey: string): Promise<Voice[]>;
   /** Asks macOS for microphone access. */
@@ -549,7 +621,7 @@ export interface CutroomApi {
   on(channel: 'agent', fn: (event: AgentEvent) => void): () => void;
   on(channel: 'script', fn: (script: Script) => void): () => void;
   on(channel: 'timeline', fn: (timeline: Timeline | null) => void): () => void;
-  on(channel: 'preview', fn: (state: { rendering: boolean; version: number; error?: string }) => void): () => void;
+  on(channel: 'preview', fn: (state: PreviewState) => void): () => void;
   /** How much of the running export is done, 0–1. */
   on(channel: 'export', fn: (done: number) => void): () => void;
   on(channel: 'media', fn: (files: MediaFile[]) => void): () => void;

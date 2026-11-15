@@ -14,8 +14,9 @@ import * as agent from './agent';
 import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
 import * as market from './market';
 import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
-import { claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
+import { brain, claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
 import { ensureTools, toolStatus } from './tools';
+import { checkUpdate, downloadUpdate } from './updates';
 
 let win: BrowserWindow | undefined;
 let project: Project | null = null;
@@ -44,7 +45,14 @@ async function refresh(): Promise<void> {
     emit('timeline', timeline);
     if (!timeline?.clips.length) return emit('preview', { rendering: false, version: 0 });
     emit('preview', { rendering: true, version: previewVersion });
-    await render(root(), cut, { preview: true, signal: job.signal });
+    // How far along it is, for the "Updating… 42%" badge. At most a few updates a second.
+    let last = 0;
+    const onProgress = (done: number, stage: 'proxies' | 'render'): void => {
+      if (job.signal.aborted || Date.now() - last < 250) return;
+      last = Date.now();
+      emit('preview', { rendering: true, version: previewVersion, progress: done, stage });
+    };
+    await render(root(), cut, { preview: true, signal: job.signal, onProgress });
     previewVersion = Date.now();
     emit('preview', { rendering: false, version: previewVersion });
   } catch (error) {
@@ -224,6 +232,9 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   getModel: () => modelChoice(root()),
   setProjectModel: (model) => setProjectModel(root(), model),
   tools: async () => toolStatus(),
+  brain: () => brain(project?.root),
+  checkUpdate,
+  downloadUpdate,
   // Skill Marketplace
   marketAccount: () => market.refreshAccount().catch(() => market.account()),
   marketLogin: market.login,

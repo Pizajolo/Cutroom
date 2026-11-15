@@ -1,11 +1,12 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { ArrowUp, Film, Flag, GitBranch, Library, Sparkles, Square, Star, Undo2, X } from 'lucide-react';
+import { ArrowUp, Film, Flag, GitBranch, Library, Sparkles, Square, Star, TriangleAlert, Undo2, X } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
 import type { AgentEvent, ChatMessage, Cuts, Mark, MediaFile, ModelChoice, Skill, Timeline } from '../shared/types';
 import { CutTabs } from './CutTabs';
 import { useLibraryFilter } from './LibraryFilter';
 import { Markdown } from './Markdown';
+import { Settings } from './Settings';
 import { api, clock, failed } from './lib';
 
 interface Props {
@@ -53,6 +54,12 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
   const [picking, setPicking] = useState<'' | 'footage' | 'library'>('');
   /** A chat whose name is being edited: one just made or split off. */
   const [renaming, setRenaming] = useState('');
+  /** A message that was held back because no model is connected. */
+  const [warning, setWarning] = useState<{ text: string; alternatives: boolean } | null>(null);
+  /** Settings, opened from that warning. */
+  const [connecting, setConnecting] = useState(false);
+  /** Whether a model is known to be connected, and whether that is being looked up. */
+  const brain = useRef({ ready: false, checking: false });
   const [listed, filter] = useLibraryFilter(skills);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -64,6 +71,7 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
     setFiles([]);
     setPicked([]);
     setPicking('');
+    setWarning(null);
   }, [cuts.active]);
   useEffect(() => {
     void api.listSkills().then(setSkills);
@@ -86,8 +94,16 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
     wasBusy.current = busy;
   }, [busy, messages]);
 
-  const sendText = (text: string): void => {
-    if (!text || busy) return;
+  /** Send a message. Without a connected model it is held back with a warning, unless the user sends it `anyway`. */
+  const sendText = async (text: string, anyway = false): Promise<boolean> => {
+    if (!text || busy || brain.current.checking) return false;
+    if (!brain.current.ready && !anyway) {
+      brain.current.checking = true;
+      const found = await api.brain().finally(() => (brain.current.checking = false));
+      brain.current.ready = found.ready;
+      if (!found.ready) return setWarning({ text, alternatives: found.alternatives }), false;
+    }
+    setWarning(null);
     setMessages((all) => [...all, { role: 'user', parts: [{ type: 'text', text }], marks, files, skills: picked }, { role: 'assistant', parts: [], before: timeline ?? EMPTY_TIMELINE }]);
     setBusy(true);
     void api.send(text, marks, files, picked);
@@ -95,11 +111,15 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
     setFiles([]);
     setPicking('');
     setPicked([]);
+    return true;
   };
-  sender.current = sendText;
-  const send = (): void => {
-    sendText(draft.trim());
-    if (!busy) setDraft('');
+  sender.current = (text) => void sendText(text);
+  const send = (): void => void sendText(draft.trim()).then((sent) => sent && setDraft(''));
+  /** Settings were closed: the held-back message can go once a model is connected. */
+  const connected = (): void => {
+    setConnecting(false);
+    void api.getModel().then(setModel);
+    void api.brain().then((found) => (brain.current.ready = found.ready) && setWarning(null));
   };
   const hasEdit = !!timeline?.clips.length;
   /** The edit as it was before reply `i`, if that reply (Claude's step) changed it. */
@@ -168,6 +188,36 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
           </article>
         ))}
       </div>
+      {warning && (
+        <div className="warning" role="alert">
+          <p>
+            <TriangleAlert size={14} /> <strong>No model is connected.</strong>{' '}
+            {warning.alternatives
+              ? 'This chat is set to a Claude model, but Claude is not connected. Connect Claude, or choose one of your other models below.'
+              : 'Connect Claude or another provider so the editor can answer. Your message is kept.'}
+          </p>
+          <div className="row">
+            <button type="button" className="primary" onClick={() => setConnecting(true)}>Connect now</button>
+            <button
+              type="button" className="ghost" title="Try it with what is set up on this Mac"
+              onClick={() => void sendText(warning.text, true).then((sent) => sent && draft.trim() === warning.text && setDraft(''))}
+            >
+              Send anyway
+            </button>
+            <span className="spacer" />
+            <button type="button" className="ghost round" title="Dismiss" onClick={() => setWarning(null)}><X size={14} /></button>
+          </div>
+        </div>
+      )}
+      {connecting && (
+        <div className="modal">
+          <section role="dialog" aria-label="Settings">
+            <div className="body">
+              <Settings><button type="button" onClick={connected}>Close</button></Settings>
+            </div>
+          </section>
+        </div>
+      )}
       <form className="composer" onSubmit={(e) => (e.preventDefault(), send())}>
         {picking === 'footage' && (
           <div className="footage">

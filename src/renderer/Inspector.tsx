@@ -41,7 +41,7 @@ function write(item: Bag, path: string, value: number): void {
 }
 
 /** Numbers for the selected item — or, with nothing selected, for the whole video. */
-export function Inspector({ timeline, block, onChange }: { timeline: Timeline; block?: Block; onChange: (timeline: Timeline) => void }) {
+export function Inspector({ timeline, block, locked, onChange }: { timeline: Timeline; block?: Block; locked?: boolean; onChange: (timeline: Timeline) => void }) {
   const item = (block ? timeline[block.track][block.index] : timeline) as unknown as Bag;
   const set = (path: string, value: number): void => {
     const next = structuredClone(timeline);
@@ -51,12 +51,13 @@ export function Inspector({ timeline, block, onChange }: { timeline: Timeline; b
   return (
     <aside className="inspector">
       <strong>{block ? block.label : 'Whole video'}</strong>
+      {locked && <span className="hint">On a locked track</span>}
       {FIELDS[block?.track ?? 'project'].map(([path, label, step, fallback, min, max]) => (
         <label key={path}>
           {label}
           {/* Committed on Enter or when leaving the field, so typing "0.5" is not interrupted. */}
           <input
-            type="number" step={step} min={min} max={max}
+            type="number" step={step} min={min} max={max} disabled={locked}
             key={`${block?.id}/${read(item, path)}`} defaultValue={Number((read(item, path) ?? fallback).toFixed(3))}
             onBlur={(e) => e.target.value !== '' && Number(e.target.value) !== (read(item, path) ?? fallback) && set(path, Number(e.target.value))}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
