@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { CircleHelp, FolderOpen, X } from 'lucide-react';
 import type { Project } from '../shared/types';
 import { Features } from './Features';
+import { Market } from './Market';
 import { Settings } from './Settings';
 import { Styles } from './Styles';
 import { api } from './lib';
 
-type Tab = 'Projects' | 'Library' | 'Features' | 'Settings';
+type Tab = 'Projects' | 'Library' | 'Marketplace' | 'Features' | 'Settings';
 
 /** The start page: pick a project, look after the style library, connect accounts. */
 export function Home({ onOpen, onGuide, settingsKey, children }: {
@@ -26,7 +27,7 @@ export function Home({ onOpen, onGuide, settingsKey, children }: {
       <header>
         <strong>Cutroom</strong>
         <div className="switch" role="tablist">
-          {(['Projects', 'Library', 'Features', 'Settings'] as const).map((name) => (
+          {(['Projects', 'Library', 'Marketplace', 'Features', 'Settings'] as const).map((name) => (
             <button key={name} role="tab" aria-selected={tab === name} onClick={() => setTab(name)}>{name}</button>
           ))}
         </div>
@@ -61,6 +62,7 @@ export function Home({ onOpen, onGuide, settingsKey, children }: {
           </>
         )}
         {tab === 'Library' && <Styles />}
+        {tab === 'Marketplace' && <Market />}
         {tab === 'Features' && (
           <>
             <h1>Features</h1>

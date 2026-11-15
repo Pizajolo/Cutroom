@@ -222,6 +222,8 @@ export interface Skill {
   description: string;
   /** True for skills the user saved from their own edits. */
   custom: boolean;
+  /** Installed from the Skill Marketplace (id `market:<slug>`): read-only, updated from there. */
+  market?: { slug: string; version: number };
   /** A style shapes a whole video; a move is one technique that can be used in any video. */
   kind: 'style' | 'move';
   tags: string[];
@@ -239,6 +241,106 @@ export interface Example {
   /** `media://` address the UI can play. */
   src: string;
   label: string;
+}
+
+// --- Skill Marketplace (cutroom-market API) --------------------------------------------------------
+
+export interface MarketSkill {
+  slug: string;
+  name: string;
+  kind: 'style' | 'move';
+  description: string;
+  tags: string[];
+  source?: string;
+  price: { cents: number; currency: string };
+  author: { handle: string; name: string; avatar?: string };
+  stats: { downloads: number; rating: number; ratings: number; favorites: number };
+  version: number | null;
+  exampleUrl?: string;
+  status: 'draft' | 'pending' | 'published' | 'rejected' | 'unlisted' | 'removed';
+  publishedAt: string | null;
+  updatedAt: string;
+}
+
+export interface MarketReview {
+  id: string;
+  rating: number;
+  body: string;
+  author: { handle: string; name: string; avatar?: string };
+  createdAt: string;
+  updatedAt: string;
+  mine: boolean;
+}
+
+export interface MarketDetail extends MarketSkill {
+  instructions: string;
+  files: { path: string; size: number }[];
+  versions: { version: number; changelog: string; date: string }[];
+  viewer: { signedIn: boolean; favorite: boolean; installed: boolean; installedVersion?: number; owned: boolean; purchased: boolean; canDownload: boolean; reviewed: boolean };
+  reviews: MarketReview[];
+}
+
+export interface MarketQuery {
+  q?: string;
+  kind?: 'style' | 'move';
+  tag?: string;
+  price?: 'free' | 'paid';
+  sort?: 'popular' | 'rating' | 'new' | 'favorites';
+  page?: number;
+  pageSize?: number;
+}
+
+export interface MarketPage {
+  skills: MarketSkill[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface MarketAccount {
+  signedIn: boolean;
+  /** The marketplace this app talks to. */
+  url: string;
+  /** The marketplace sells skills. Without payments set up, every skill is free and prices are hidden. */
+  payments: boolean;
+  user?: { id: string; handle: string; name: string; avatar?: string; email?: string; role: 'user' | 'admin'; payouts: { connected: boolean; chargesEnabled: boolean } };
+}
+
+export interface MarketInstalled {
+  slug: string;
+  version: number;
+  installedAt: string;
+  /** From the account's library, when signed in. */
+  skill?: MarketSkill;
+  latestVersion?: number;
+  updateAvailable: boolean;
+  /** Set when moderators took the skill down: uninstall it. */
+  removed?: string;
+}
+
+export interface MarketCheckReport {
+  verdict: 'pass' | 'review' | 'block';
+  reason: string;
+  static: { rule: string; title: string; severity: 'block' | 'review' | 'info'; file: string; line: number; excerpt: string }[];
+  ai?: { verdict: 'pass' | 'review' | 'block'; risk: string; summary: string; findings: { file: string; category: string; severity: string; quote: string; explanation: string }[] };
+  aiError?: string;
+  aiSkipped?: string;
+}
+
+export interface MarketPublishResult {
+  skill: MarketSkill;
+  version: number;
+  verdict: MarketCheckReport['verdict'];
+  /** live: published now · pending: a moderator decides · rejected: will not be published */
+  state: 'live' | 'pending' | 'rejected';
+  report: MarketCheckReport;
+}
+
+export interface MarketOwnSkill {
+  skill: MarketSkill;
+  latest: { version: number; verdict: string; reviewStatus: 'pending' | 'approved' | 'rejected'; reason?: string; createdAt: string } | null;
+  earningsCents: number;
+  sales: number;
 }
 
 /** Skills that are tools rather than editing styles. */
@@ -487,6 +589,35 @@ export interface CutroomApi {
   getModel(): Promise<ModelChoice>;
   setProjectModel(model: string): Promise<void>;
   tools(): Promise<ToolStatus[]>;
+  // Skill Marketplace
+  marketAccount(): Promise<MarketAccount>;
+  /** Opens the browser for Google sign-in; resolves once the app is signed in. */
+  marketLogin(): Promise<MarketAccount>;
+  marketLogout(): Promise<MarketAccount>;
+  /** Point the app at another marketplace server ('' = the default). Signs out. */
+  marketSetServer(url: string): Promise<MarketAccount>;
+  /** Open a page of the marketplace website in the browser, e.g. `/account/payouts`. */
+  marketOpenWeb(route: string): Promise<void>;
+  marketBrowse(query: MarketQuery): Promise<MarketPage>;
+  marketDetail(slug: string): Promise<MarketDetail>;
+  /** Install or update; resolves with the library including it. */
+  marketInstall(slug: string): Promise<Skill[]>;
+  /** Remove from this Mac; `forget` also removes it from your marketplace library. */
+  marketUninstall(slug: string, forget?: boolean): Promise<Skill[]>;
+  marketInstalled(): Promise<MarketInstalled[]>;
+  marketFavorites(): Promise<MarketSkill[]>;
+  marketSetFavorite(slug: string, on: boolean): Promise<void>;
+  marketReview(slug: string, rating: number, body: string): Promise<MarketReview[]>;
+  marketDeleteReview(slug: string): Promise<MarketReview[]>;
+  marketReport(slug: string, reason: string, details: string): Promise<void>;
+  /** Opens Stripe Checkout in the browser. */
+  marketBuy(slug: string): Promise<void>;
+  /** Publish one of your own styles or moves (`my:<name>`). */
+  marketPublish(id: string, options: { priceCents?: number; changelog?: string }): Promise<MarketPublishResult>;
+  marketMine(): Promise<MarketOwnSkill[]>;
+  marketUpdateOwn(slug: string, patch: { price?: number; listed?: boolean }): Promise<void>;
+  /** A `cutroom://install/<slug>` link was opened: show that skill. */
+  on(channel: 'market-open', fn: (slug: string) => void): () => void;
   on(channel: 'agent', fn: (event: AgentEvent) => void): () => void;
   on(channel: 'script', fn: (script: Script) => void): () => void;
   on(channel: 'timeline', fn: (timeline: Timeline | null) => void): () => void;

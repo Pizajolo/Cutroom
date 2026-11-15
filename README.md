@@ -74,6 +74,20 @@ move. Each keeps an example clip. Home › Library filters by kind, tags and tex
 exported with an entry and lets you edit its instructions. In a project, **Styles & moves** picks several for a
 request; click a picked one to mention it (`@punch-in`) and say where it goes.
 
+**The Skill Marketplace.** Home › Marketplace finds styles and moves made by other editors: search, filter by kind,
+price and tags, watch the example clips, read the instructions and reviews. **Sign in with Google** opens your browser;
+approve there and the app is connected (a revocable device token, stored encrypted in `~/.cutroom/market.enc` —
+the UI never sees it). **Install** puts a skill in `~/.cutroom/market/skills/` — a third plugin next to the built-in
+skills and your library, loaded by Claude but never writable by it — and it appears in the Library tagged *Marketplace*.
+Installed skills show **Update** when a creator releases a new version, and a warning if moderators removed one.
+Star favourites, rate and review what you installed, **Report** anything harmful, and **Buy** paid skills through
+Stripe Checkout. To share your own, open it in the Library and press **Publish to marketplace** (free, or for a price
+once payouts are set up on the website): the marketplace checks every version for malicious instructions and code and
+shows the result right away — live, in review, or rejected with the reasons. `cutroom://install/<slug>` links on the
+website open the skill in the app. Settings › Marketplace shows the account and, for a self-hosted marketplace, its
+address (or set `CUTROOM_MARKET_URL`). The website, API and moderation live in the
+[cutroom-market](https://github.com/pizajolo/cutroom-market) repository.
+
 **Cutouts and stickers, on this Mac.** `cutroom cutout` lifts the subject out of a clip (a transparent `.mov`) or a
 frame (a `.png`, optionally with a white sticker outline) with Apple's Vision framework: free, offline, no account.
 It is a small Swift helper (`native/cutout.swift`) that Cutroom compiles on first launch, which needs Apple's command
@@ -102,6 +116,7 @@ Settings:
 - **Codex** — sign in with your ChatGPT account; Claude can then hand tasks to Codex (bundled, runs as an MCP server)
   and generate stills through ChatGPT's image tool (`codex:image`), with no API key.
 - **MCP servers** — any other command or URL.
+- **Marketplace** — Google sign-in to the Skill Marketplace, and its address.
 
 Settings are stored encrypted in `~/.cutroom/settings.enc`; a project's model choice in `.cutroom/project.json`.
 
@@ -127,8 +142,9 @@ src/main/             Electron shell: project folders, tool setup, preview, the 
   cuts.ts               chats in a project: new, split, rename, and moving older projects into the first one
   prompt.ts             what the agent knows about editing in Cutroom
   settings.ts           accounts, models, providers, MCP servers
+  market.ts             Skill Marketplace: Google sign-in (loopback + PKCE), browse, install/update, reviews, publish
+src/renderer/         React UI: Home, Onboarding, Settings, Market, Chat, Preview, Timeline (+ Inspector, timelineOps)
   updates.ts            the check for a newer release on GitHub
-src/renderer/         React UI: Home, Onboarding, Settings, Chat, Preview, Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
 native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
 ```

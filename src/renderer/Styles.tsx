@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, Star, Trash2, X } from 'lucide-react';
-import type { Example, Skill } from '../shared/types';
+import { FolderOpen, Star, Store, Trash2, Upload, X } from 'lucide-react';
+import type { Example, MarketAccount, Skill } from '../shared/types';
 import { useLibraryFilter } from './LibraryFilter';
+import { PublishDialog, SkillDialog } from './Market';
 import { api } from './lib';
 
-const tagOf = (skill: Skill): string => (skill.custom ? 'Yours' : 'Built-in');
+const tagOf = (skill: Skill): string => (skill.custom ? 'Yours' : skill.market ? 'Marketplace' : 'Built-in');
 
 /** One style in a popup: the videos that show it, and its instructions. */
-function StyleDialog({ skill, onChange, onClose }: { skill: Skill; onChange: (skills: Skill[]) => void; onClose: () => void }) {
+function StyleDialog({ skill, onChange, onClose, onPublish, onMarket }: { skill: Skill; onChange: (skills: Skill[]) => void; onClose: () => void; onPublish: () => void; onMarket: () => void }) {
   const [tab, setTab] = useState<'Examples' | 'Skill'>(skill.examples.length ? 'Examples' : 'Skill');
   const [text, setText] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
@@ -67,10 +68,14 @@ function StyleDialog({ skill, onChange, onClose }: { skill: Skill; onChange: (sk
                 <button className="primary" disabled={text === saved} onClick={() => void api.saveSkill(skill.id, text!).then((all) => (setSaved(text!), onChange(all)))}>
                   {text === saved ? 'Saved' : 'Save changes'}
                 </button>
+              ) : skill.market ? (
+                <span className="hint">Installed from the marketplace (version {skill.market.version || '?'}) — updates replace it. To change it, ask Claude to save a copy as your own.</span>
               ) : (
                 <span className="hint">Built-in styles can’t be changed. Save your own from an edit you like.</span>
               )}
               <button className="ghost" onClick={() => void api.revealSkill(skill.id)}><FolderOpen size={14} /> Show in Finder</button>
+              {skill.custom && <button className="ghost" onClick={onPublish}><Upload size={14} /> Publish to marketplace</button>}
+              {skill.market && <button className="ghost" onClick={onMarket}><Store size={14} /> Marketplace page</button>}
             </div>
           </div>
         )}
@@ -83,12 +88,18 @@ function StyleDialog({ skill, onChange, onClose }: { skill: Skill; onChange: (sk
 export function Styles() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [open, setOpen] = useState('');
+  const [publish, setPublish] = useState('');
+  const [market, setMarket] = useState('');
+  const [account, setAccount] = useState<MarketAccount | null>(null);
   useEffect(() => void api.listSkills().then(setSkills), []);
+  useEffect(() => void api.marketAccount().then(setAccount), []);
   const [visible, filter] = useLibraryFilter(skills);
   const opened = skills.find((skill) => skill.id === open);
 
   const remove = (skill: Skill): void => {
-    if (confirm(`Move “${skill.name}” to the Trash?`)) void api.deleteSkill(skill.id).then(setSkills);
+    if (skill.market) {
+      if (confirm(`Uninstall “${skill.name}”? You can install it again from the marketplace.`)) void api.marketUninstall(skill.market.slug).then(setSkills);
+    } else if (confirm(`Move “${skill.name}” to the Trash?`)) void api.deleteSkill(skill.id).then(setSkills);
   };
 
   return (
@@ -97,6 +108,7 @@ export function Styles() {
       <p className="hint">
         A style is how a whole video is made; a move is one technique — a caption treatment, a transition, a title — you can use in any video.
         To add your own, finish an edit you like and press “Save style” in the chat, or mark a section and ask Claude to save it as a move.
+        Find more — and share yours — in the Marketplace.
       </p>
       {filter}
       <ul className="list">
@@ -112,11 +124,18 @@ export function Styles() {
             <button className={skill.favorite ? 'ghost favorite' : 'ghost'} aria-pressed={skill.favorite} title={skill.favorite ? 'Remove from favourites' : 'Favourite: listed first when you pick styles and moves in a project'} onClick={() => void api.toggleFavorite(skill.id).then(setSkills)}>
               <Star size={14} />
             </button>
-            {skill.custom && <button className="ghost" title="Move to Trash" onClick={() => remove(skill)}><Trash2 size={14} /></button>}
+            {(skill.custom || skill.market) && <button className="ghost" title={skill.market ? 'Uninstall' : 'Move to Trash'} onClick={() => remove(skill)}><Trash2 size={14} /></button>}
           </li>
         ))}
       </ul>
-      {opened && <StyleDialog key={opened.id} skill={opened} onChange={setSkills} onClose={() => setOpen('')} />}
+      {opened && (
+        <StyleDialog
+          key={opened.id} skill={opened} onChange={setSkills} onClose={() => setOpen('')}
+          onPublish={() => (setOpen(''), setPublish(opened.id))} onMarket={() => (setOpen(''), setMarket(opened.market!.slug))}
+        />
+      )}
+      {publish && account && <PublishDialog skills={skills} initial={publish} account={account} onClose={() => setPublish('')} />}
+      {market && <SkillDialog key={market} slug={market} onLibrary={setSkills} onClose={() => (setMarket(''), void api.listSkills().then(setSkills))} />}
     </>
   );
 }

@@ -3,7 +3,7 @@ import { Mic, Plus, Square, X } from 'lucide-react';
 import { CONNECTIONS } from '../shared/features';
 import type { Connection } from '../shared/features';
 import { modelOptions } from '../shared/types';
-import type { ClaudeStatus, McpServer, Provider, Settings as SettingsData, Voice } from '../shared/types';
+import type { ClaudeStatus, MarketAccount, McpServer, Provider, Settings as SettingsData, Voice } from '../shared/types';
 import { api } from './lib';
 
 const envText = (env: Record<string, string>): string => Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n');
@@ -71,8 +71,53 @@ function VoiceRecorder({ apiKey, onCreated }: { apiKey: string; onCreated: (voic
   );
 }
 
-/** Connections and defaults. Changes apply to the next message sent to Claude. `children` join the Save button. */
-export function Settings({ children }: { children?: React.ReactNode }) {
+/** The Skill Marketplace account: Google sign-in happens in the browser; the app keeps a revocable device token. */
+function MarketSettings() {
+  const [account, setAccount] = useState<MarketAccount | null>(null);
+  const [server, setServer] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => void api.marketAccount().then((a) => (setAccount(a), setServer(a.url))), []);
+  const run = async (fn: () => Promise<MarketAccount>): Promise<void> => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = await fn();
+      setAccount(next);
+      setServer(next.url);
+    } catch (e) {
+      setError((e as Error).message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section>
+      <h2>Marketplace</h2>
+      <p className="hint">Sign in with Google to install, review and publish styles and moves. Each signed-in Mac appears on the website under Account › Devices.</p>
+      <div className="fields">
+        <span className={account?.signedIn ? 'tag ok' : 'tag'}>{!account ? 'Checking…' : account.signedIn ? `Signed in as ${account.user?.name ?? 'you'}${account.user?.email ? ` (${account.user.email})` : ''}` : 'Not signed in'}</span>
+        {account?.signedIn ? (
+          <>
+            <button type="button" onClick={() => void api.marketOpenWeb('/account')}>My account on the web</button>
+            <button type="button" disabled={busy} onClick={() => void run(api.marketLogout)}>Sign out</button>
+          </>
+        ) : (
+          <button type="button" disabled={busy || !account} onClick={() => void run(api.marketLogin)}>{busy ? 'Waiting for the browser…' : 'Sign in with Google…'}</button>
+        )}
+      </div>
+      <div className="fields">
+        <input className="grow" placeholder="https://cutroom.app" value={server} onChange={(e) => setServer(e.target.value)} aria-label="Marketplace server" />
+        <button type="button" disabled={busy || server === account?.url} onClick={() => void run(() => api.marketSetServer(server))}>Use this server</button>
+      </div>
+      <p className="hint">Only change the server for a self-hosted marketplace. Changing it signs you out.</p>
+      {error && <p className="note error">{error}</p>}
+    </section>
+  );
+}
+
+/** Connections and defaults. Changes apply to the next message sent to Claude. */
+export function Settings() {
   const [saved, setSaved] = useState<SettingsData | null>(null);
   const [draft, setDraft] = useState<SettingsData | null>(null);
   const [claude, setClaude] = useState<ClaudeStatus | null>(null);
@@ -245,6 +290,8 @@ export function Settings({ children }: { children?: React.ReactNode }) {
           <button type="button" onClick={() => set({ mcp: [...draft.mcp, { name: '', target: '', env: {} }] })}><Plus size={14} /> Add server</button>
         </div>
       </section>
+
+      <MarketSettings />
     </form>
   );
 }

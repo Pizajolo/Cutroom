@@ -6,6 +6,7 @@ import { Chat } from './Chat';
 import { AddFiles } from './AddFiles';
 import { Features } from './Features';
 import { Home } from './Home';
+import { SkillDialog } from './Market';
 import { Onboarding } from './Onboarding';
 import { Preview } from './Preview';
 import { Sources, Versions } from './ProjectPanels';
@@ -32,6 +33,8 @@ export function App() {
   /** The one popover that is open, if any. */
   const [panel, setPanel] = useState<'' | 'add' | 'versions' | 'settings'>('');
   const toggle = (name: typeof panel): void => setPanel(panel === name ? '' : name);
+  /** A skill opened from a cutroom://install link on the marketplace website. */
+  const [marketSlug, setMarketSlug] = useState('');
   /** The first-run guide: shown at start only while no account is connected, or when asked for with the Guide button. */
   const [guide, setGuide] = useState(false);
   /** Counts closings of the guide, so Settings on Home reloads what it saved. */
@@ -52,6 +55,7 @@ export function App() {
       api.on('media', setMedia),
       api.on('export', (done) => setExported((now) => (now.busy ? { ...now, done } : now))),
       api.on('tools', setTools),
+      api.on('market-open', setMarketSlug),
     ];
     return () => off.forEach((stop) => stop());
   }, []);
@@ -113,6 +117,8 @@ export function App() {
     </span>
   );
 
+  const marketDialog = marketSlug && <SkillDialog key={marketSlug} slug={marketSlug} onClose={() => setMarketSlug('')} />;
+  if (!project) return <><Home onOpen={opened}>{toolNote}</Home>{marketDialog}</>;
   const dialogs = guide ? (
     <Onboarding onClose={() => (setGuide(false), setGuided((n) => n + 1))} />
   ) : update && (
@@ -186,6 +192,7 @@ export function App() {
           <Sources />
         </aside>
       )}
+      {marketDialog}
       <Chat
         key={project.root} cuts={cuts} onCuts={(next) => void changeCuts(next)}
         timeline={timeline} onRestore={editTimeline} marks={marks} setMarks={setMarks} media={media} sender={sender}
