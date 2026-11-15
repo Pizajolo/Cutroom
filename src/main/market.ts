@@ -89,9 +89,19 @@ async function request<T>(route: string, init: RequestInit & { json?: unknown; a
   return (route.endsWith('/download') ? res : await res.json()) as T;
 }
 
+/** Whether the marketplace sells skills (it may run without Stripe). Cached for a few minutes. */
+let features: { url: string; payments: boolean; at: number } | undefined;
+async function payments(url: string): Promise<boolean> {
+  if (features?.url === url && Date.now() - features.at < 5 * 60_000) return features.payments;
+  const value = await request<{ payments?: boolean }>('/config', { auth: false }).then((c) => !!c.payments, () => false);
+  features = { url, payments: value, at: Date.now() };
+  return value;
+}
+
 export async function account(): Promise<MarketAccount> {
   const saved = await load();
-  return { signedIn: !!saved.token, user: saved.user, url: baseUrl(saved) };
+  const url = baseUrl(saved);
+  return { signedIn: !!saved.token, user: saved.user, url, payments: await payments(url) };
 }
 
 /** Refresh the profile (role, payouts) from the server. */

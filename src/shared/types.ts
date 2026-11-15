@@ -256,6 +256,8 @@ export interface MarketAccount {
   signedIn: boolean;
   /** The marketplace this app talks to. */
   url: string;
+  /** The marketplace sells skills. Without payments set up, every skill is free and prices are hidden. */
+  payments: boolean;
   user?: { id: string; handle: string; name: string; avatar?: string; email?: string; role: 'user' | 'admin'; payouts: { connected: boolean; chargesEnabled: boolean } };
 }
 

@@ -68,7 +68,7 @@ export function PublishDialog({ skills, initial, account, onClose }: { skills: S
   const publish = async (): Promise<void> => {
     setState({ busy: true });
     try {
-      setState({ result: await api.marketPublish(id, { priceCents: Math.round(Number(dollars || 0) * 100), changelog }) });
+      setState({ result: await api.marketPublish(id, { priceCents: account.payments ? Math.round(Number(dollars || 0) * 100) : 0, changelog }) });
     } catch (error) {
       setState({ error: message(error) });
     }
@@ -104,14 +104,16 @@ export function PublishDialog({ skills, initial, account, onClose }: { skills: S
             </label>
             {own.length === 0 && <p className="hint">You have no styles or moves of your own yet. Press “Save style” in a project’s chat.</p>}
             <div className="row">
-              <label className="stacked" style={{ width: 160 }}>Price (USD)
-                <input type="number" min="0" step="0.5" value={dollars} disabled={!canSell} onChange={(e) => setDollars(e.target.value)} />
-              </label>
+              {account.payments && (
+                <label className="stacked" style={{ width: 160 }}>Price (USD)
+                  <input type="number" min="0" step="0.5" value={dollars} disabled={!canSell} onChange={(e) => setDollars(e.target.value)} />
+                </label>
+              )}
               <label className="stacked grow">What changed (optional)
                 <input value={changelog} maxLength={2000} placeholder="First release" onChange={(e) => setChangelog(e.target.value)} />
               </label>
             </div>
-            {!canSell && <p className="hint">Free skills need nothing else. To sell, <button className="link" onClick={() => void api.marketOpenWeb('/account/payouts')}>set up payouts</button> on the web.</p>}
+            {account.payments && !canSell && <p className="hint">Free skills need nothing else. To sell, <button className="link" onClick={() => void api.marketOpenWeb('/account/payouts')}>set up payouts</button> on the web.</p>}
             {state.error && <p className="note error" style={{ whiteSpace: 'pre-wrap' }}>{state.error}</p>}
             <div className="row"><span className="spacer" /><button onClick={onClose}>Cancel</button><button className="primary" disabled={!id || state.busy} onClick={() => void publish()}>{state.busy ? 'Checking and publishing…' : 'Publish'}</button></div>
           </div>
@@ -376,9 +378,11 @@ export function Market() {
               {KINDS.map(([value, label]) => <button key={value} role="tab" aria-selected={(query.kind ?? '') === value} onClick={() => setQuery({ ...query, kind: (value || undefined) as MarketQuery['kind'] })}>{label}</button>)}
             </div>
             <div className="grow search"><Search size={14} /><input type="search" placeholder="Search captions, transitions, podcast…" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
-            <select value={query.price ?? ''} onChange={(e) => setQuery({ ...query, price: (e.target.value || undefined) as MarketQuery['price'] })}>
-              <option value="">Any price</option><option value="free">Free</option><option value="paid">Paid</option>
-            </select>
+            {account?.payments && (
+              <select value={query.price ?? ''} onChange={(e) => setQuery({ ...query, price: (e.target.value || undefined) as MarketQuery['price'] })}>
+                <option value="">Any price</option><option value="free">Free</option><option value="paid">Paid</option>
+              </select>
+            )}
             <select value={query.sort} onChange={(e) => setQuery({ ...query, sort: e.target.value as MarketQuery['sort'] })}>
               <option value="popular">Most downloaded</option><option value="rating">Top rated</option><option value="favorites">Most favourited</option><option value="new">Newest</option>
             </select>
