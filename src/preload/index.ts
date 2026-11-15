@@ -7,6 +7,9 @@ const METHODS = [
   'cuts', 'switchCut', 'newCut', 'splitCut', 'renameCut', 'deleteCut', 'loadChat', 'saveChat', 'send', 'stop', 'exportVideo', 'reveal', 'listSkills', 'tools',
   'closeProject', 'forgetProject', 'revealSkill', 'readSkill', 'toggleFavorite', 'saveSkill', 'removeExample', 'deleteSkill', 'getSettings', 'saveSettings', 'claudeStatus',
   'claudeLogin', 'codexStatus', 'codexLogin', 'voices', 'micAccess', 'cloneVoice', 'deleteVoice', 'getScript', 'approveSpokenCut', 'versions', 'markFinal', 'ledger', 'features', 'setProjectFeature', 'duration', 'getModel', 'setProjectModel',
+  'marketAccount', 'marketLogin', 'marketLogout', 'marketSetServer', 'marketOpenWeb', 'marketBrowse', 'marketDetail', 'marketInstall', 'marketUninstall',
+  'marketInstalled', 'marketFavorites', 'marketSetFavorite', 'marketReview', 'marketDeleteReview', 'marketReport', 'marketBuy', 'marketPublish', 'marketMine',
+  'marketUpdateOwn',
 ] as const;
 
 const api = {

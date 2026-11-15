@@ -12,6 +12,7 @@ import { PROJECT_DIRS, cutFiles } from '../shared/types';
 import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Timeline } from '../shared/types';
 import * as agent from './agent';
 import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
+import * as market from './market';
 import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
 import { claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
 import { ensureTools, toolStatus } from './tools';
@@ -223,6 +224,32 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   getModel: () => modelChoice(root()),
   setProjectModel: (model) => setProjectModel(root(), model),
   tools: async () => toolStatus(),
+  // Skill Marketplace
+  marketAccount: () => market.refreshAccount().catch(() => market.account()),
+  marketLogin: market.login,
+  marketLogout: market.logout,
+  marketSetServer: market.setServer,
+  marketOpenWeb: market.openWeb,
+  marketBrowse: market.browse,
+  marketDetail: market.detail,
+  async marketInstall(slug) {
+    await market.install(slug);
+    return agent.listSkills();
+  },
+  async marketUninstall(slug, forget) {
+    await market.uninstall(slug, forget);
+    return agent.listSkills();
+  },
+  marketInstalled: market.installed,
+  marketFavorites: market.favorites,
+  marketSetFavorite: market.setFavorite,
+  marketReview: market.review,
+  marketDeleteReview: market.deleteReview,
+  marketReport: market.report,
+  marketBuy: market.buy,
+  marketPublish: market.publish,
+  marketMine: market.mine,
+  marketUpdateOwn: market.updateOwn,
 };
 
 // --- App ---------------------------------------------------------------------------------
@@ -237,11 +264,13 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
 ]);
 
-/** `media://project/<path>` serves files from the open project, `media://style/<name>/example.mp4` from the style library
+/** `media://project/<path>` serves files from the open project, `media://style/<name>/example.mp4` from the style library,
+ * `media://market/<slug>/example.mp4` from installed marketplace skills
  * and `media://export/<absolute path>` a video listed under a style, with range requests so video can seek. */
 async function serveMedia(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'export' ? '/' : root();
+  if (url.host === 'marketplace') return market.proxyExample(decodeURIComponent(url.pathname.slice(1)), request);
+  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'market' ? path.join(market.MARKET, 'skills') : url.host === 'export' ? '/' : root();
   const file = path.join(base, decodeURIComponent(url.pathname));
   const allowed = url.host === 'export' ? Object.values(await styleVideos()).flat().includes(file) : file.startsWith(base + path.sep);
   if (!allowed) return new Response(null, { status: 403 });
@@ -262,6 +291,31 @@ async function serveMedia(request: Request): Promise<Response> {
   });
 }
 
+// `cutroom://install/<slug>` links on the marketplace website open that skill in the app.
+const PROTOCOL = 'cutroom';
+let pendingSlug: string | undefined;
+function openLink(link: string): void {
+  const slug = /^cutroom:\/\/install\/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])\/?$/.exec(link)?.[1];
+  if (!slug) return;
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    emit('market-open', slug);
+  } else pendingSlug = slug;
+}
+if (process.defaultApp && process.argv[1]) app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+else app.setAsDefaultProtocolClient(PROTOCOL);
+app.on('open-url', (event, link) => {
+  event.preventDefault();
+  openLink(link);
+});
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', (_event, argv) => {
+  const link = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+  if (link) openLink(link);
+  else win?.focus();
+});
+
 void app.whenReady().then(() => {
   protocol.handle('media', serveMedia);
   for (const [name, fn] of Object.entries(api)) {
@@ -278,6 +332,10 @@ void app.whenReady().then(() => {
   });
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(path.join(import.meta.dirname, '../renderer/index.html'));
+  win.webContents.once('did-finish-load', () => {
+    if (pendingSlug) emit('market-open', pendingSlug);
+    pendingSlug = undefined;
+  });
   void ensureTools((tools) => emit('tools', tools));
 });
 

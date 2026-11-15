@@ -9,6 +9,7 @@ import { run } from '../cli/run';
 import { UTILITY_SKILLS, clipLength, clipStarts, cutFiles } from '../shared/types';
 import type { AgentEvent, AudioItem, Mark, Overlay, Skill, Timeline } from '../shared/types';
 import type { Fork } from './cuts';
+import { MARKET, ensureMarketPlugin, installedVersions } from './market';
 import { systemPrompt } from './prompt';
 import { agentConfig } from './settings';
 
@@ -16,6 +17,8 @@ import { agentConfig } from './settings';
 const BUILTIN = path.resolve(import.meta.dirname, '../../skills');
 
 const EXAMPLE = 'example.mp4';
+/** Marketplace skills may ship their example in any of these. */
+const MARKET_EXAMPLES = ['example.mp4', 'example.mov', 'example.webm'];
 
 export async function listSkills(): Promise<Skill[]> {
   await mkdir(path.join(LIBRARY, '.claude-plugin'), { recursive: true });
@@ -24,21 +27,26 @@ export async function listSkills(): Promise<Skill[]> {
   const skills: Skill[] = [];
   const videos = await styleVideos();
   const favorites = await readFavorites();
-  for (const [plugin, root] of [['cutroom', BUILTIN], ['my', LIBRARY]] as const) {
+  await ensureMarketPlugin();
+  const versions = await installedVersions();
+  for (const [plugin, root] of [['cutroom', BUILTIN], ['my', LIBRARY], ['market', MARKET]] as const) {
     for (const dir of await readdir(path.join(root, 'skills'))) {
       const text = await readFile(path.join(root, 'skills', dir, 'SKILL.md'), 'utf8').catch(() => '');
       const field = (key: string): string => new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(text)?.[1]?.trim() ?? '';
       if (!text) continue;
       const id = `${plugin}:${dir}`;
       const saved = path.join(root, 'skills', dir, EXAMPLE);
+      const shipped = plugin === 'market' ? MARKET_EXAMPLES.find((f) => existsSync(path.join(root, 'skills', dir, f))) : undefined;
       const examples = [
         ...(plugin === 'my' && existsSync(saved) ? [{ file: saved, src: `media://style/${dir}/${EXAMPLE}`, label: 'Original — the style was saved from this' }] : []),
+        ...(shipped ? [{ file: path.join(root, 'skills', dir, shipped), src: `media://market/${dir}/${shipped}`, label: 'Example from the creator' }] : []),
         // `…/trip/exports/trip-01.mp4` → "trip / trip-01.mp4"
         ...(videos[id] ?? []).map((file) => ({ file, src: `media://export${encodeURI(file)}`, label: `${file.split(path.sep).at(-3)} / ${path.basename(file)}` })),
       ];
       const tags = field('tags').split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean);
       skills.push({
         id, name: field('name') || dir, description: field('description'), custom: plugin === 'my',
+        market: plugin === 'market' ? { slug: dir, version: versions[dir] ?? 0 } : undefined,
         kind: field('kind') === 'move' ? 'move' : 'style', tags, favorite: favorites.includes(id), source: field('source') || undefined, examples,
       });
     }
@@ -52,8 +60,12 @@ export function customSkillDir(id: string): string {
   if (!name) throw new Error('Only your own styles can be changed.');
   return path.join(LIBRARY, 'skills', name);
 }
-export const skillFile = (id: string): string =>
-  id.startsWith('my:') ? path.join(customSkillDir(id), 'SKILL.md') : path.join(BUILTIN, 'skills', id.replace(/^cutroom:/, ''), 'SKILL.md');
+export function skillFile(id: string): string {
+  if (id.startsWith('my:')) return path.join(customSkillDir(id), 'SKILL.md');
+  const market = /^market:([a-z0-9-]+)$/.exec(id)?.[1];
+  if (market) return path.join(MARKET, 'skills', market, 'SKILL.md');
+  return path.join(BUILTIN, 'skills', id.replace(/^cutroom:/, ''), 'SKILL.md');
+}
 
 const seconds = (t: number): string => `${t.toFixed(2)}s`;
 
@@ -178,9 +190,10 @@ export async function send(root: string, cut: string, text: string, marks: Mark[
         hooks: { PreToolUse: [{ matcher: 'Write|Edit|MultiEdit|NotebookEdit', hooks: [stayInCut(root, cut)] }] },
         // Only Cutroom's own instructions and skills — not the user's personal Claude Code setup.
         settingSources: [],
-        plugins: [{ type: 'local', path: BUILTIN }, { type: 'local', path: LIBRARY }],
+        // Marketplace skills are loaded like the library but stay read-only: canUseTool below never allows writing there.
+        plugins: [{ type: 'local', path: BUILTIN }, { type: 'local', path: LIBRARY }, { type: 'local', path: MARKET }],
         skills: 'all',
-        additionalDirectories: [LIBRARY],
+        additionalDirectories: [LIBRARY, MARKET],
         // The agent edits by running FFmpeg & co., so shell and file tools run without prompts.
         permissionMode: 'acceptEdits',
         allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'TodoWrite', ...Object.keys(config.mcpServers).map((name) => `mcp__${name}`)],

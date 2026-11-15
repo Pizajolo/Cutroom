@@ -6,6 +6,7 @@ import { Chat } from './Chat';
 import { AddFiles } from './AddFiles';
 import { Features } from './Features';
 import { Home } from './Home';
+import { SkillDialog } from './Market';
 import { Preview } from './Preview';
 import { Sources, Versions } from './ProjectPanels';
 import { Timeline } from './Timeline';
@@ -29,6 +30,8 @@ export function App() {
   /** The one popover that is open, if any. */
   const [panel, setPanel] = useState<'' | 'add' | 'versions' | 'settings'>('');
   const toggle = (name: typeof panel): void => setPanel(panel === name ? '' : name);
+  /** A skill opened from a cutroom://install link on the marketplace website. */
+  const [marketSlug, setMarketSlug] = useState('');
   const video = useRef<HTMLVideoElement>(null);
   const sender = useRef<((text: string) => void) | null>(null);
 
@@ -41,6 +44,7 @@ export function App() {
       api.on('media', setMedia),
       api.on('export', (done) => setExported((now) => (now.busy ? { ...now, done } : now))),
       api.on('tools', setTools),
+      api.on('market-open', setMarketSlug),
     ];
     return () => off.forEach((stop) => stop());
   }, []);
@@ -102,7 +106,8 @@ export function App() {
     </span>
   );
 
-  if (!project) return <Home onOpen={opened}>{toolNote}</Home>;
+  const marketDialog = marketSlug && <SkillDialog key={marketSlug} slug={marketSlug} onClose={() => setMarketSlug('')} />;
+  if (!project) return <><Home onOpen={opened}>{toolNote}</Home>{marketDialog}</>;
 
   return (
     <div className={pro ? 'app pro' : 'app'} onDragOver={(e) => e.preventDefault()} onDrop={drop}>
@@ -169,6 +174,7 @@ export function App() {
           <Sources />
         </aside>
       )}
+      {marketDialog}
       <Chat
         key={project.root} cuts={cuts} onCuts={(next) => void changeCuts(next)}
         timeline={timeline} onRestore={editTimeline} marks={marks} setMarks={setMarks} media={media} sender={sender}
