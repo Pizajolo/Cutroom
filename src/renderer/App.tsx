@@ -118,14 +118,13 @@ export function App() {
   );
 
   const marketDialog = marketSlug && <SkillDialog key={marketSlug} slug={marketSlug} onClose={() => setMarketSlug('')} />;
-  if (!project) return <><Home onOpen={opened}>{toolNote}</Home>{marketDialog}</>;
   const dialogs = guide ? (
     <Onboarding onClose={() => (setGuide(false), setGuided((n) => n + 1))} />
   ) : update && (
     <UpdateNotice update={update} onClose={(skip) => (skip && localStorage.setItem('skipUpdate', update.version), setUpdate(null))} />
   );
 
-  if (!project) return <><Home onOpen={opened} onGuide={() => setGuide(true)} settingsKey={guided}>{toolNote}</Home>{dialogs}</>;
+  if (!project) return <><Home onOpen={opened} onGuide={() => setGuide(true)} settingsKey={guided}>{toolNote}</Home>{marketDialog}{dialogs}</>;
 
   return (
     <div className={pro ? 'app pro' : 'app'} onDragOver={(e) => e.preventDefault()} onDrop={drop}>

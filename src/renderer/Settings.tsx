@@ -116,8 +116,8 @@ function MarketSettings() {
   );
 }
 
-/** Connections and defaults. Changes apply to the next message sent to Claude. */
-export function Settings() {
+/** Connections and defaults. Changes apply to the next message sent to Claude. `children` join the Save button. */
+export function Settings({ children }: { children?: React.ReactNode }) {
   const [saved, setSaved] = useState<SettingsData | null>(null);
   const [draft, setDraft] = useState<SettingsData | null>(null);
   const [claude, setClaude] = useState<ClaudeStatus | null>(null);

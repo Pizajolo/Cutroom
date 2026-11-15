@@ -143,8 +143,8 @@ src/main/             Electron shell: project folders, tool setup, preview, the 
   prompt.ts             what the agent knows about editing in Cutroom
   settings.ts           accounts, models, providers, MCP servers
   market.ts             Skill Marketplace: Google sign-in (loopback + PKCE), browse, install/update, reviews, publish
-src/renderer/         React UI: Home, Onboarding, Settings, Market, Chat, Preview, Timeline (+ Inspector, timelineOps)
   updates.ts            the check for a newer release on GitHub
+src/renderer/         React UI: Home, Onboarding, Settings, Market, Chat, Preview, Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
 native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
 ```
