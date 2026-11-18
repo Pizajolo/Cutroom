@@ -105,6 +105,7 @@ You decide how Claude may use the window, and Cutroom enforces it, not Claude:
 - **Speed:** careful 12–25 s, normal 6–12 s or quick 3–6 s between page views.
 - **Limits:** page views per message and per day.
 - **Automatic check:** off, daily or weekly, while Cutroom is open.
+- **Account analytics:** on by default, each check also reads the whole account’s numbers (views, profile views, reach, …) from TikTok Studio and, for Instagram, Meta Business Suite insights (needs a Facebook sign-in linked to the account). They show under Social › Account analytics and Claude sees them in the stats history.
 - **Window:** whether it's shown while Claude works.
 
 Claude gets read-only tools (`mcp__social__*`): open a page, read it, scroll, click a tab, take a screenshot, and save

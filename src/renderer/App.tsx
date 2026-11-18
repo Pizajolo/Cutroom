@@ -135,7 +135,7 @@ export function App() {
   return (
     <div className={pro ? 'app pro' : 'app'} onDragOver={(e) => e.preventDefault()} onDrop={drop}>
       <header>
-        <button className="ghost" title="Projects, styles and settings" onClick={() => void api.closeProject().then(() => setProject(null))}>
+        <button className="ghost home" title="Projects, styles and settings" onClick={() => void api.closeProject().then(() => setProject(null))}>
           <House size={16} /> Home
         </button>
         <strong>{project.name}</strong>

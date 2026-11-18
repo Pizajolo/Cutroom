@@ -8,20 +8,44 @@ import type {
   VideoStat,
 } from '../shared/social';
 
-/** The change of a profile count since the earliest count in the last `days` days. */
-export function growth(
+/** The change of a profile count since the earliest count in the last `days` days, and when that count was made. */
+export function change(
   rows: SocialSnapshot[],
   days: number,
   field: 'followers' | 'likes' = 'followers',
-): number | undefined {
+): { delta?: number; since?: string } {
   const latest = rows.findLast((r) => r[field] !== undefined);
-  if (!latest) return undefined;
+  if (!latest) return {};
   const since = Date.parse(latest.at) - days * 86_400_000;
   const base = rows.find(
     (r) => Date.parse(r.at) >= since && r[field] !== undefined && r !== latest,
   );
-  return base ? latest[field]! - base[field]! : undefined;
+  return base ? { delta: latest[field]! - base[field]!, since: base.at } : {};
 }
+export const growth = (
+  rows: SocialSnapshot[],
+  days: number,
+  field: 'followers' | 'likes' = 'followers',
+): number | undefined => change(rows, days, field).delta;
+
+/**
+ * The time a change covers, for “+120 in 7 days”. While counting (or the account) is younger than that, it says
+ * where it really starts: “since Nov 16”, or “since 09:12” today.
+ */
+export function period(since?: string, days = 7): string {
+  const start = since ? Date.parse(since) : NaN;
+  if (Number.isNaN(start) || Date.now() - start >= (days - 0.5) * 86_400_000) {
+    return days === 1 ? 'in 24 h' : `in ${days} days`;
+  }
+  const date = new Date(start);
+  return new Date().toDateString() === date.toDateString()
+    ? `since ${date.toLocaleTimeString(undefined, { timeStyle: 'short' })}`
+    : `since ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
+/** The earliest of some times (ISO), for a sum of changes that start at different moments. */
+const earliest = (times: (string | undefined)[]): string | undefined =>
+  times.filter((t): t is string => !!t).sort()[0];
 
 /** 1,284 in full; 12.9K and 1.2M from ten thousand on. */
 export const compact = (n: number): string =>
@@ -41,6 +65,8 @@ export interface Figure {
   value?: number;
   /** Change in the last 7 days. */
   delta?: number;
+  /** Where that change starts, when counting began less than 7 days ago. */
+  since?: string;
   /** What it is made of, e.g. “TikTok 8,210 · Instagram 4,270”. */
   detail?: string;
 }
@@ -98,16 +124,19 @@ export function summarize(status: SocialStatus, own: string[]): SocialSummary {
     followers: {
       value: sum(rows.map(latest('followers'))),
       delta: sum(rows.map((r) => growth(r, 7))),
+      since: earliest(rows.map((r) => change(r, 7).since)),
       detail: per(latest('followers')),
     },
     views: {
       value: sum(videos.map((v) => v.views)),
       delta: sum(videos.map((v) => v.views7d)),
+      since: earliest(videos.map((v) => (v.views7d === undefined ? undefined : v.since7d))),
       detail: `${videos.length} video${videos.length === 1 ? '' : 's'} counted`,
     },
     likes: {
       value: sum(rows.map(latest('likes'))),
       delta: sum(rows.map((r) => growth(r, 7, 'likes'))),
+      since: earliest(rows.map((r) => change(r, 7, 'likes').since)),
       detail: per(latest('likes')),
     },
     best: top[0],
@@ -123,9 +152,9 @@ export function summarize(status: SocialStatus, own: string[]): SocialSummary {
 /** A video's name for people: the Cutroom export it came from, else its caption. */
 export const videoName = (v: VideoStat): string => v.file?.split('/').pop() ?? v.caption ?? v.id;
 
-/** One big number: label, value, the change in the last 7 days and what it is made of. */
+/** One big number: label, value, the change in the last 7 days (or since counting began) and what it is made of. */
 export function Tile({ label, figure }: { label: string; figure: Figure }) {
-  const { value, delta, detail } = figure;
+  const { value, delta, since, detail } = figure;
   return (
     <div className="tile">
       <span className="label">{label}</span>
@@ -148,7 +177,7 @@ export function Tile({ label, figure }: { label: string; figure: Figure }) {
         ) : (
           <>
             {delta > 0 ? <TrendingUp size={14} /> : delta < 0 ? <TrendingDown size={14} /> : null}
-            {signed(delta)} in 7 days
+            {signed(delta)} {period(since)}
           </>
         )}
       </span>
@@ -165,7 +194,7 @@ export function BestVideo({ summary }: { summary: SocialSummary }) {
       <span className="label">Best video this week</span>
       <strong className="value">{best ? compact(best.views7d!) : '—'}</strong>
       <span className={best ? 'delta' : 'delta hint'}>
-        {best ? 'new views in 7 days' : 'Needs two counts a few days apart'}
+        {best ? `new views ${period(best.since7d)}` : 'Needs two counts a few days apart'}
       </span>
       {best && (
         <span className="hint detail" title={best.caption ?? best.url}>

@@ -75,6 +75,8 @@ export interface SocialSettings {
   perDay: number;
   /** Open the follower counts of your own profiles automatically, while Cutroom is open. */
   autoCheck: AutoCheck;
+  /** Each check also reads the account-wide numbers from the platform's own analytics (TikTok Studio, Meta Business Suite). */
+  analytics: boolean;
 }
 
 export const DEFAULT_SOCIAL: SocialSettings = {
@@ -86,6 +88,7 @@ export const DEFAULT_SOCIAL: SocialSettings = {
   perMessage: 15,
   perDay: 60,
   autoCheck: 'off',
+  analytics: true,
 };
 
 /** Read saved settings that may come from an older version. */
@@ -180,6 +183,64 @@ export interface SocialSnapshot {
   posts?: number;
   /** Anything else Claude read (views in the last 7 days, profile visits, …). */
   extra?: Record<string, number | string>;
+  /** The account-wide numbers on the platform's own analytics page, read by the check. */
+  insights?: Insights;
+}
+
+/** Account-wide numbers from TikTok Studio or Meta Business Suite, for the period the page shows. */
+export interface Insights {
+  /** The period as the page names it, e.g. “Last 7 days”. */
+  period?: string;
+  /** Figure name (e.g. “Post views”) → value. */
+  figures: Record<string, number>;
+}
+
+/**
+ * The figures the check looks for on each analytics page, with the names they go by (English and German, as the pages
+ * show them). A figure counts when its name stands alone on a line and a number follows within the next few lines.
+ */
+export const INSIGHT_FIGURES: Record<SocialPlatform, Record<string, string[]>> = {
+  tiktok: {
+    'Post views': ['post views', 'video views', 'beitragsaufrufe', 'videoaufrufe', 'aufrufe von beiträgen', 'aufrufe von videos'],
+    'Profile views': ['profile views', 'profilaufrufe'],
+    Likes: ['likes', 'gefällt mir', '„gefällt mir“-angaben', 'gefällt mir-angaben'],
+    Comments: ['comments', 'kommentare'],
+    Shares: ['shares', 'geteilt', 'geteilte inhalte', 'teilen'],
+    'Reached audience': ['reached audience', 'erreichtes publikum', 'erreichte zuschauer'],
+    'New followers': ['new followers', 'net followers', 'neue follower', 'netto-follower'],
+  },
+  instagram: {
+    Views: ['views', 'aufrufe'],
+    Reach: ['reach', 'accounts reached', 'reichweite', 'erreichte konten'],
+    'Content interactions': ['content interactions', 'interactions', 'interaktionen mit inhalten', 'interaktionen'],
+    'Profile visits': ['visits', 'profile visits', 'instagram profile visits', 'besuche', 'profilbesuche'],
+    Follows: ['follows', 'new follows', 'neue follows', 'follower-zuwachs'],
+    'Link clicks': ['link clicks', 'external link taps', 'linkklicks'],
+  },
+};
+
+const PURE_COUNT = /^[+]?\d[\d.,]*\s*(?:[KkMmBb]|Mio\.?|Tsd\.?|Mrd\.?)?$/;
+const PERIOD = /\b(?:last|past|letzte[nr]?|vergangene[nr]?)\s+(\d{1,3})\s+(?:days?|tage?n?)\b/i;
+
+/** Read the figures (and the period) from the visible text of an analytics page. */
+export function parseInsights(platform: SocialPlatform, text: string): Insights {
+  const norm = (line: string): string => line.toLowerCase().replace(/[:*]/g, '').replace(/[\s\u00a0]+/g, ' ').trim();
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const figures: Record<string, number> = {};
+  for (const [figure, names] of Object.entries(INSIGHT_FIGURES[platform])) {
+    for (let i = 0; i < lines.length && figures[figure] === undefined; i++) {
+      const line = norm(lines[i]!);
+      const name = names.find((n) => line === n || (line.startsWith(`${n} `) && PURE_COUNT.test(line.slice(n.length + 1))));
+      if (!name) continue;
+      // “Post views 1,234” on one line, or the name with the number a line or two below it (before any other name).
+      const candidates = line === name ? lines.slice(i + 1, i + 4) : [line.slice(name.length + 1)];
+      const value = candidates.find((c) => PURE_COUNT.test(c.trim()));
+      const parsed = value === undefined ? undefined : parseCount(value);
+      if (parsed !== undefined) figures[figure] = parsed;
+    }
+  }
+  const period = PERIOD.exec(text);
+  return { period: period ? `Last ${period[1]} days` : undefined, figures };
 }
 
 /** Counts of one video at one moment (a line in video-counts.jsonl). Its link and caption are kept apart, once. */
@@ -216,9 +277,11 @@ export interface VideoStat {
   comments?: number;
   shares?: number;
   extra?: Record<string, number | string>;
-  /** New views since the earliest count in the last 24 hours / 7 days. */
+  /** New views since the earliest count in the last 24 hours / 7 days (all views when it was posted inside that time). */
   views1d?: number;
   views7d?: number;
+  /** Where `views7d` starts: the earliest count in the last 7 days, or the posting time. Later than 7 days ago while counting is new. */
+  since7d?: string;
   /** How many times it was counted. */
   counts: number;
   /** The Cutroom export it was posted from, when a posted draft's caption matches. */
@@ -306,7 +369,12 @@ export interface SocialStatus {
   snapshots: SocialSnapshot[];
   /** The automatic check is running, or why it last failed. */
   checking: boolean;
-  lastCheck?: { at: string; error?: string };
+  lastCheck?: {
+    at: string;
+    error?: string;
+    /** Per platform, why its analytics page could not be read (the rest of the check still worked). */
+    insights?: Partial<Record<SocialPlatform, string>>;
+  };
   /** Proposed, posting and posted videos, newest first. */
   drafts: SocialDraft[];
   /** Every video counted so far (own and others’), with its latest counts. */

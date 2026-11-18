@@ -14,7 +14,7 @@ import {
 import { PLATFORMS } from '../shared/social';
 import type { ExportedVideo, SocialSettings, SocialStatus } from '../shared/social';
 import type { Brain, MarketSkill, Project, Skill } from '../shared/types';
-import { BestVideo, Tile, compact, ownAccounts, summarize, videoName } from './socialStats';
+import { BestVideo, Tile, compact, ownAccounts, period, summarize, videoName } from './socialStats';
 import type { SocialSummary } from './socialStats';
 import { api } from './lib';
 
@@ -613,7 +613,7 @@ function TopWidget({
               <span className="grow ellipsis" title={v.caption ?? v.url}>
                 {videoName(v)}
               </span>
-              <span className="num" title="New views in the last 7 days">
+              <span className="num" title={`New views ${period(v.since7d)}`}>
                 +{compact(v.views7d!)}
               </span>
             </li>

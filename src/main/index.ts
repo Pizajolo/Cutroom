@@ -402,6 +402,10 @@ void app.whenReady().then(() => {
   });
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(path.join(import.meta.dirname, '../renderer/index.html'));
+  // Full screen hides the window buttons: the page then drops the room it keeps for them.
+  win.on('enter-full-screen', () => emit('fullscreen', true));
+  win.on('leave-full-screen', () => emit('fullscreen', false));
+  win.webContents.on('did-finish-load', () => emit('fullscreen', !!win?.isFullScreen()));
   win.webContents.once('did-finish-load', () => {
     if (pendingSlug) emit('market-open', pendingSlug);
     pendingSlug = undefined;
