@@ -274,6 +274,9 @@ const MIME: Record<string, string> = {
 protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
 ]);
+// Keep the preview out of the system's media controls (macOS Now Playing, media keys, headphones). Otherwise a
+// "pause" from another app or device stops the preview a moment after it starts. Space bar and the buttons still work.
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
 /** `media://project/<path>` serves files from the open project, `media://style/<name>/example.mp4` from the style library,
  * `media://market/<slug>/example.mp4` from installed marketplace skills
