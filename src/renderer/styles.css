@@ -35,18 +35,29 @@ button.active { border-color: var(--feedback); color: var(--feedback); }
   color: var(--feedback); font-size: var(--font-size-caption); font-family: var(--font-mono);
 }
 
+/* Room for the macOS window buttons. Without them (full screen, or not a Mac) the edges match. */
+:root { --window-inset: 84px; --window-top: var(--titlebar-height); }
+:root.no-window-buttons { --window-inset: var(--space-3); --window-top: var(--space-3); }
+
 /* Home: a sidebar to move between pages, and the page. All pages share one width. */
 .shell { height: 100%; display: flex; }
 .sidebar {
-  flex: none; width: 216px; display: flex; flex-direction: column; overflow: hidden;
+  flex: none; width: 200px; display: flex; flex-direction: column; overflow: hidden;
   border-right: 1px solid var(--border-subtle); background: var(--bg-sidebar); transition: width var(--duration-normal) ease;
 }
 .shell.icons .sidebar { width: 76px; }
-/* The window buttons sit at the top left: Cutroom and the fold button go beside them, or under them when folded. */
-.sidebar-top { flex: none; display: flex; align-items: center; gap: var(--space-2); height: var(--titlebar-height); padding: 0 var(--space-2) 0 84px; -webkit-app-region: drag; }
-.sidebar-top .brand { flex: 1; min-width: 0; font-size: var(--font-size-emphasis); white-space: nowrap; }
-.shell.icons .sidebar-top { height: auto; flex-direction: column; padding: var(--titlebar-height) 0 var(--space-1); }
-.shell.icons .sidebar-top .brand { display: none; }
+/* The window buttons have the top strip to themselves. Below it, the fold button stands in the icon column and Cutroom
+   lines up with the page names, so folding only hides the names and nothing moves up or down. */
+.sidebar-top { flex: none; height: var(--window-top); -webkit-app-region: drag; }
+.sidebar-brand {
+  flex: none; display: flex; align-items: center; gap: var(--space-1); height: 34px; padding: 0 var(--space-2);
+  -webkit-app-region: drag;
+}
+.sidebar-brand .fold { flex: none; width: 32px; height: 32px; margin-left: calc(var(--space-1) + 1px); padding: 0; justify-content: center; border-radius: var(--radius-md); color: var(--text-secondary); }
+.sidebar-brand .brand { flex: 1; min-width: 0; overflow: hidden; font-size: var(--font-size-emphasis); white-space: nowrap; }
+.shell.icons .sidebar-brand { justify-content: center; }
+.shell.icons .sidebar-brand .fold { margin-left: 0; }
+.shell.icons .sidebar-brand .brand { display: none; }
 .nav-items { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: var(--space-2); }
 .nav-item {
   position: relative; flex: none; display: flex; align-items: center; width: 100%; height: 34px; gap: var(--space-3); padding: 0 var(--space-3);
@@ -116,9 +127,11 @@ input:not([type="radio"], [type="range"]), .settings textarea, .add-files textar
 .app.pro { grid-template-rows: var(--titlebar-height) minmax(0, 1fr) 300px; grid-template-areas: "header header" "preview chat" "timeline timeline"; }
 header {
   grid-area: header; display: flex; align-items: center; gap: var(--space-2);
-  padding: 0 var(--space-3) 0 84px; /* room for the window buttons */
+  padding: 0 var(--space-3) 0 var(--window-inset); /* room for the window buttons */
   border-bottom: 1px solid var(--border-subtle); background: var(--bg-sidebar); -webkit-app-region: drag;
 }
+/* Ghost buttons keep padding around their icon: pull Home out so its icon has the same margin as Export on the right. */
+header > .home { margin-left: calc(-1 * var(--space-2) - 1px); }
 .switch { display: flex; padding: 2px; border-radius: var(--radius-md); background: var(--bg-input); -webkit-app-region: no-drag; }
 .switch button { height: 24px; border: 0; background: none; color: var(--text-muted); }
 .switch button[aria-selected="true"] { background: var(--bg-active); color: var(--text-primary); }
@@ -534,3 +547,13 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 @container (max-width: 400px) {
   .tiles { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Social › Account analytics: the platform's own numbers per account */
+.insights { display: flex; flex-direction: column; gap: var(--space-2); }
+.insights > li { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-panel); }
+.insights .row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.insights .figures { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); }
+.insights .figure { display: flex; flex-direction: column; gap: 2px; min-width: 96px; }
+.insights .figure strong { font-size: var(--font-size-heading); font-variant-numeric: tabular-nums; }
+.note.warn-text { color: var(--warning); }
+.stats .partial { text-decoration: underline dotted var(--text-muted); text-underline-offset: 3px; cursor: help; }

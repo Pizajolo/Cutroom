@@ -25,3 +25,13 @@ const api = {
 } as unknown as CutroomApi;
 
 contextBridge.exposeInMainWorld('cutroom', api);
+
+// The page leaves room for the macOS window buttons only while they are there: not in full screen, not on other systems.
+const mac = process.platform === 'darwin';
+let fullScreen = false;
+const markWindow = (): void => void document.documentElement?.classList.toggle('no-window-buttons', !mac || fullScreen);
+window.addEventListener('DOMContentLoaded', markWindow);
+ipcRenderer.on('fullscreen', (_event, on: boolean) => {
+  fullScreen = on;
+  markWindow();
+});

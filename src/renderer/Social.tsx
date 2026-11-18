@@ -27,7 +27,7 @@ import type {
   VideoStat,
 } from '../shared/social';
 import { SocialChat } from './SocialChat';
-import { BestVideo, Tile, growth, ownAccounts, signed, summarize } from './socialStats';
+import { BestVideo, Tile, change, ownAccounts, period, signed, summarize } from './socialStats';
 import type { Settings } from '../shared/types';
 import { api } from './lib';
 
@@ -36,6 +36,23 @@ const clean = (error: Error): string =>
 const when = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const count = (n?: number): string => (n === undefined ? '—' : n.toLocaleString());
+
+/** A change over the last 7 days; while counting is younger than that, it says where it starts. */
+function Week({ value, since, short }: { value?: number; since?: string; short?: boolean }) {
+  const span = period(since);
+  if (value === undefined || span === period()) return <>{signed(value)}</>;
+  // In a narrow column the start goes in a tooltip, and a note under the table says why.
+  return short ? (
+    <span className="partial" title={`New ${span}: counting is younger than 7 days`}>
+      {signed(value)}*
+    </span>
+  ) : (
+    <>
+      {signed(value)}
+      <span className="hint"> {span}</span>
+    </>
+  );
+}
 
 /** What the user agrees to before anything reaches TikTok or Instagram. Also shown, shorter, while it is on. */
 function Risks() {
@@ -149,18 +166,27 @@ function Highlights({
 const day = (iso?: string): string =>
   iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
 
+interface ViewTotal {
+  videos: number;
+  views: number;
+  views7d?: number;
+  /** Where the 7-day gain starts, when counting is younger than that. */
+  since7d?: string;
+}
+
 /** Views of the counted videos per account, and the views they gained in the last 7 days. */
-function viewTotals(
-  videos: VideoStat[],
-): Map<string, { videos: number; views: number; views7d?: number }> {
-  const totals = new Map<string, { videos: number; views: number; views7d?: number }>();
+function viewTotals(videos: VideoStat[]): Map<string, ViewTotal> {
+  const totals = new Map<string, ViewTotal>();
   for (const v of videos) {
     const key = `${v.platform}:${v.handle}`;
     const t = totals.get(key) ?? { videos: 0, views: 0 };
+    const counted = v.views7d !== undefined;
     totals.set(key, {
       videos: t.videos + 1,
       views: t.views + (v.views ?? 0),
-      views7d: v.views7d === undefined ? t.views7d : (t.views7d ?? 0) + v.views7d,
+      views7d: counted ? (t.views7d ?? 0) + v.views7d! : t.views7d,
+      since7d:
+        counted && v.since7d && (!t.since7d || v.since7d < t.since7d) ? v.since7d : t.since7d,
     });
   }
   return totals;
@@ -277,7 +303,9 @@ function Videos({ videos, own }: { videos: VideoStat[]; own: string[] }) {
                   <td className="hint">{day(v.posted ?? v.firstSeen)}</td>
                   <td>{count(v.views)}</td>
                   <td>{signed(v.views1d)}</td>
-                  <td>{signed(v.views7d)}</td>
+                  <td>
+                    <Week value={v.views7d} since={v.since7d} />
+                  </td>
                   <td>
                     {ratio === undefined ? (
                       '—'
@@ -301,6 +329,89 @@ function Videos({ videos, own }: { videos: VideoStat[]; own: string[] }) {
         </button>
       )}
     </>
+  );
+}
+
+/** The account-wide numbers the last checks read from TikTok Studio and Meta Business Suite, per own account. */
+function Analytics({
+  status,
+  own,
+  enabled,
+  onAccounts,
+}: {
+  status: SocialStatus;
+  own: string[];
+  enabled: boolean;
+  onAccounts: () => void;
+}) {
+  const accounts = own.flatMap((key) => {
+    const [platform, handle] = key.split(':') as [SocialPlatform, string];
+    const latest = status.snapshots.findLast(
+      (s) => s.platform === platform && s.handle === handle && s.insights,
+    );
+    const problem = status.lastCheck?.insights?.[platform];
+    return latest || (enabled && problem) ? [{ platform, handle, latest, problem }] : [];
+  });
+  if (!enabled && !accounts.length) {
+    return (
+      <section>
+        <h2>Account analytics</h2>
+        <p className="hint">
+          The checks can also read your whole account’s numbers (views, profile views, reach) from
+          TikTok Studio and Instagram insights.{' '}
+          <button className="link" onClick={onAccounts}>
+            Turn it on
+          </button>
+        </p>
+      </section>
+    );
+  }
+  return (
+    <section>
+      <h2>Account analytics</h2>
+      <p className="hint">
+        As TikTok Studio and Instagram insights count them, for the whole account. Read with each
+        stat check.
+      </p>
+      {accounts.length ? (
+        <ul className="insights">
+          {accounts.map(({ platform, handle, latest, problem }) => (
+            <li key={`${platform}:${handle}`}>
+              <div className="row">
+                <strong>
+                  {PLATFORMS[platform].label} · @{handle}
+                </strong>
+                <span className="hint">
+                  {latest
+                    ? `${latest.insights!.period ?? 'Period as shown on the page'} · read ${when(latest.at)}`
+                    : 'Not read yet'}
+                </span>
+                <span className="spacer" />
+                <button
+                  className="ghost"
+                  onClick={() => void api.socialOpen(platform, 'analytics')}
+                >
+                  Open {platform === 'tiktok' ? 'TikTok Studio' : 'insights'}
+                </button>
+              </div>
+              {latest && (
+                <div className="figures">
+                  {Object.entries(latest.insights!.figures).map(([name, value]) => (
+                    <span key={name} className="figure">
+                      <span className="hint">{name}</span>
+                      <strong>{value.toLocaleString()}</strong>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {problem && <p className="note warn-text">Last check: {problem}</p>}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="hint">Nothing read yet: it comes with the next stat check.</p>
+      )}
+    </section>
   );
 }
 
@@ -405,6 +516,12 @@ export function Social() {
   });
   const mine = ownAccounts(draft);
   const totals = viewTotals(status.videos);
+  // The earliest start of a 7-day column that does not reach back 7 days yet, as “since Nov 16”.
+  const partial = ownFirst
+    .flatMap(([key, rows]) => [change(rows, 7).since, totals.get(key)?.since7d])
+    .filter((t): t is string => !!t && period(t) !== period())
+    .sort()
+    .map((t) => period(t))[0];
 
   return (
     <div className="social">
@@ -702,6 +819,23 @@ export function Social() {
                 </span>
               </div>
 
+              <div className="fields wide">
+                <span className="task">Account analytics</span>
+                <label className="choice">
+                  <input
+                    type="checkbox"
+                    checked={draft.analytics}
+                    onChange={(e) => set({ analytics: e.target.checked })}
+                  />
+                  Read them with each check
+                </label>
+                <span className="hint grow">
+                  Views, profile views and reach for the whole account, from TikTok Studio and
+                  Instagram insights (in Meta Business Suite: needs a Facebook sign-in linked to the
+                  account). One more page per platform.
+                </span>
+              </div>
+
               <p className="hint">
                 The Social window stays hidden while Claude and the checks work in it. It only comes
                 up when something needs you: a sign-in, a code, a captcha or a page that looks
@@ -724,6 +858,12 @@ export function Social() {
       {view === 'overview' && (
         <div className="social-grid">
           <div className="social-main">
+            <Analytics
+              status={status}
+              own={mine}
+              enabled={draft.analytics}
+              onAccounts={() => setView('accounts')}
+            />
             <section>
               <h2>Follower counts</h2>
               <p className="hint">
@@ -733,43 +873,60 @@ export function Social() {
                   ` Last check: ${when(status.lastCheck.at)}${status.lastCheck.error ? ` — ${status.lastCheck.error}` : ''}.`}
               </p>
               {ownFirst.length ? (
-                <table className="stats wide">
-                  <thead>
-                    <tr>
-                      <th>Account</th>
-                      <th>Followers</th>
-                      <th>Last 24 h</th>
-                      <th>Last 7 days</th>
-                      <th>Likes</th>
-                      <th title="Sum of the views of the videos counted so far">Video views</th>
-                      <th>Views, 7 days</th>
-                      <th>Counted</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ownFirst.map(([key, rows]) => {
-                      const latest = rows.at(-1)!;
-                      return (
-                        <tr key={key}>
-                          <td>
-                            {PLATFORMS[latest.platform].label} · @{latest.handle}
-                          </td>
-                          <td>{count(latest.followers)}</td>
-                          <td>{signed(growth(rows, 1))}</td>
-                          <td>{signed(growth(rows, 7))}</td>
-                          <td>{count(latest.likes)}</td>
-                          <td title={`${totals.get(key)?.videos ?? 0} videos counted`}>
-                            {count(totals.get(key)?.views)}
-                          </td>
-                          <td>{signed(totals.get(key)?.views7d)}</td>
-                          <td className="hint">
-                            {when(latest.at)} · {rows.length} count{rows.length === 1 ? '' : 's'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <>
+                  <table className="stats wide">
+                    <thead>
+                      <tr>
+                        <th>Account</th>
+                        <th>Followers</th>
+                        <th>Last 24 h</th>
+                        <th>Last 7 days</th>
+                        <th>Likes</th>
+                        <th title="Sum of the views of the videos counted so far">Video views</th>
+                        <th>Views, 7 days</th>
+                        <th>Counted</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ownFirst.map(([key, rows]) => {
+                        const latest = rows.at(-1)!;
+                        const week = change(rows, 7);
+                        return (
+                          <tr key={key}>
+                            <td>
+                              {PLATFORMS[latest.platform].label} · @{latest.handle}
+                            </td>
+                            <td>{count(latest.followers)}</td>
+                            <td>{signed(change(rows, 1).delta)}</td>
+                            <td>
+                              <Week value={week.delta} since={week.since} short />
+                            </td>
+                            <td>{count(latest.likes)}</td>
+                            <td title={`${totals.get(key)?.videos ?? 0} videos counted`}>
+                              {count(totals.get(key)?.views)}
+                            </td>
+                            <td>
+                              <Week
+                                value={totals.get(key)?.views7d}
+                                since={totals.get(key)?.since7d}
+                                short
+                              />
+                            </td>
+                            <td className="hint">
+                              {when(latest.at)} · {rows.length} count{rows.length === 1 ? '' : 's'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {partial && (
+                    <p className="hint">
+                      * Counting began {partial.replace('since ', '')}, so these cover less than 7
+                      days so far.
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="hint">
                   Nothing counted yet. Add your handle and press Check my stats now, or ask Claude

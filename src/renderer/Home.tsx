@@ -143,11 +143,12 @@ export function Home({
   return (
     <div className={iconsOnly ? 'shell icons' : 'shell'}>
       <nav className="sidebar" aria-label="Cutroom">
-        <div className="sidebar-top">
-          <strong className="brand">Cutroom</strong>
-          {!narrow && (
+        {/* The window buttons sit alone in the top strip, so nothing below moves when the sidebar folds. */}
+        <div className="sidebar-top" />
+        {!narrow && (
+          <div className="sidebar-brand">
             <button
-              className="ghost round fold"
+              className="ghost fold"
               title={folded ? 'Show names' : 'Icons only'}
               aria-label={folded ? 'Expand sidebar' : 'Collapse sidebar'}
               aria-expanded={!folded}
@@ -155,8 +156,9 @@ export function Home({
             >
               {folded ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
-          )}
-        </div>
+            <strong className="brand">Cutroom</strong>
+          </div>
+        )}
         <div className="nav-items">
           {NAV.map(({ page: p, icon }) =>
             link(p, icon, page === p, () => go(p), p === 'Social' ? drafts : undefined),
