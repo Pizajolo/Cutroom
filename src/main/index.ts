@@ -4,7 +4,11 @@ import type { FSWatcher } from 'node:fs';
 import { readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { BrowserWindow, app, dialog, ipcMain, protocol, shell } from 'electron';
+import { BrowserWindow, app, dialog, ipcMain, nativeImage, nativeTheme, protocol, shell } from 'electron';
+import dockDark from '../../resources/dock-dark.png?asset';
+import dockLight from '../../resources/dock-light.png?asset';
+import iconDark from '../../resources/icon-dark.png?asset';
+import iconLight from '../../resources/icon-light.png?asset';
 import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
 import { LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
@@ -386,6 +390,16 @@ app.on('second-instance', (_event, argv) => {
   else win?.focus();
 });
 
+/**
+ * The app icon follows the system appearance: the deep blue logo when it is light, the pale one when it is dark.
+ * On macOS that is the Dock icon (drawn on Apple's icon grid); elsewhere the window icon.
+ */
+function showIcon(): void {
+  const dark = nativeTheme.shouldUseDarkColors;
+  if (process.platform === 'darwin') app.dock?.setIcon(nativeImage.createFromPath(dark ? dockDark : dockLight));
+  else win?.setIcon(nativeImage.createFromPath(dark ? iconDark : iconLight));
+}
+
 void app.whenReady().then(() => {
   protocol.handle('media', serveMedia);
   for (const [name, fn] of Object.entries(api)) {
@@ -398,10 +412,13 @@ void app.whenReady().then(() => {
     minHeight: 560,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#191c20',
+    icon: process.platform === 'darwin' ? undefined : nativeTheme.shouldUseDarkColors ? iconDark : iconLight,
     webPreferences: { preload: path.join(import.meta.dirname, '../preload/index.cjs') },
   });
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(path.join(import.meta.dirname, '../renderer/index.html'));
+  showIcon();
+  nativeTheme.on('updated', showIcon);
   // Full screen hides the window buttons: the page then drops the room it keeps for them.
   win.on('enter-full-screen', () => emit('fullscreen', true));
   win.on('leave-full-screen', () => emit('fullscreen', false));
