@@ -397,6 +397,9 @@ button.link { height: auto; padding: 0; border: 0; background: none; color: var(
 .posts li { gap: var(--space-2); min-height: var(--control-height-lg); font-size: var(--font-size-small); }
 .posts .when { flex: none; width: 140px; }
 .posts .caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.videos td.video { max-width: 0; width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.videos td.video .tag { margin-right: var(--space-1); }
+.videos th:not(:first-child), .videos td:not(.video) { white-space: nowrap; }
 
 /* A proposed post */
 .draft { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-panel-raised); user-select: none; }

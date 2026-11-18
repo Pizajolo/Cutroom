@@ -24,6 +24,7 @@ import type {
   SocialSettings,
   SocialSnapshot,
   SocialStatus,
+  VideoStat,
 } from '../shared/social';
 import { SocialChat } from './SocialChat';
 import type { Settings } from '../shared/types';
@@ -85,6 +86,163 @@ function growth(rows: SocialSnapshot[], days: number): number | undefined {
 }
 const signed = (n?: number): string =>
   n === undefined ? '—' : `${n > 0 ? '+' : ''}${n.toLocaleString()}`;
+const day = (iso?: string): string =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
+
+/** Views of the counted videos per account, and the views they gained in the last 7 days. */
+function viewTotals(
+  videos: VideoStat[],
+): Map<string, { videos: number; views: number; views7d?: number }> {
+  const totals = new Map<string, { videos: number; views: number; views7d?: number }>();
+  for (const v of videos) {
+    const key = `${v.platform}:${v.handle}`;
+    const t = totals.get(key) ?? { videos: 0, views: 0 };
+    totals.set(key, {
+      videos: t.videos + 1,
+      views: t.views + (v.views ?? 0),
+      views7d: v.views7d === undefined ? t.views7d : (t.views7d ?? 0) + v.views7d,
+    });
+  }
+  return totals;
+}
+
+const median = (values: number[]): number | undefined => {
+  if (!values.length) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1]! + sorted[mid]!) / 2;
+};
+
+type VideoSort = 'views' | 'views7d' | 'newest';
+
+/** Every counted video of the chosen accounts: views, growth and how it compares with the account's usual video. */
+function Videos({ videos, own }: { videos: VideoStat[]; own: string[] }) {
+  const accounts = [...new Set(videos.map((v) => `${v.platform}:${v.handle}`))];
+  const [account, setAccount] = useState('own');
+  const [sort, setSort] = useState<VideoSort>('views');
+  const [all, setAll] = useState(false);
+  if (!videos.length) {
+    return (
+      <p className="hint">
+        No videos counted yet. Check my stats now also reads the views of your videos (TikTok
+        profile, Instagram Reels tab); the first time it goes further back, so it takes a few
+        minutes.
+      </p>
+    );
+  }
+  const shown = videos.filter((v) =>
+    account === 'own'
+      ? own.includes(`${v.platform}:${v.handle}`)
+      : account === 'all' || account === `${v.platform}:${v.handle}`,
+  );
+  // “Typical” = the median views of the same account's videos.
+  const typical = new Map(
+    accounts.map((a) => [
+      a,
+      median(
+        videos
+          .filter((v) => `${v.platform}:${v.handle}` === a && v.views !== undefined)
+          .map((v) => v.views!),
+      ),
+    ]),
+  );
+  const newest = (v: VideoStat): number => Date.parse(v.posted ?? v.firstSeen) - (v.order ?? 0);
+  const sorted = [...shown].sort((a, b) =>
+    sort === 'newest'
+      ? newest(b) - newest(a)
+      : sort === 'views7d'
+        ? (b.views7d ?? -1) - (a.views7d ?? -1)
+        : (b.views ?? -1) - (a.views ?? -1),
+  );
+  const rows = all ? sorted : sorted.slice(0, 25);
+  return (
+    <>
+      <div className="fields">
+        <select value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Account">
+          <option value="own">My accounts</option>
+          <option value="all">All accounts</option>
+          {accounts.map((a) => {
+            const [platform, handle] = a.split(':') as [SocialPlatform, string];
+            return (
+              <option key={a} value={a}>
+                {PLATFORMS[platform].label} · @{handle}
+              </option>
+            );
+          })}
+        </select>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as VideoSort)}
+          aria-label="Sort"
+        >
+          <option value="views">Most views</option>
+          <option value="views7d">Most new views (7 days)</option>
+          <option value="newest">Newest</option>
+        </select>
+        <span className="hint grow">
+          {shown.length} video{shown.length === 1 ? '' : 's'} ·{' '}
+          {shown.reduce((n, v) => n + (v.views ?? 0), 0).toLocaleString()} views in total
+        </span>
+      </div>
+      {rows.length ? (
+        <table className="stats wide videos">
+          <thead>
+            <tr>
+              <th>Video</th>
+              <th>Posted</th>
+              <th>Views</th>
+              <th>Last 24 h</th>
+              <th>Last 7 days</th>
+              <th title="Views compared with the median video of the same account">vs. typical</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((v) => {
+              const usual = typical.get(`${v.platform}:${v.handle}`);
+              const ratio = v.views !== undefined && usual ? v.views / usual : undefined;
+              return (
+                <tr key={`${v.platform}:${v.handle}:${v.id}`}>
+                  <td className="video" title={`${v.url}${v.caption ? `\n\n${v.caption}` : ''}`}>
+                    <span className="tag">{PLATFORMS[v.platform].label}</span>
+                    {account !== 'own' && !own.includes(`${v.platform}:${v.handle}`) && (
+                      <span className="hint"> @{v.handle}</span>
+                    )}
+                    {v.file && (
+                      <span className="tag ok" title={v.file}>
+                        {v.file.split('/').pop()}
+                      </span>
+                    )}
+                    <span className="caption">{v.caption || v.id}</span>
+                  </td>
+                  <td className="hint">{day(v.posted ?? v.firstSeen)}</td>
+                  <td>{count(v.views)}</td>
+                  <td>{signed(v.views1d)}</td>
+                  <td>{signed(v.views7d)}</td>
+                  <td>
+                    {ratio === undefined ? (
+                      '—'
+                    ) : (
+                      <span className={ratio >= 2 ? 'tag ok' : ratio < 0.5 ? 'tag warn' : 'tag'}>
+                        {ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}×
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
+        <p className="hint">No videos counted for this account yet.</p>
+      )}
+      {sorted.length > 25 && (
+        <button className="ghost" onClick={() => setAll(!all)}>
+          {all ? 'Show the top 25' : `Show all ${sorted.length}`}
+        </button>
+      )}
+    </>
+  );
+}
 
 /** Home › Social: sign in, decide how Claude may use the accounts, and see what it opened and what it counted. */
 export function Social() {
@@ -185,6 +343,10 @@ export function Social() {
       SOCIAL_PLATFORMS.some((p) => key === `${p}:${cleanHandle(draft.handles[p])}`) ? 0 : 1;
     return own(a) - own(b) || a.localeCompare(b);
   });
+  const ownAccounts = SOCIAL_PLATFORMS.filter((p) => cleanHandle(draft.handles[p])).map(
+    (p) => `${p}:${cleanHandle(draft.handles[p])}`,
+  );
+  const totals = viewTotals(status.videos);
 
   return (
     <div className="social wide">
@@ -212,7 +374,7 @@ export function Social() {
         </span>
         <button
           disabled={!!busy || status.checking}
-          title="Open your own profiles now and note followers, following and likes"
+          title="Open your own profiles now and note followers, likes and the views of each video"
           onClick={() => void run('check', api.socialCheckNow)}
         >
           <RefreshCw size={14} /> {status.checking ? 'Checking…' : 'Check my stats now'}
@@ -512,6 +674,8 @@ export function Social() {
                       <th>Last 24 h</th>
                       <th>Last 7 days</th>
                       <th>Likes</th>
+                      <th title="Sum of the views of the videos counted so far">Video views</th>
+                      <th>Views, 7 days</th>
                       <th>Counted</th>
                     </tr>
                   </thead>
@@ -527,6 +691,10 @@ export function Social() {
                           <td>{signed(growth(rows, 1))}</td>
                           <td>{signed(growth(rows, 7))}</td>
                           <td>{count(latest.likes)}</td>
+                          <td title={`${totals.get(key)?.videos ?? 0} videos counted`}>
+                            {count(totals.get(key)?.views)}
+                          </td>
+                          <td>{signed(totals.get(key)?.views7d)}</td>
                           <td className="hint">
                             {when(latest.at)} · {rows.length} count{rows.length === 1 ? '' : 's'}
                           </td>
@@ -541,6 +709,16 @@ export function Social() {
                   about your stats in a project.
                 </p>
               )}
+            </section>
+
+            <section>
+              <h2>Videos</h2>
+              <p className="hint">
+                Views per video from Check my stats now and the automatic check, plus what Claude
+                saved from TikTok Studio or Instagram insights. Ask Claude which videos work and
+                why.
+              </p>
+              <Videos videos={status.videos} own={ownAccounts} />
             </section>
 
             <section>

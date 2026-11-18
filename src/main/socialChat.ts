@@ -41,7 +41,10 @@ Your working folder is scratch space: put frames and audio you extract there.
 
 ## Stats and competitors
 - Use the social tools when the user asks about their numbers, their competitors, or what works (if they are available).
-  Open only what the question needs. Compare with saved counts (stats_history) to talk about growth.`;
+  Open only what the question needs. Compare with saved counts (stats_history) to talk about growth.
+- For which videos do well, start from video_stats (views per video, new views, totals, the Cutroom export each came
+  from). Compare the top videos with the weak ones — hook, length, topic, posting time — and, when it helps, watch the
+  exported files to say what the good ones share.`;
 
 let turn: AbortController | undefined;
 let working = false;
