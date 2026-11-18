@@ -9,10 +9,11 @@ import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
 import { LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
 import { PROJECT_DIRS, cutFiles } from '../shared/types';
-import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Timeline } from '../shared/types';
+import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Settings, Timeline } from '../shared/types';
 import * as agent from './agent';
 import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
 import * as market from './market';
+import * as social from './social';
 import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
 import { brain, claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
 import { ensureTools, toolStatus } from './tools';
@@ -261,7 +262,35 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   marketPublish: market.publish,
   marketMine: market.mine,
   marketUpdateOwn: market.updateOwn,
+  // Social analytics
+  socialStatus: async () => social.status(await socialRules()),
+  socialOpen: async (platform, page) => social.open(platform, page, await socialRules()),
+  async socialSaveLogin(platform, username, password) {
+    await social.saveLogin(platform, username, password);
+    return social.status(await socialRules());
+  },
+  async socialForgetLogin(platform) {
+    await social.forgetLogin(platform);
+    return social.status(await socialRules());
+  },
+  async socialSignIn(platform) {
+    const rules = await socialRules();
+    await social.signIn(platform, rules);
+    return social.status(rules);
+  },
+  async socialSignOut(platform) {
+    await social.signOut(platform);
+    return social.status(await socialRules());
+  },
+  async socialCheckNow() {
+    const rules = await socialRules();
+    await social.checkNow(rules);
+    return social.status(rules);
+  },
 };
+
+/** The user's rules for the social browser, read fresh each time so changes apply at once. */
+const socialRules = async (): Promise<Settings['social']> => (await loadSettings()).social;
 
 // --- App ---------------------------------------------------------------------------------
 
@@ -348,6 +377,10 @@ void app.whenReady().then(() => {
     pendingSlug = undefined;
   });
   void ensureTools((tools) => emit('tools', tools));
+  // The social window only hides when closed; it goes when the main window does.
+  win.on('closed', () => social.close());
+  social.onChange(() => void socialRules().then(social.status).then((status) => emit('social', status), () => {}));
+  social.startAutoCheck(socialRules);
 });
 
 app.on('window-all-closed', () => {

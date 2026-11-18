@@ -39,6 +39,7 @@ export const FEATURES = {
   lipsync: { label: 'Lip sync (portrait + audio)', group: 'Generated picture', models: ['fal:minimax/h3-max/lip-sync/image-to-video'] },
   cutout: { label: 'Subject cutouts and stickers', group: 'Generated picture', models: [LOCAL_CUTOUT, 'fal:lightricks/ltx-2.5/alpha-gen'] },
   codex: { label: 'Codex (second agent)', group: 'Other', via: 'ChatGPT account' },
+  social: { label: 'Social analytics (TikTok, Instagram)', group: 'Other', via: 'Your own sign-in, in a browser on this Mac' },
 } as const satisfies Record<string, { label: string; group: string; via?: string; models?: readonly string[] }>;
 export type Feature = keyof typeof FEATURES;
 
@@ -77,7 +78,9 @@ export function featureStates(settings: Settings, offHere: string[], codexSigned
       : model?.startsWith('codex:')
         ? { label: 'ChatGPT (Codex)', pricing: 'subscription' }
         : model ? CONNECTIONS[connectionOf(model)] : undefined;
-    const connected = model ? reachable(model) : feature.via === 'ElevenLabs' ? eleven : id === 'codex' ? codexSignedIn : true;
+    const connected = model
+      ? reachable(model)
+      : feature.via === 'ElevenLabs' ? eleven : id === 'codex' ? codexSignedIn : id === 'social' ? !!settings.social?.accepted : true;
     const on = saved?.on ?? true;
     return {
       id,

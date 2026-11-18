@@ -11,7 +11,9 @@ import { patchProject, readProject } from '../cli/project';
 import { HOME, run } from '../cli/run';
 import { CONNECTIONS, LOCAL_CUTOUT, featureStates, llmProviders } from '../shared/features';
 import type { Connection, Feature, FeatureState } from '../shared/features';
+import { socialSettings } from '../shared/social';
 import { modelOptions } from '../shared/types';
+import * as social from './social';
 import type { Brain, ClaudeStatus, ModelChoice, Settings, Voice } from '../shared/types';
 
 const FILE = path.join(HOME, 'settings.enc');
@@ -24,11 +26,12 @@ const DEFAULTS: Settings = {
   keys: Object.fromEntries(Object.keys(CONNECTIONS).map((id) => [id, ''])) as Settings['keys'],
   llmModels: {},
   features: {},
+  social: socialSettings(),
 };
 export async function loadSettings(): Promise<Settings> {
   try {
     const saved = JSON.parse(safeStorage.decryptString(await readFile(FILE))) as Partial<Settings>;
-    return { ...DEFAULTS, ...saved, keys: { ...DEFAULTS.keys, ...saved.keys } };
+    return { ...DEFAULTS, ...saved, keys: { ...DEFAULTS.keys, ...saved.keys }, social: socialSettings(saved.social) };
   } catch {
     return DEFAULTS;
   }
@@ -136,6 +139,10 @@ export async function agentConfig(root: string): Promise<AgentConfig> {
   }
   if (states.some((s) => s.id === 'cutout' && s.active && s.model === LOCAL_CUTOUT)) {
     notes += '\nSubject cutouts and stickers are made on this Mac, free: use the cutout skill.';
+  }
+  if (active('social')) {
+    mcpServers.social = social.server(settings.social);
+    notes += `\n${social.notes(settings.social).trim()}`;
   }
   const generated = states.filter((s) => s.active && s.model && !s.model.startsWith('local:'));
   if (generated.length) {

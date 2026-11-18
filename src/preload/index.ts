@@ -10,6 +10,7 @@ const METHODS = [
   'marketAccount', 'marketLogin', 'marketLogout', 'marketSetServer', 'marketOpenWeb', 'marketBrowse', 'marketDetail', 'marketInstall', 'marketUninstall',
   'marketInstalled', 'marketFavorites', 'marketSetFavorite', 'marketReview', 'marketDeleteReview', 'marketReport', 'marketBuy', 'marketPublish', 'marketMine',
   'marketUpdateOwn', 'brain', 'checkUpdate', 'downloadUpdate',
+  'socialStatus', 'socialOpen', 'socialSaveLogin', 'socialForgetLogin', 'socialSignIn', 'socialSignOut', 'socialCheckNow',
 ] as const;
 
 const api = {

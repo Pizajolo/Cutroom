@@ -108,6 +108,8 @@ async function describeMarks(root: string, cut: string, marks: Mark[], timeline:
 
 const describeTool = (name: string, input: Record<string, unknown>): string => {
   if (name === 'Bash') return String(input.description ?? input.command ?? 'Running a command').slice(0, 120);
+  if (name.startsWith('mcp__social__') && typeof input.url === 'string') return `Opening ${input.url}`;
+  if (name.startsWith('mcp__social__') && typeof input.text === 'string') return `Clicking “${input.text}”`;
   if (name.startsWith('mcp__')) return name.slice(5).replace(/__/, ': ').replace(/_/g, ' ');
   if (name === 'Skill') return `Using ${String(input.skill ?? '').replace(/^.*:/, '')}`;
   if (typeof input.file_path === 'string') return `${name} ${path.basename(input.file_path)}`;
