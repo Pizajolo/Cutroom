@@ -377,6 +377,15 @@ button.link { height: auto; padding: 0; border: 0; background: none; color: var(
 .tag.error { background: var(--danger-bg); color: var(--danger); }
 
 /* Social overview: stats and posts on the left, Claude on the right */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+.tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-panel); }
+.tile .label { color: var(--text-secondary); font-size: var(--font-size-small); }
+.tile .value { font-size: 40px; line-height: 1.15; font-weight: var(--weight-semibold); color: var(--text-primary); letter-spacing: -.02em; }
+.tile .delta { display: flex; align-items: center; gap: 4px; font-size: var(--font-size-small); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tile .delta.up { color: var(--success); }
+.tile .delta.down { color: var(--danger); }
+.tile .detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social section.connect { align-items: flex-start; padding: var(--space-6); border: 1px dashed var(--border-strong, var(--border-subtle)); border-radius: var(--radius-lg); }
 .page:has(> .social.wide) { padding-inline: max(var(--space-6), calc(50% - 640px)); }
 .social .switch { margin-left: var(--space-3); }
 .social-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 480px); gap: var(--space-6); align-items: start; }

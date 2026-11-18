@@ -6,6 +6,8 @@ import {
   LogIn,
   LogOut,
   RefreshCw,
+  TrendingDown,
+  TrendingUp,
   TriangleAlert,
   X,
 } from 'lucide-react';
@@ -75,14 +77,191 @@ function Risks() {
 }
 
 /** Followers now, and the change since the earliest count in the last `days` days. */
-function growth(rows: SocialSnapshot[], days: number): number | undefined {
-  const latest = rows.at(-1);
-  if (latest?.followers === undefined) return undefined;
+function growth(
+  rows: SocialSnapshot[],
+  days: number,
+  field: 'followers' | 'likes' = 'followers',
+): number | undefined {
+  const latest = rows.findLast((r) => r[field] !== undefined);
+  if (!latest) return undefined;
   const since = Date.parse(latest.at) - days * 86_400_000;
   const base = rows.find(
-    (r) => Date.parse(r.at) >= since && r.followers !== undefined && r !== latest,
+    (r) => Date.parse(r.at) >= since && r[field] !== undefined && r !== latest,
   );
-  return base ? latest.followers - base.followers! : undefined;
+  return base ? latest[field]! - base[field]! : undefined;
+}
+const compact = (n: number): string =>
+  Math.abs(n) < 10_000
+    ? n.toLocaleString()
+    : n.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+
+/** One big number: label, value, the change in the last 7 days and what it is made of. */
+function Tile({
+  label,
+  value,
+  delta,
+  detail,
+}: {
+  label: string;
+  value?: number;
+  delta?: number;
+  detail?: string;
+}) {
+  return (
+    <div className="tile">
+      <span className="label">{label}</span>
+      <strong className="value" title={value?.toLocaleString()}>
+        {value === undefined ? '—' : compact(value)}
+      </strong>
+      <span
+        className={
+          delta === undefined
+            ? 'delta hint'
+            : delta > 0
+              ? 'delta up'
+              : delta < 0
+                ? 'delta down'
+                : 'delta'
+        }
+      >
+        {delta === undefined ? (
+          'No change counted yet'
+        ) : (
+          <>
+            {delta > 0 ? <TrendingUp size={14} /> : delta < 0 ? <TrendingDown size={14} /> : null}
+            {signed(delta)} in 7 days
+          </>
+        )}
+      </span>
+      {detail && <span className="hint detail">{detail}</span>}
+    </div>
+  );
+}
+
+/** The top of the overview: followers, video views, likes and this week's best video of the user's own accounts. */
+function Highlights({
+  status,
+  own,
+  onAccounts,
+  onCheck,
+  busy,
+}: {
+  status: SocialStatus;
+  own: string[];
+  onAccounts: () => void;
+  onCheck: () => void;
+  busy: boolean;
+}) {
+  const connected = SOCIAL_PLATFORMS.filter((p) => status.platforms[p].signedIn);
+  if (!connected.length) {
+    return (
+      <section className="connect">
+        <h2>Connect your accounts</h2>
+        <p className="hint">
+          Sign in to TikTok or Instagram in Cutroom’s Social window. Then Cutroom counts your
+          followers and the views of every video, and Claude can tell you what works.
+        </p>
+        <div className="fields">
+          {SOCIAL_PLATFORMS.map((p) => (
+            <button key={p} className="primary" onClick={() => void api.socialOpen(p, 'login')}>
+              <LogIn size={14} /> Connect {PLATFORMS[p].label}
+            </button>
+          ))}
+          <button className="ghost" onClick={onAccounts}>
+            Accounts &amp; rules
+          </button>
+        </div>
+      </section>
+    );
+  }
+  const mine = (platform: SocialPlatform, handle: string): boolean =>
+    own.includes(`${platform}:${handle}`);
+  const byAccount = new Map<string, SocialSnapshot[]>();
+  for (const s of status.snapshots.filter((s) => mine(s.platform, s.handle))) {
+    const key = `${s.platform}:${s.handle}`;
+    byAccount.set(key, [...(byAccount.get(key) ?? []), s]);
+  }
+  const videos = status.videos.filter((v) => mine(v.platform, v.handle));
+  const sum = (values: (number | undefined)[]): number | undefined =>
+    values.some((v) => v !== undefined)
+      ? values.reduce<number>((n, v) => n + (v ?? 0), 0)
+      : undefined;
+  const per = (fn: (rows: SocialSnapshot[]) => number | undefined): string =>
+    [...byAccount.entries()]
+      .flatMap(([key, rows]) => {
+        const value = fn(rows);
+        return value === undefined
+          ? []
+          : [`${PLATFORMS[key.split(':')[0] as SocialPlatform].label} ${compact(value)}`];
+      })
+      .join(' · ');
+  const latest = (field: 'followers' | 'likes') => (rows: SocialSnapshot[]) =>
+    rows.findLast((r) => r[field] !== undefined)?.[field];
+  const best = [...videos].filter((v) => v.views7d).sort((a, b) => b.views7d! - a.views7d!)[0];
+
+  if (!byAccount.size && !videos.length) {
+    return (
+      <section className="connect">
+        <h2>No stats yet</h2>
+        <p className="hint">
+          {own.length
+            ? 'Count your followers and the views of your videos now; after that, the automatic check keeps them up to date.'
+            : 'Add your own handle under Accounts & rules, so Cutroom knows which profile is yours.'}
+        </p>
+        <div className="fields">
+          {own.length ? (
+            <button className="primary" disabled={busy} onClick={onCheck}>
+              <RefreshCw size={14} /> Check my stats now
+            </button>
+          ) : (
+            <button className="primary" onClick={onAccounts}>
+              Add my handle
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
+  return (
+    <div className="tiles" aria-label="Your stats">
+      <Tile
+        label="Followers"
+        value={sum([...byAccount.values()].map(latest('followers')))}
+        delta={sum([...byAccount.values()].map((rows) => growth(rows, 7)))}
+        detail={per(latest('followers'))}
+      />
+      <Tile
+        label="Video views"
+        value={sum(videos.map((v) => v.views))}
+        delta={sum(videos.map((v) => v.views7d))}
+        detail={`${videos.length} video${videos.length === 1 ? '' : 's'} counted`}
+      />
+      <Tile
+        label="Likes"
+        value={sum([...byAccount.values()].map(latest('likes')))}
+        delta={sum([...byAccount.values()].map((rows) => growth(rows, 7, 'likes')))}
+        detail={per(latest('likes'))}
+      />
+      <div className="tile">
+        <span className="label">Best video this week</span>
+        {best ? (
+          <>
+            <strong className="value">{compact(best.views7d!)}</strong>
+            <span className="delta">new views in 7 days</span>
+            <span className="hint detail" title={best.caption ?? best.url}>
+              {PLATFORMS[best.platform].label} ·{' '}
+              {best.file?.split('/').pop() ?? best.caption ?? best.id}
+            </span>
+          </>
+        ) : (
+          <>
+            <strong className="value">—</strong>
+            <span className="delta hint">Needs two counts a few days apart</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 const signed = (n?: number): string =>
   n === undefined ? '—' : `${n > 0 ? '+' : ''}${n.toLocaleString()}`;
@@ -654,6 +833,15 @@ export function Social() {
         </>
       )}
 
+      {view === 'overview' && (
+        <Highlights
+          status={status}
+          own={ownAccounts}
+          busy={!!busy || status.checking}
+          onAccounts={() => setView('accounts')}
+          onCheck={() => void run('check', api.socialCheckNow)}
+        />
+      )}
       {view === 'overview' && (
         <div className="social-grid">
           <div className="social-main">
