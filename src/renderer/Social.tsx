@@ -187,7 +187,7 @@ export function Social() {
   });
 
   return (
-    <div className={view === 'overview' ? 'social wide' : 'social'}>
+    <div className="social wide">
       <div className="row">
         <h1>Social</h1>
         <div className="switch" role="tablist" aria-label="Social">
@@ -242,9 +242,10 @@ export function Social() {
           <section>
             <h2>Accounts</h2>
             <p className="hint">
-              Sign in once in the Social window; Cutroom keeps the session like a browser does. Save
-              your login too and Cutroom signs in again by itself when the session runs out.
-              Two-factor codes and captchas you answer yourself in the window.
+              Sign in once in the Social window; Cutroom keeps the session, encrypted with your
+              Keychain, so it survives a restart. Save your login too and Cutroom signs in again by
+              itself when the session runs out. Two-factor codes and captchas you answer yourself in
+              the window.
             </p>
             {SOCIAL_PLATFORMS.map((p) => {
               const state = status.platforms[p];
@@ -481,15 +482,11 @@ export function Social() {
                 </span>
               </div>
 
-              <label className="choice wide">
-                <input
-                  type="checkbox"
-                  checked={draft.showWindow}
-                  onChange={(e) => set({ showWindow: e.target.checked })}
-                />
-                Show the Social window while Claude works in it
-                <span className="hint">— otherwise it only appears when you need to sign in</span>
-              </label>
+              <p className="hint">
+                The Social window stays hidden while Claude and the checks work in it. It only comes
+                up when something needs you: a sign-in, a code, a captcha or a page that looks
+                wrong.
+              </p>
             </section>
           </form>
         </>

@@ -71,8 +71,6 @@ export interface SocialSettings {
   perDay: number;
   /** Open the follower counts of your own profiles automatically, while Cutroom is open. */
   autoCheck: AutoCheck;
-  /** Show the browser window while Claude works in it (otherwise it only appears for sign-in). */
-  showWindow: boolean;
 }
 
 export const DEFAULT_SOCIAL: SocialSettings = {
@@ -84,11 +82,10 @@ export const DEFAULT_SOCIAL: SocialSettings = {
   perMessage: 15,
   perDay: 60,
   autoCheck: 'off',
-  showWindow: true,
 };
 
 /** Read saved settings that may come from an older version. */
-export const socialSettings = (saved?: Partial<SocialSettings>): SocialSettings => ({
+export const socialSettings = ({ showWindow: _, ...saved }: Partial<SocialSettings> & { showWindow?: boolean } = {}): SocialSettings => ({
   ...DEFAULT_SOCIAL,
   ...saved,
   handles: { ...DEFAULT_SOCIAL.handles, ...saved?.handles },

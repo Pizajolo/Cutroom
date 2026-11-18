@@ -1,11 +1,13 @@
 // Social analytics: a browser window on this Mac, signed in to the user's own TikTok and Instagram, that Claude can read
 // through the `social` tools. Every rule the user set (platforms, kinds of pages, competitors, pace, limits) is enforced
-// here, not left to Claude. Sign-ins live in the window's own cookie store; saved logins are encrypted with the
-// Keychain-backed key (like settings.enc) and only ever typed into the platform's own sign-in page — Claude never sees them.
+// here, not left to Claude. Sign-ins live in the window's own cookie store and, so they survive a quit or a lost store,
+// in a copy encrypted with the Keychain-backed key (like settings.enc). Saved logins use the same key and are only ever
+// typed into the platform's own sign-in page — Claude never sees either.
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+import type { Cookie, CookiesSetDetails } from 'electron';
 import { BrowserWindow, app, safeStorage, session, shell } from 'electron';
 import { z } from 'zod';
 import { HOME } from '../cli/run';
@@ -14,6 +16,7 @@ import type { SocialDraft, SocialPlatform, SocialSettings, SocialSnapshot, Socia
 
 export const DIR = path.join(HOME, 'social');
 const LOGINS = path.join(HOME, 'social-logins.enc');
+const SESSIONS = path.join(HOME, 'social-sessions.enc');
 const VISITS = path.join(DIR, 'visits.jsonl');
 const SNAPSHOTS = path.join(DIR, 'snapshots.jsonl');
 const USAGE = path.join(DIR, 'usage.json');
@@ -68,6 +71,93 @@ export async function forgetLogin(platform: SocialPlatform): Promise<void> {
   changed();
 }
 
+// --- Signed-in sessions (kept in the window's cookie store, with an encrypted copy) ------------------------
+
+type Sessions = Partial<Record<SocialPlatform, CookiesSetDetails[]>>;
+
+const ses = (): Electron.Session => session.fromPartition(PARTITION);
+const onDomain = (cookieDomain: string | undefined, domain: string): boolean => {
+  const host = (cookieDomain ?? '').replace(/^\./, '');
+  return host === domain || host.endsWith(`.${domain}`);
+};
+
+async function loadSessions(): Promise<Sessions> {
+  try {
+    return JSON.parse(safeStorage.decryptString(await readFile(SESSIONS))) as Sessions;
+  } catch {
+    return {};
+  }
+}
+async function storeSessions(sessions: Sessions): Promise<void> {
+  if (!safeStorage.isEncryptionAvailable()) return;
+  await mkdir(HOME, { recursive: true });
+  await writeFile(SESSIONS, safeStorage.encryptString(JSON.stringify(sessions)), { mode: 0o600 });
+}
+
+/** The platform's cookies as they can be set again later. Expired ones and ones that end with the session are left out. */
+async function cookiesOf(platform: SocialPlatform): Promise<CookiesSetDetails[]> {
+  const all: Cookie[] = [];
+  for (const domain of PLATFORMS[platform].hosts) all.push(...(await ses().cookies.get({ domain }).catch(() => [])));
+  const seen = new Set<string>();
+  return all.flatMap((c) => {
+    const key = `${c.domain}|${c.path}|${c.name}`;
+    if (seen.has(key) || (c.expirationDate && c.expirationDate * 1000 < Date.now())) return [];
+    seen.add(key);
+    return [{
+      url: `https://${(c.domain ?? '').replace(/^\./, '')}${c.path ?? '/'}`,
+      name: c.name,
+      value: c.value,
+      domain: c.hostOnly ? undefined : c.domain,
+      path: c.path,
+      secure: c.secure,
+      httpOnly: c.httpOnly,
+      // Session cookies would be gone after a restart: keep them for as long as the sign-in usually lasts.
+      expirationDate: c.expirationDate ?? Date.now() / 1000 + 30 * 86_400,
+      sameSite: c.sameSite,
+    }];
+  });
+}
+
+/** Save (or, when signed out, drop) the encrypted copy of a platform's sign-in. */
+async function keepSession(platform: SocialPlatform): Promise<void> {
+  const sessions = await loadSessions();
+  if (await signedIn(platform)) sessions[platform] = await cookiesOf(platform);
+  else delete sessions[platform];
+  await storeSessions(sessions).catch(() => {});
+  await ses().cookies.flushStore().catch(() => {});
+}
+
+/** Put a saved sign-in back if the cookie store lost it (once per launch, so a sign-out on the site sticks). */
+const restored = new Set<SocialPlatform>();
+async function restoreSession(platform: SocialPlatform): Promise<void> {
+  if (restored.has(platform)) return;
+  restored.add(platform);
+  const saved = (await loadSessions())[platform];
+  const { domain, cookie } = PLATFORMS[platform].session;
+  const live = saved?.find((c) => c.name === cookie && onDomain(c.domain ?? parseUrl(c.url)?.hostname, domain));
+  if (!saved || !live?.value || (live.expirationDate && live.expirationDate * 1000 < Date.now())) return;
+  for (const c of saved) await ses().cookies.set(c).catch(() => {});
+}
+
+/**
+ * At start: bring back saved sign-ins, then follow the window's cookies, so the UI shows a sign-in (or sign-out) the
+ * moment it happens and the encrypted copy stays current.
+ */
+export async function init(): Promise<void> {
+  for (const p of SOCIAL_PLATFORMS) await restoreSession(p);
+  const pending = new Map<SocialPlatform, ReturnType<typeof setTimeout>>();
+  ses().cookies.on('changed', (_event, c) => {
+    const platform = SOCIAL_PLATFORMS.find((p) => c.name === PLATFORMS[p].session.cookie && onDomain(c.domain, PLATFORMS[p].session.domain));
+    if (!platform) return;
+    // A sign-in sets several cookies at once (and rotates them): wait for it to settle, then save and tell the UI.
+    clearTimeout(pending.get(platform));
+    pending.set(platform, setTimeout(() => {
+      pending.delete(platform);
+      void keepSession(platform).finally(changed);
+    }, 3000));
+  });
+}
+
 // --- The browser window -------------------------------------------------------------------------------
 
 let win: BrowserWindow | undefined;
@@ -83,8 +173,9 @@ export function browser(): BrowserWindow {
     show: false,
     title: 'Cutroom · Social',
     backgroundColor: '#191c20',
-    // No preload, no Node: this window shows other people's websites.
-    webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false },
+    // No preload, no Node: this window shows other people's websites. It stays hidden while Claude and the checks work in
+    // it, so it must keep rendering and running timers when hidden (these sites build their pages with scripts).
+    webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
   }));
   // Pop-ups on the platforms' own sites open in this window; anything else goes to the default browser.
   next.webContents.setWindowOpenHandler(({ url }) => {
@@ -108,6 +199,10 @@ export function browser(): BrowserWindow {
     if (quitting) return;
     event.preventDefault();
     next.hide();
+  });
+  // The user may have just signed in there: save it and refresh what the UI shows.
+  next.on('hide', () => {
+    for (const p of SOCIAL_PLATFORMS) void keepSession(p).finally(changed);
   });
   return next;
 }
@@ -146,7 +241,7 @@ export async function settle(w: BrowserWindow): Promise<void> {
 
 export async function signedIn(platform: SocialPlatform): Promise<boolean> {
   const { domain, cookie } = PLATFORMS[platform].session;
-  const cookies = await session.fromPartition(PARTITION).cookies.get({ domain, name: cookie }).catch(() => []);
+  const cookies = await ses().cookies.get({ domain, name: cookie }).catch(() => []);
   return cookies.some((c) => !!c.value && (!c.expirationDate || c.expirationDate * 1000 > Date.now()));
 }
 
@@ -161,13 +256,15 @@ export async function open(platform: SocialPlatform, page: 'login' | 'home' | 'a
 }
 
 export async function signOut(platform: SocialPlatform): Promise<void> {
-  const ses = session.fromPartition(PARTITION);
   for (const domain of PLATFORMS[platform].hosts) {
-    for (const c of await ses.cookies.get({ domain })) {
-      await ses.cookies.remove(`https://${c.domain!.replace(/^\./, '')}${c.path ?? '/'}`, c.name).catch(() => {});
+    for (const c of await ses().cookies.get({ domain })) {
+      await ses().cookies.remove(`https://${c.domain!.replace(/^\./, '')}${c.path ?? '/'}`, c.name).catch(() => {});
     }
-    await ses.clearStorageData({ origin: `https://www.${domain}` }).catch(() => {});
+    await ses().clearStorageData({ origin: `https://www.${domain}` }).catch(() => {});
   }
+  const sessions = await loadSessions();
+  delete sessions[platform];
+  await storeSessions(sessions).catch(() => {});
   changed();
 }
 
@@ -206,7 +303,7 @@ export async function signIn(platform: SocialPlatform, rules: SocialSettings): P
     await open(platform, 'login', rules);
     return false;
   }
-  if (rules.showWindow) w.showInactive();
+  // Hidden while the saved login is typed in; shown below only if the page needs the user.
   await load(w, PLATFORMS[platform].login);
   let filled = false;
   for (let i = 0; i < 10 && !filled; i++) {
@@ -225,10 +322,12 @@ export async function signIn(platform: SocialPlatform, rules: SocialSettings): P
     }
     await sleep(1000);
     if (await signedIn(platform)) {
+      await keepSession(platform);
       changed();
       return true;
     }
   }
+  w.show();
   return false;
 }
 
@@ -410,11 +509,8 @@ export function server(rules: SocialSettings, options: { browse?: boolean; extra
     thisMessage++;
     await countStep();
   };
-  const current = (): BrowserWindow => {
-    const w = browser();
-    if (rules.showWindow && !w.isVisible()) w.showInactive();
-    return w;
-  };
+  /** The window, left as it is: hidden unless the user opened it. It comes up only when a page needs the user. */
+  const current = browser;
 
   /** After a load: is this a sign-in wall? Then try the saved login once, else leave the window to the user. */
   const ensureSignedIn = async (w: BrowserWindow, target: string): Promise<string | undefined> => {
@@ -548,7 +644,7 @@ export function server(rules: SocialSettings, options: { browse?: boolean; extra
         const w = current();
         if (!w.webContents.getURL()) return text('No page is open. Use open_page first.', true);
         const image = await w.webContents.capturePage(undefined, { stayHidden: true });
-        if (image.isEmpty()) return text('The window could not be captured. Turn on “Show the browser window” under Home › Social.', true);
+        if (image.isEmpty()) return text('The window could not be captured. Carry on with read_page.', true);
         const small = image.getSize().width > 1400 ? image.resize({ width: 1400 }) : image;
         return { content: [{ type: 'image' as const, data: small.toJPEG(75).toString('base64'), mimeType: 'image/jpeg' }] };
       })),
@@ -618,18 +714,23 @@ export async function checkNow(rules: SocialSettings, by: 'auto' | 'you' = 'you'
           errors.push(`Daily limit of ${rules.perDay} page views reached.`);
           break;
         }
-        if (!(await signedIn(platform))) {
+        // With a saved login, sign in again by itself; the window only comes up if a code or captcha needs the user.
+        if (!(await signedIn(platform)) && !(by === 'you' && (await signIn(platform, rules)))) {
           errors.push(`${PLATFORMS[platform].label}: not signed in.`);
           continue;
         }
         await pace(rules);
         await countStep();
+        // The window stays hidden while it works.
         const w = browser();
-        if (rules.showWindow && by === 'you') w.showInactive();
         try {
           await load(w, url);
           const counts = parseCounts(await w.webContents.executeJavaScript(READ_COUNTS));
-          if (counts.followers === undefined) throw new Error('No follower count found on the page.');
+          if (counts.followers === undefined) {
+            // Usually a captcha, a sign-in wall or a changed page: show it, so the user sees what is wrong.
+            if (by === 'you') w.show();
+            throw new Error('No follower count found on the page.');
+          }
           await addSnapshot({ platform, handle, source: by === 'auto' ? 'auto' : 'manual', ...counts });
           await logVisit({ url, by: by === 'auto' ? 'auto' : 'you', result: 'opened', note: `${counts.followers} followers` });
         } catch (error) {
