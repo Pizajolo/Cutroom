@@ -198,3 +198,11 @@ native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch
 
 The agent runs shell commands and edits files in the project folder without asking for each one. It loads
 only Cutroom's own instructions and skills, not your personal Claude Code settings.
+
+## Licence
+
+Copyright © OpenTheta AG. Cutroom is free software, licensed under the
+[GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). The name "Cutroom" and its logo are not covered
+by the licence. Third-party tools Cutroom uses or installs (FFmpeg, Whisper, yt-dlp, HyperFrames, Remotion, Codex, …)
+keep their own licences. Use of the website and the Skill Marketplace is governed by the
+[Terms of Service](https://cutroom.app/terms) and the [Privacy Policy](https://cutroom.app/privacy).
