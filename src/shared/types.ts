@@ -1,6 +1,7 @@
 // Types shared by the CLI, the Electron main process and the renderer.
 import { llmProviders } from './features';
 import type { Connection, Feature, FeatureState } from './features';
+import type { ExportedVideo, SocialPlatform, SocialSettings, SocialStatus } from './social';
 
 /** The four folders every project has. Everything Cutroom generates lives in `.cutroom/`. */
 export const PROJECT_DIRS = ['raw', 'references', 'exports', 'assets'] as const;
@@ -384,6 +385,8 @@ export interface Settings {
   llmModels: Partial<Record<Connection, string>>;
   /** Features switched off, and the provider/model chosen for generated media. */
   features: Partial<Record<Feature, { on?: boolean; model?: string }>>;
+  /** Social analytics: how Claude may use the signed-in TikTok and Instagram browser. */
+  social: SocialSettings;
 }
 
 export interface ModelOption {
@@ -616,6 +619,33 @@ export interface CutroomApi {
   marketPublish(id: string, options: { priceCents?: number; changelog?: string }): Promise<MarketPublishResult>;
   marketMine(): Promise<MarketOwnSkill[]>;
   marketUpdateOwn(slug: string, patch: { price?: number; listed?: boolean }): Promise<void>;
+  // Social analytics
+  socialStatus(): Promise<SocialStatus>;
+  /** Show the social browser on a platform's sign-in page, home or own analytics. */
+  socialOpen(platform: SocialPlatform, page: 'login' | 'home' | 'analytics'): Promise<void>;
+  /** Encrypt a login with the Keychain-backed key, for signing in again when the session has expired. */
+  socialSaveLogin(platform: SocialPlatform, username: string, password: string): Promise<SocialStatus>;
+  socialForgetLogin(platform: SocialPlatform): Promise<SocialStatus>;
+  /** Sign in with the saved login; resolves once signed in (or when it gave up). */
+  socialSignIn(platform: SocialPlatform): Promise<SocialStatus>;
+  socialSignOut(platform: SocialPlatform): Promise<SocialStatus>;
+  /** Open your own profiles now and note their counts. */
+  socialCheckNow(): Promise<SocialStatus>;
+  /** Videos in the exports/ folders of recent projects: the ones that can be posted. */
+  socialExports(): Promise<ExportedVideo[]>;
+  /** The Social chat: Claude drafts captions and proposes posts. Replies stream on 'social-agent'. */
+  socialChat(): Promise<ChatMessage[]>;
+  socialChatSend(text: string, videos: string[]): Promise<void>;
+  socialChatStop(): Promise<void>;
+  /** A new conversation; drafts and posts stay. */
+  socialChatReset(): Promise<void>;
+  /** The user's OK: post this draft with this caption. `manual` stops before the final click, for the user to press Post. */
+  socialPost(id: string, caption: string, manual: boolean): Promise<SocialStatus>;
+  socialDiscard(id: string): Promise<SocialStatus>;
+  /** Bring the Social window to the front, as it is. */
+  socialShowWindow(): Promise<void>;
+  on(channel: 'social', fn: (status: SocialStatus) => void): () => void;
+  on(channel: 'social-agent', fn: (event: AgentEvent) => void): () => void;
   /** A `cutroom://install/<slug>` link was opened: show that skill. */
   on(channel: 'market-open', fn: (slug: string) => void): () => void;
   on(channel: 'agent', fn: (event: AgentEvent) => void): () => void;

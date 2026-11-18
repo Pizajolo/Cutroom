@@ -88,6 +88,47 @@ website open the skill in the app. Settings › Marketplace shows the account an
 address (or set `CUTROOM_MARKET_URL`). The website, API and moderation live in the
 [cutroom-market](https://github.com/pizajolo/cutroom-market) repository.
 
+**Social analytics: your TikTok and Instagram.** Home › Social lets Claude read your own stats (followers, likes,
+views, TikTok Studio and Meta Business Suite insights) and competitors' public profiles, in a browser window inside
+Cutroom that you sign in to yourself. There's no API and no app review. **This breaks both platforms' terms**, and the
+account carries the risk (captchas, re-logins, limits, suspension). The page says so and stays off until you accept
+it. The sign-in lives in the window's own cookie store (`persist:social`), so it lasts like a browser session. **Save
+login in Keychain** encrypts the user name and password with the Keychain-backed key (`~/.cutroom/social-logins.enc`).
+Cutroom then signs in again by itself when the session expires, typing the login only into the platform's own sign-in
+page. Claude never sees it. You answer two-factor codes and captchas yourself in the window.
+
+You decide how Claude may use the window, and Cutroom enforces it, not Claude:
+- **Platforms:** TikTok and Instagram, each on or off.
+- **Pages:** your own profile and analytics, other profiles, single posts, and search or hashtags, each on or off.
+  Messages, settings and feeds are always closed.
+- **Competitors:** an optional list of the only accounts Claude may open.
+- **Speed:** careful 12–25 s, normal 6–12 s or quick 3–6 s between page views.
+- **Limits:** page views per message and per day.
+- **Automatic check:** off, daily or weekly, while Cutroom is open.
+- **Window:** whether it's shown while Claude works.
+
+Claude gets read-only tools (`mcp__social__*`): open a page, read it, scroll, click a tab, take a screenshot, and save
+or read follower counts. They refuse anything that acts as you: follow, like, comment, share, message or post. Every
+page opened or refused is listed under Activity, and the counts build a follower history under `~/.cutroom/social/`.
+
+**Posting.** The Social tab has three views: Overview, Accounts & rules, and Activity. Overview shows the follower
+counts and posted videos next to a Claude chat of its own, which needs no open project. The posting flow:
+1. **Pick videos:** choose exported videos (the `exports/` folders of recent projects) and ask for captions.
+2. **Claude looks:** it pulls frames, transcribes speech, and reads the project's ledger for where footage and music
+   came from.
+3. **Claude proposes:** it calls `propose_post`, which puts a draft card in the chat with the video, an editable
+   caption (checked against each platform's limit) and notes such as rights to check. **Claude has no tool that
+   posts.**
+4. **You post:** only your **Post to TikTok / Instagram** button and the confirmation after it do that. Cutroom
+   uploads the video in the Social window (always shown while it works), types the caption and presses Post.
+   - **"I'll press Post myself":** stops before that final click.
+   - **AI-generated content:** if the ledger says the video has any, Cutroom always stops there, so you can set the
+     platform's AI label.
+   - **If a page looks different than expected** (a redesign, another language), Cutroom leaves the window at that
+     step with the caption on the clipboard, and you finish by hand.
+
+Cutroom marks a draft posted only when the page confirms it.
+
 **Cutouts and stickers, on this Mac.** `cutroom cutout` lifts the subject out of a clip (a transparent `.mov`) or a
 frame (a `.png`, optionally with a white sticker outline) with Apple's Vision framework: free, offline, no account.
 It is a small Swift helper (`native/cutout.swift`) that Cutroom compiles on first launch, which needs Apple's command
@@ -118,6 +159,8 @@ Settings:
 - **MCP servers** — any other command or URL.
 - **Marketplace** — Google sign-in to the Skill Marketplace, and its address.
 
+Home › **Social** has the TikTok and Instagram sign-ins and the rules for Claude's access (see above).
+
 Settings are stored encrypted in `~/.cutroom/settings.enc`; a project's model choice in `.cutroom/project.json`.
 
 **Getting started guide.** On first launch, and at every start while no account is connected, a short guide asks you
@@ -136,6 +179,7 @@ bump `version`, publish a GitHub release tagged `v<version>`, write the notes, a
 ```
 src/shared/types.ts   Timeline format and the window.cutroom API
 src/shared/features.ts  Connections, features and how each is paid for
+src/shared/social.ts  Social analytics rules: platforms, page kinds, pace, which links Claude may open
 src/cli/              The `cutroom` command the agent calls: render, transcribe, remotion, cutout, generate, style-example, ledger
   project.ts            per-project settings, versions, sources, style ↔ video links
 src/main/             Electron shell: project folders, tool setup, preview, the agent session
@@ -143,8 +187,11 @@ src/main/             Electron shell: project folders, tool setup, preview, the 
   prompt.ts             what the agent knows about editing in Cutroom
   settings.ts           accounts, models, providers, MCP servers
   market.ts             Skill Marketplace: Google sign-in (loopback + PKCE), browse, install/update, reviews, publish
+  social.ts             Social analytics: the signed-in browser window, saved logins, pace and limits, Claude's social tools
+  socialPost.ts         Posting: exported videos, Claude's propose_post tool, the TikTok Studio and Instagram upload flows
+  socialChat.ts         The Social tab's own Claude chat (no project needed)
   updates.ts            the check for a newer release on GitHub
-src/renderer/         React UI: Home, Onboarding, Settings, Market, Chat, Preview, Timeline (+ Inspector, timelineOps)
+src/renderer/         React UI: Home, Onboarding, Settings, Market, Social (+ SocialChat), Chat, Preview, Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
 native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
 ```

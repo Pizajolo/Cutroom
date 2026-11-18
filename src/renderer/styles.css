@@ -347,3 +347,77 @@ button.link { height: auto; padding: 0; border: 0; background: none; color: var(
 }
 .warning svg { vertical-align: -2px; color: var(--warning); }
 .warning .row { display: flex; align-items: center; gap: var(--space-2); }
+
+/* Social: the warning, accounts, Claude's rules, follower counts and what was opened */
+.social { display: flex; flex-direction: column; gap: var(--space-3); }
+.social section { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.social .warning { margin: 0; padding: var(--space-4); font-size: var(--font-size-body); }
+.social .warning h2 { display: flex; align-items: center; gap: var(--space-2); color: var(--warning); }
+.social details.warning { padding: var(--space-2) var(--space-3); }
+.social details.warning summary { cursor: pointer; color: var(--warning); font-size: var(--font-size-small); }
+.social details.warning summary svg { vertical-align: -2px; }
+.social details[open].warning { display: flex; flex-direction: column; gap: var(--space-2); }
+.risks { display: flex; flex-direction: column; gap: var(--space-2); padding-left: var(--space-4); list-style: disc; color: var(--text-secondary); line-height: var(--line-height-prose); }
+.risks strong { color: var(--text-primary); }
+.social .account { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--bg-panel); }
+.social .account .task { flex-basis: 96px; color: var(--text-primary); }
+.social .muted { color: var(--text-muted); flex: none; }
+.social .settings section { align-items: stretch; }
+.social .fields.top { align-items: flex-start; }
+.social .options { display: flex; flex-direction: column; gap: var(--space-1); }
+.social .choice { flex-wrap: wrap; }
+.social input[type="number"] { width: 72px; }
+.social input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+.stats { border-collapse: collapse; font-size: var(--font-size-small); }
+.stats th { text-align: left; font-weight: var(--weight-medium); color: var(--text-muted); padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border-subtle); }
+.stats td { padding: var(--space-1) var(--space-2); border-bottom: 1px solid var(--border-subtle); font-variant-numeric: tabular-nums; }
+.visits li { gap: var(--space-2); min-height: var(--control-height-lg); font-size: var(--font-size-small); }
+.visits .when { flex: none; width: 140px; }
+.visits .note-text { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag.error { background: var(--danger-bg); color: var(--danger); }
+
+/* Social overview: stats and posts on the left, Claude on the right */
+.page:has(> .social.wide) { padding-inline: max(var(--space-6), calc(50% - 640px)); }
+.social .switch { margin-left: var(--space-3); }
+.social-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 480px); gap: var(--space-6); align-items: start; }
+.social-main { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.social-main section:first-child { padding-top: 0; border-top: 0; }
+.social-chat {
+  grid-area: auto;
+  position: sticky; top: 0; height: calc(100vh - var(--titlebar-height) - 180px); min-height: 480px;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); overflow: hidden;
+}
+.social-chat > header { display: flex; align-items: center; gap: var(--space-2); height: var(--panel-header-height); padding: 0 var(--space-2) 0 var(--space-4); border-bottom: 1px solid var(--border-subtle); background: none; }
+.social-chat .chat-error { padding: 0 var(--space-4) var(--space-2); }
+.social-chat .exports { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; }
+.social-chat .exports li { padding: 2px var(--space-1); border-radius: var(--radius-xs); }
+.social-chat .exports li:hover { background: var(--bg-hover); }
+.social-chat .exports .choice { font-size: var(--font-size-small); cursor: pointer; flex-wrap: nowrap; }
+.social-chat .exports .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.posts li { gap: var(--space-2); min-height: var(--control-height-lg); font-size: var(--font-size-small); }
+.posts .when { flex: none; width: 140px; }
+.posts .caption { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A proposed post */
+.draft { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-panel-raised); user-select: none; }
+.draft.posting, .draft.waiting { border-color: var(--warning); }
+.draft.failed { border-color: var(--danger); }
+.draft > header, .draft > footer { display: flex; align-items: center; gap: var(--space-2); height: auto; padding: 0; border: 0; background: none; }
+.draft-body { display: flex; gap: var(--space-3); }
+.draft video { flex: none; width: 108px; aspect-ratio: 9 / 16; object-fit: contain; border-radius: var(--radius-sm); background: var(--bg-frame); }
+.draft-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.draft-text > .hint:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.draft-text > .hint svg { vertical-align: -2px; }
+.draft textarea {
+  flex: 1; min-height: 140px; padding: var(--space-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  background: var(--bg-input); color: var(--text-primary); font: inherit; line-height: var(--line-height-ui); resize: vertical; user-select: text;
+}
+.draft textarea[readonly] { color: var(--text-secondary); }
+.draft-text > .hint:last-child { align-self: flex-end; font-variant-numeric: tabular-nums; }
+.draft-note { color: var(--warning); font-size: var(--font-size-small); }
+.draft-note svg { vertical-align: -2px; }
+.draft footer .choice { font-size: var(--font-size-small); }
+@media (max-width: 1080px) {
+  .social-grid { grid-template-columns: minmax(0, 1fr); }
+  .social-chat { position: static; height: 70vh; }
+}

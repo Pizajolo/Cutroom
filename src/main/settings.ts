@@ -11,7 +11,9 @@ import { patchProject, readProject } from '../cli/project';
 import { HOME, run } from '../cli/run';
 import { CONNECTIONS, LOCAL_CUTOUT, featureStates, llmProviders } from '../shared/features';
 import type { Connection, Feature, FeatureState } from '../shared/features';
+import { socialSettings } from '../shared/social';
 import { modelOptions } from '../shared/types';
+import * as social from './social';
 import type { Brain, ClaudeStatus, ModelChoice, Settings, Voice } from '../shared/types';
 
 const FILE = path.join(HOME, 'settings.enc');
@@ -24,11 +26,12 @@ const DEFAULTS: Settings = {
   keys: Object.fromEntries(Object.keys(CONNECTIONS).map((id) => [id, ''])) as Settings['keys'],
   llmModels: {},
   features: {},
+  social: socialSettings(),
 };
 export async function loadSettings(): Promise<Settings> {
   try {
     const saved = JSON.parse(safeStorage.decryptString(await readFile(FILE))) as Partial<Settings>;
-    return { ...DEFAULTS, ...saved, keys: { ...DEFAULTS.keys, ...saved.keys } };
+    return { ...DEFAULTS, ...saved, keys: { ...DEFAULTS.keys, ...saved.keys }, social: socialSettings(saved.social) };
   } catch {
     return DEFAULTS;
   }
@@ -79,12 +82,16 @@ export interface AgentConfig {
 /** Split `npx -y "some server" --flag` into words. */
 const words = (line: string): string[] => (line.match(/"[^"]*"|\S+/g) ?? []).map((w) => w.replace(/^"|"$/g, ''));
 
-export async function agentConfig(root: string): Promise<AgentConfig> {
+/**
+ * Who answers: the env that points Claude Code at the chosen account or provider, and the model. `root` is the open
+ * project, whose own model choice wins; without one (Home › Social) the default model is used.
+ */
+export async function brainConfig(root?: string): Promise<Pick<AgentConfig, 'env' | 'model'>> {
   const settings = await loadSettings();
-  const choice = await modelChoice(root);
+  const options = modelOptions(settings);
+  const choice = root ? await modelChoice(root) : { project: '', default: options.some((o) => o.id === settings.model) ? settings.model : '' };
   let model = choice.project || choice.default || undefined;
   const env: AgentConfig['env'] = { ...process.env };
-  let notes = '';
 
   // Claude itself: the Claude Code sign-in, or an API key.
   if (settings.claude.auth === 'api-key') env.ANTHROPIC_API_KEY = settings.claude.apiKey;
@@ -99,6 +106,13 @@ export async function agentConfig(root: string): Promise<AgentConfig> {
     env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
     env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model; // background requests must use a model the endpoint has
   }
+  return { env, model };
+}
+
+export async function agentConfig(root: string): Promise<AgentConfig> {
+  const settings = await loadSettings();
+  const { env, model } = await brainConfig(root);
+  let notes = '';
 
   const mcpServers: AgentConfig['mcpServers'] = {};
   for (const server of settings.mcp) {
@@ -136,6 +150,10 @@ export async function agentConfig(root: string): Promise<AgentConfig> {
   }
   if (states.some((s) => s.id === 'cutout' && s.active && s.model === LOCAL_CUTOUT)) {
     notes += '\nSubject cutouts and stickers are made on this Mac, free: use the cutout skill.';
+  }
+  if (active('social')) {
+    mcpServers.social = social.server(settings.social);
+    notes += `\n${social.notes(settings.social).trim()}`;
   }
   const generated = states.filter((s) => s.active && s.model && !s.model.startsWith('local:'));
   if (generated.length) {

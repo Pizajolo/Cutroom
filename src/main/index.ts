@@ -9,10 +9,13 @@ import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
 import { LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
 import { PROJECT_DIRS, cutFiles } from '../shared/types';
-import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Timeline } from '../shared/types';
+import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Settings, Timeline } from '../shared/types';
 import * as agent from './agent';
 import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
 import * as market from './market';
+import * as social from './social';
+import * as socialChat from './socialChat';
+import * as socialPost from './socialPost';
 import { downloadLinks, forgetProject, importFiles, listMedia, openProject, recentProjects } from './project';
 import { brain, claudeLogin, claudeStatus, cloneVoice, codexLogin, codexStatus, deleteVoice, features, loadSettings, micAccess, modelChoice, saveSettings, setProjectFeature, setProjectModel, voices } from './settings';
 import { ensureTools, toolStatus } from './tools';
@@ -261,7 +264,49 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   marketPublish: market.publish,
   marketMine: market.mine,
   marketUpdateOwn: market.updateOwn,
+  // Social analytics
+  socialStatus: async () => social.status(await socialRules()),
+  socialOpen: async (platform, page) => social.open(platform, page, await socialRules()),
+  async socialSaveLogin(platform, username, password) {
+    await social.saveLogin(platform, username, password);
+    return social.status(await socialRules());
+  },
+  async socialForgetLogin(platform) {
+    await social.forgetLogin(platform);
+    return social.status(await socialRules());
+  },
+  async socialSignIn(platform) {
+    const rules = await socialRules();
+    await social.signIn(platform, rules);
+    return social.status(rules);
+  },
+  async socialSignOut(platform) {
+    await social.signOut(platform);
+    return social.status(await socialRules());
+  },
+  async socialCheckNow() {
+    const rules = await socialRules();
+    await social.checkNow(rules);
+    return social.status(rules);
+  },
+  socialExports: socialPost.exportedVideos,
+  socialChat: socialChat.load,
+  socialChatSend: (text, videos) => socialChat.send(text, videos, (event) => emit('social-agent', event)),
+  socialChatStop: async () => socialChat.stop(),
+  socialChatReset: socialChat.reset,
+  async socialPost(id, caption, manual) {
+    await socialPost.post(id, caption, manual);
+    return social.status(await socialRules());
+  },
+  socialShowWindow: async () => social.show(),
+  async socialDiscard(id) {
+    await socialPost.discard(id);
+    return social.status(await socialRules());
+  },
 };
+
+/** The user's rules for the social browser, read fresh each time so changes apply at once. */
+const socialRules = async (): Promise<Settings['social']> => (await loadSettings()).social;
 
 // --- App ---------------------------------------------------------------------------------
 
@@ -284,10 +329,21 @@ app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 async function serveMedia(request: Request): Promise<Response> {
   const url = new URL(request.url);
   if (url.host === 'marketplace') return market.proxyExample(decodeURIComponent(url.pathname.slice(1)), request);
+  // `media://post/<absolute path>`: an exported video of a recent project, for the Social drafts.
+  if (url.host === 'post') {
+    const file = decodeURIComponent(url.pathname);
+    if (!(await socialPost.exportedVideos()).some((v) => v.path === file)) return new Response(null, { status: 403 });
+    return serveFile(file, request);
+  }
   const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'market' ? path.join(market.MARKET, 'skills') : url.host === 'export' ? '/' : root();
   const file = path.join(base, decodeURIComponent(url.pathname));
   const allowed = url.host === 'export' ? Object.values(await styleVideos()).flat().includes(file) : file.startsWith(base + path.sep);
   if (!allowed) return new Response(null, { status: 403 });
+  return serveFile(file, request);
+}
+
+/** A file with range requests, so video can seek. */
+async function serveFile(file: string, request: Request): Promise<Response> {
   const size = await stat(file).then((s) => s.size, () => -1);
   if (size < 0) return new Response(null, { status: 404 });
   const range = /bytes=(\d*)-(\d*)/.exec(request.headers.get('range') ?? '');
@@ -351,10 +407,16 @@ void app.whenReady().then(() => {
     pendingSlug = undefined;
   });
   void ensureTools((tools) => emit('tools', tools));
+  // The social window only hides when closed; it goes when the main window does.
+  win.on('closed', () => social.close());
+  social.onChange(() => void socialRules().then(social.status).then((status) => emit('social', status), () => {}));
+  social.startAutoCheck(socialRules);
+  void socialPost.recover();
 });
 
 app.on('window-all-closed', () => {
   previewJob?.abort();
   agent.stop();
+  socialChat.stop();
   app.quit();
 });
