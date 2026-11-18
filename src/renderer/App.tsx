@@ -124,7 +124,13 @@ export function App() {
     <UpdateNotice update={update} onClose={(skip) => (skip && localStorage.setItem('skipUpdate', update.version), setUpdate(null))} />
   );
 
-  if (!project) return <><Home onOpen={opened} onGuide={() => setGuide(true)} settingsKey={guided}>{toolNote}</Home>{marketDialog}{dialogs}</>;
+  const notice = missing.length
+    ? {
+        text: `${missing.some((t) => t.state === 'installing') ? 'Installing' : 'Missing'}: ${missing.map((t) => t.name).join(', ')}`,
+        detail: missing.map((t) => `${t.name}: ${t.detail ?? t.state}`).join('\n'),
+      }
+    : undefined;
+  if (!project) return <><Home onOpen={opened} onGuide={() => setGuide(true)} settingsKey={guided} notice={notice} />{marketDialog}{dialogs}</>;
 
   return (
     <div className={pro ? 'app pro' : 'app'} onDragOver={(e) => e.preventDefault()} onDrop={drop}>

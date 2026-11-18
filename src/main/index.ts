@@ -410,6 +410,7 @@ void app.whenReady().then(() => {
   // The social window only hides when closed; it goes when the main window does.
   win.on('closed', () => social.close());
   social.onChange(() => void socialRules().then(social.status).then((status) => emit('social', status), () => {}));
+  void social.init().then(social.changed);
   social.startAutoCheck(socialRules);
   void socialPost.recover();
 });

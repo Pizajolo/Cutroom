@@ -9,6 +9,8 @@ export const PLATFORMS = {
     /** Where the own analytics live. */
     analytics: 'https://www.tiktok.com/tiktokstudio/analytics',
     profile: (handle: string) => `https://www.tiktok.com/@${handle}`,
+    /** Where a profile's videos are listed with their view counts. */
+    videos: (handle: string) => `https://www.tiktok.com/@${handle}`,
     /** Sites the window may show for this platform (and their subdomains). */
     hosts: ['tiktok.com'],
     /** The cookie that exists while signed in. */
@@ -20,6 +22,8 @@ export const PLATFORMS = {
     login: 'https://www.instagram.com/accounts/login/',
     analytics: 'https://business.facebook.com/latest/insights/',
     profile: (handle: string) => `https://www.instagram.com/${handle}/`,
+    // Only the Reels tab shows view counts on the tiles.
+    videos: (handle: string) => `https://www.instagram.com/${handle}/reels/`,
     // Full Instagram insights are on the web only in Meta Business Suite, which signs in through Facebook.
     hosts: ['instagram.com', 'business.facebook.com', 'facebook.com'],
     session: { domain: 'instagram.com', cookie: 'sessionid' },
@@ -71,8 +75,6 @@ export interface SocialSettings {
   perDay: number;
   /** Open the follower counts of your own profiles automatically, while Cutroom is open. */
   autoCheck: AutoCheck;
-  /** Show the browser window while Claude works in it (otherwise it only appears for sign-in). */
-  showWindow: boolean;
 }
 
 export const DEFAULT_SOCIAL: SocialSettings = {
@@ -84,11 +86,10 @@ export const DEFAULT_SOCIAL: SocialSettings = {
   perMessage: 15,
   perDay: 60,
   autoCheck: 'off',
-  showWindow: true,
 };
 
 /** Read saved settings that may come from an older version. */
-export const socialSettings = (saved?: Partial<SocialSettings>): SocialSettings => ({
+export const socialSettings = ({ showWindow: _, ...saved }: Partial<SocialSettings> & { showWindow?: boolean } = {}): SocialSettings => ({
   ...DEFAULT_SOCIAL,
   ...saved,
   handles: { ...DEFAULT_SOCIAL.handles, ...saved?.handles },
@@ -181,6 +182,70 @@ export interface SocialSnapshot {
   extra?: Record<string, number | string>;
 }
 
+/** Counts of one video at one moment (a line in video-counts.jsonl). Its link and caption are kept apart, once. */
+export interface VideoCount {
+  at: string;
+  platform: SocialPlatform;
+  handle: string;
+  /** The platform's id: TikTok's number, Instagram's shortcode. */
+  id: string;
+  source: 'auto' | 'claude' | 'manual';
+  views?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  /** Anything else Claude read, e.g. average watch time or completion rate. */
+  extra?: Record<string, number | string>;
+}
+
+/** A video with its latest counts and how they grew, for the UI and for Claude. */
+export interface VideoStat {
+  platform: SocialPlatform;
+  handle: string;
+  id: string;
+  url: string;
+  caption?: string;
+  /** When it was posted, worked out from the id. */
+  posted?: string;
+  /** Place in the grid at the last check (0 = top), for ordering when `posted` is unknown. */
+  order?: number;
+  firstSeen: string;
+  lastSeen: string;
+  views?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  extra?: Record<string, number | string>;
+  /** New views since the earliest count in the last 24 hours / 7 days. */
+  views1d?: number;
+  views7d?: number;
+  /** How many times it was counted. */
+  counts: number;
+  /** The Cutroom export it was posted from, when a posted draft's caption matches. */
+  file?: string;
+}
+
+/** When a video was posted, from its id: both platforms put the time in it. */
+export function postedAt(platform: SocialPlatform, id: string): string | undefined {
+  let ms: number | undefined;
+  try {
+    if (platform === 'tiktok' && /^\d{15,20}$/.test(id)) ms = Math.floor(Number(id) / 2 ** 32) * 1000;
+    if (platform === 'instagram' && /^[\w-]{6,14}$/.test(id)) {
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+      const media = [...id].reduce((n, c) => n * 64n + BigInt(alphabet.indexOf(c)), 0n);
+      ms = Number(media >> 23n) + 1_314_220_021_721;
+    }
+  } catch {
+    return undefined;
+  }
+  return ms && ms > Date.UTC(2014, 0) && ms < Date.now() + 86_400_000 ? new Date(ms).toISOString() : undefined;
+}
+
+/** The id in a video link: TikTok /@x/video/<id>, Instagram /reel/<code>/ or /p/<code>/. */
+export function videoId(url: string): string | undefined {
+  return /\/(?:video|photo|reel|reels|p|tv)\/([\w-]+)/.exec(url)?.[1];
+}
+
 /** One page opened in the social browser, for the activity list. */
 export interface SocialVisit {
   at: string;
@@ -244,6 +309,8 @@ export interface SocialStatus {
   lastCheck?: { at: string; error?: string };
   /** Proposed, posting and posted videos, newest first. */
   drafts: SocialDraft[];
+  /** Every video counted so far (own and others’), with its latest counts. */
+  videos: VideoStat[];
 }
 
 /** Parse “12.3K”, “1,234”, “1.2M”, “3 Mio.”, “4,5 Tsd.” into a number. */
