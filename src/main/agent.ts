@@ -106,7 +106,7 @@ async function describeMarks(root: string, cut: string, marks: Mark[], timeline:
   return `\n\n<marks>\nThe user marked these parts of the edit (output-timeline times):\n${lines.join('\n')}\n</marks>`;
 }
 
-const describeTool = (name: string, input: Record<string, unknown>): string => {
+export const describeTool = (name: string, input: Record<string, unknown>): string => {
   if (name === 'Bash') return String(input.description ?? input.command ?? 'Running a command').slice(0, 120);
   if (name.startsWith('mcp__social__') && typeof input.url === 'string') return `Opening ${input.url}`;
   if (name.startsWith('mcp__social__') && typeof input.text === 'string') return `Clicking “${input.text}”`;

@@ -109,7 +109,25 @@ You decide how Claude may use the window, and Cutroom enforces it, not Claude:
 
 Claude gets read-only tools (`mcp__social__*`): open a page, read it, scroll, click a tab, take a screenshot, and save
 or read follower counts. They refuse anything that acts as you: follow, like, comment, share, message or post. Every
-page opened or refused is listed on the page, and the counts build a follower history under `~/.cutroom/social/`.
+page opened or refused is listed under Activity, and the counts build a follower history under `~/.cutroom/social/`.
+
+**Posting.** The Social tab has three views: Overview, Accounts & rules, and Activity. Overview shows the follower
+counts and posted videos next to a Claude chat of its own, which needs no open project. The posting flow:
+1. **Pick videos:** choose exported videos (the `exports/` folders of recent projects) and ask for captions.
+2. **Claude looks:** it pulls frames, transcribes speech, and reads the project's ledger for where footage and music
+   came from.
+3. **Claude proposes:** it calls `propose_post`, which puts a draft card in the chat with the video, an editable
+   caption (checked against each platform's limit) and notes such as rights to check. **Claude has no tool that
+   posts.**
+4. **You post:** only your **Post to TikTok / Instagram** button and the confirmation after it do that. Cutroom
+   uploads the video in the Social window (always shown while it works), types the caption and presses Post.
+   - **"I'll press Post myself":** stops before that final click.
+   - **AI-generated content:** if the ledger says the video has any, Cutroom always stops there, so you can set the
+     platform's AI label.
+   - **If a page looks different than expected** (a redesign, another language), Cutroom leaves the window at that
+     step with the caption on the clipboard, and you finish by hand.
+
+Cutroom marks a draft posted only when the page confirms it.
 
 **Cutouts and stickers, on this Mac.** `cutroom cutout` lifts the subject out of a clip (a transparent `.mov`) or a
 frame (a `.png`, optionally with a white sticker outline) with Apple's Vision framework: free, offline, no account.
@@ -170,8 +188,10 @@ src/main/             Electron shell: project folders, tool setup, preview, the 
   settings.ts           accounts, models, providers, MCP servers
   market.ts             Skill Marketplace: Google sign-in (loopback + PKCE), browse, install/update, reviews, publish
   social.ts             Social analytics: the signed-in browser window, saved logins, pace and limits, Claude's social tools
+  socialPost.ts         Posting: exported videos, Claude's propose_post tool, the TikTok Studio and Instagram upload flows
+  socialChat.ts         The Social tab's own Claude chat (no project needed)
   updates.ts            the check for a newer release on GitHub
-src/renderer/         React UI: Home, Onboarding, Settings, Market, Social, Chat, Preview, Timeline (+ Inspector, timelineOps)
+src/renderer/         React UI: Home, Onboarding, Settings, Market, Social (+ SocialChat), Chat, Preview, Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
 native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
 ```

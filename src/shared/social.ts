@@ -192,6 +192,42 @@ export interface SocialVisit {
   note?: string;
 }
 
+/** Caption length each platform accepts. */
+export const CAPTION_LIMITS: Record<SocialPlatform, number> = { tiktok: 4000, instagram: 2200 };
+
+/** A post Claude proposed. Only the user's Post button publishes it; Claude has no tool that can. */
+export interface SocialDraft {
+  id: string;
+  created: string;
+  platform: SocialPlatform;
+  /** Absolute path of a video in a project's exports/. */
+  video: string;
+  caption: string;
+  /** For the user: rights to footage or music, timing, anything to check. */
+  note?: string;
+  /** The video has AI-generated picture or sound. The platforms ask for a label, which the user sets in the window. */
+  aiGenerated?: boolean;
+  /**
+   * `waiting` = everything is filled in and the user presses Post in the window (or finishes by hand).
+   * `discarded` drafts are kept out of the list.
+   */
+  status: 'draft' | 'posting' | 'waiting' | 'posted' | 'failed' | 'discarded';
+  /** What posting is doing now, or why it stopped. */
+  progress?: string;
+  /** When it was posted. */
+  posted?: string;
+}
+
+/** A video exported from one of the recent projects, which can be posted. */
+export interface ExportedVideo {
+  path: string;
+  name: string;
+  project: string;
+  /** Modified (ISO). */
+  at: string;
+  size: number;
+}
+
 export interface SocialStatus {
   accepted: boolean;
   platforms: Record<SocialPlatform, {
@@ -206,6 +242,8 @@ export interface SocialStatus {
   /** The automatic check is running, or why it last failed. */
   checking: boolean;
   lastCheck?: { at: string; error?: string };
+  /** Proposed, posting and posted videos, newest first. */
+  drafts: SocialDraft[];
 }
 
 /** Parse “12.3K”, “1,234”, “1.2M”, “3 Mio.”, “4,5 Tsd.” into a number. */

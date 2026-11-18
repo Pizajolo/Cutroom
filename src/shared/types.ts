@@ -1,7 +1,7 @@
 // Types shared by the CLI, the Electron main process and the renderer.
 import { llmProviders } from './features';
 import type { Connection, Feature, FeatureState } from './features';
-import type { SocialPlatform, SocialSettings, SocialStatus } from './social';
+import type { ExportedVideo, SocialPlatform, SocialSettings, SocialStatus } from './social';
 
 /** The four folders every project has. Everything Cutroom generates lives in `.cutroom/`. */
 export const PROJECT_DIRS = ['raw', 'references', 'exports', 'assets'] as const;
@@ -631,7 +631,21 @@ export interface CutroomApi {
   socialSignOut(platform: SocialPlatform): Promise<SocialStatus>;
   /** Open your own profiles now and note their counts. */
   socialCheckNow(): Promise<SocialStatus>;
+  /** Videos in the exports/ folders of recent projects: the ones that can be posted. */
+  socialExports(): Promise<ExportedVideo[]>;
+  /** The Social chat: Claude drafts captions and proposes posts. Replies stream on 'social-agent'. */
+  socialChat(): Promise<ChatMessage[]>;
+  socialChatSend(text: string, videos: string[]): Promise<void>;
+  socialChatStop(): Promise<void>;
+  /** A new conversation; drafts and posts stay. */
+  socialChatReset(): Promise<void>;
+  /** The user's OK: post this draft with this caption. `manual` stops before the final click, for the user to press Post. */
+  socialPost(id: string, caption: string, manual: boolean): Promise<SocialStatus>;
+  socialDiscard(id: string): Promise<SocialStatus>;
+  /** Bring the Social window to the front, as it is. */
+  socialShowWindow(): Promise<void>;
   on(channel: 'social', fn: (status: SocialStatus) => void): () => void;
+  on(channel: 'social-agent', fn: (event: AgentEvent) => void): () => void;
   /** A `cutroom://install/<slug>` link was opened: show that skill. */
   on(channel: 'market-open', fn: (slug: string) => void): () => void;
   on(channel: 'agent', fn: (event: AgentEvent) => void): () => void;

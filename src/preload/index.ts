@@ -11,6 +11,7 @@ const METHODS = [
   'marketInstalled', 'marketFavorites', 'marketSetFavorite', 'marketReview', 'marketDeleteReview', 'marketReport', 'marketBuy', 'marketPublish', 'marketMine',
   'marketUpdateOwn', 'brain', 'checkUpdate', 'downloadUpdate',
   'socialStatus', 'socialOpen', 'socialSaveLogin', 'socialForgetLogin', 'socialSignIn', 'socialSignOut', 'socialCheckNow',
+  'socialExports', 'socialChat', 'socialChatSend', 'socialChatStop', 'socialChatReset', 'socialPost', 'socialDiscard', 'socialShowWindow',
 ] as const;
 
 const api = {

@@ -10,20 +10,21 @@ import { BrowserWindow, app, safeStorage, session, shell } from 'electron';
 import { z } from 'zod';
 import { HOME } from '../cli/run';
 import { AUTO_CHECKS, PACES, PAGE_KINDS, PLATFORMS, SOCIAL_PLATFORMS, allowed, classify, cleanHandle, parseCount, platformOf } from '../shared/social';
-import type { SocialPlatform, SocialSettings, SocialSnapshot, SocialStatus, SocialVisit } from '../shared/social';
+import type { SocialDraft, SocialPlatform, SocialSettings, SocialSnapshot, SocialStatus, SocialVisit } from '../shared/social';
 
-const DIR = path.join(HOME, 'social');
+export const DIR = path.join(HOME, 'social');
 const LOGINS = path.join(HOME, 'social-logins.enc');
 const VISITS = path.join(DIR, 'visits.jsonl');
 const SNAPSHOTS = path.join(DIR, 'snapshots.jsonl');
 const USAGE = path.join(DIR, 'usage.json');
 const AUTO = path.join(DIR, 'auto.json');
+const DRAFTS = path.join(DIR, 'drafts.json');
 /** The window's own cookies and storage, kept between launches and separate from everything else in Cutroom. */
 const PARTITION = 'persist:social';
 
-const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+export const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 const today = (): string => new Date().toISOString().slice(0, 10);
-const parseUrl = (text: string): URL | undefined => {
+export const parseUrl = (text: string): URL | undefined => {
   try {
     return new URL(text);
   } catch {
@@ -35,7 +36,7 @@ const parseUrl = (text: string): URL | undefined => {
 
 let listener: (() => void) | undefined;
 export const onChange = (fn: () => void): void => void (listener = fn);
-const changed = (): void => listener?.();
+export const changed = (): void => listener?.();
 
 // --- Saved logins (Keychain-backed encryption) ------------------------------------------------------
 
@@ -74,7 +75,7 @@ let win: BrowserWindow | undefined;
 let quitting = false;
 app.on('before-quit', () => void (quitting = true));
 
-function browser(): BrowserWindow {
+export function browser(): BrowserWindow {
   if (win && !win.isDestroyed()) return win;
   const next = (win = new BrowserWindow({
     width: 1180,
@@ -111,11 +112,18 @@ function browser(): BrowserWindow {
   return next;
 }
 
+/** Bring the window to the front without changing its page. */
+export function show(): void {
+  const w = browser();
+  w.show();
+  w.focus();
+}
+
 /** Destroy the window (when Cutroom quits). */
 export const close = (): void => win?.destroy();
 
 /** Load a page and wait until it has stopped changing (these sites render after loading). */
-async function load(w: BrowserWindow, url: string): Promise<void> {
+export async function load(w: BrowserWindow, url: string): Promise<void> {
   try {
     await w.webContents.loadURL(url);
   } catch (error) {
@@ -125,7 +133,7 @@ async function load(w: BrowserWindow, url: string): Promise<void> {
   await settle(w);
 }
 
-async function settle(w: BrowserWindow): Promise<void> {
+export async function settle(w: BrowserWindow): Promise<void> {
   await sleep(1500);
   let last = -1;
   for (let i = 0; i < 12; i++) {
@@ -136,7 +144,7 @@ async function settle(w: BrowserWindow): Promise<void> {
   }
 }
 
-async function signedIn(platform: SocialPlatform): Promise<boolean> {
+export async function signedIn(platform: SocialPlatform): Promise<boolean> {
   const { domain, cookie } = PLATFORMS[platform].session;
   const cookies = await session.fromPartition(PARTITION).cookies.get({ domain, name: cookie }).catch(() => []);
   return cookies.some((c) => !!c.value && (!c.expirationDate || c.expirationDate * 1000 > Date.now()));
@@ -228,7 +236,7 @@ export async function signIn(platform: SocialPlatform, rules: SocialSettings): P
 
 /** One action at a time in the window: Claude's tools and the automatic check wait for each other. */
 let queue: Promise<unknown> = Promise.resolve();
-function exclusive<T>(fn: () => Promise<T>): Promise<T> {
+export function exclusive<T>(fn: () => Promise<T>): Promise<T> {
   const next = queue.then(fn, fn);
   queue = next.catch(() => {});
   return next;
@@ -252,7 +260,7 @@ async function countStep(): Promise<void> {
   await writeFile(USAGE, JSON.stringify({ day: today(), count: (await usage()) + 1 }));
 }
 
-async function logVisit(visit: Omit<SocialVisit, 'at'>): Promise<void> {
+export async function logVisit(visit: Omit<SocialVisit, 'at'>): Promise<void> {
   await mkdir(DIR, { recursive: true });
   await appendFile(VISITS, `${JSON.stringify({ at: new Date().toISOString(), ...visit })}\n`);
   changed();
@@ -268,6 +276,24 @@ async function readLines<T>(file: string, last: number): Promise<T[]> {
     }
   });
 }
+
+// --- Drafts (written by the posting module) -------------------------------------------------------
+
+export async function readDrafts(): Promise<SocialDraft[]> {
+  return JSON.parse(await readFile(DRAFTS, 'utf8').catch(() => '[]')) as SocialDraft[];
+}
+export async function writeDrafts(drafts: SocialDraft[]): Promise<void> {
+  await mkdir(DIR, { recursive: true });
+  // Keep the last 300; discarded ones go first.
+  const kept = drafts.filter((d) => d.status !== 'discarded').slice(-300);
+  await writeFile(DRAFTS, JSON.stringify(kept, null, 2));
+  changed();
+}
+
+/** While a video is being posted the window belongs to that: Claude's reading tools wait their turn by refusing. */
+let posting = false;
+export const setPosting = (on: boolean): void => void (posting = on);
+const POSTING = 'The Social window is busy posting a video right now. Try again in a few minutes, or carry on without it.';
 
 async function addSnapshot(snapshot: Omit<SocialSnapshot, 'at'>): Promise<SocialSnapshot> {
   const full = { at: new Date().toISOString(), ...snapshot };
@@ -363,8 +389,14 @@ const CLICK = (target: string): string => `((target) => {
   return { found: true, label: el.innerText.trim().slice(0, 80) || el.getAttribute('aria-label') || '', marker, click: () => el.click() };
 })(${JSON.stringify(target)})`;
 
-/** The tools Claude gets for one message. `rules` are read when the message is sent. */
-export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
+/** Extra tools to serve next to the reading tools. */
+export type ExtraTools = NonNullable<Parameters<typeof createSdkMcpServer>[0]['tools']>;
+
+/**
+ * The tools Claude gets for one message. `rules` are read when the message is sent. `browse: false` leaves out
+ * everything that opens pages (the feature is switched off); `extra` adds tools, such as proposing a post.
+ */
+export function server(rules: SocialSettings, options: { browse?: boolean; extra?: ExtraTools } = {}): McpSdkServerConfigWithInstance {
   let thisMessage = 0;
 
   /** Checks shared by every step that loads something: the per-message and daily limits. */
@@ -405,10 +437,7 @@ export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
       : `Not signed in to ${PLATFORMS[first.platform].label}. Ask the user to sign in under Home › Social (the window is open for them), then try again.`;
   };
 
-  return createSdkMcpServer({
-    name: 'social',
-    version: '1.0.0',
-    tools: [
+  const browsing = [
       tool('status', 'Which social accounts are signed in, the user’s own handles, what you may open and how many page views are left.', {}, async () => {
         const lines = await Promise.all(SOCIAL_PLATFORMS.map(async (p) => {
           const on = rules.platforms[p];
@@ -430,6 +459,7 @@ export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
         url: z.string().describe('Full https:// link, e.g. https://www.tiktok.com/@handle or https://www.tiktok.com/tiktokstudio/analytics'),
         max_chars: z.number().int().min(1000).max(40000).optional().describe('How much of the page text to return (default 12000).'),
       }, (args) => exclusive(async () => {
+        if (posting) return text(POSTING, true);
         const url = parseUrl(args.url);
         const verdict = url ? allowed(url, rules) : { ok: false as const, reason: 'Not a valid link.' };
         if (!verdict.ok) {
@@ -458,6 +488,7 @@ export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
       tool('read_page', 'Read the page that is open now again (no new page view), e.g. with more text.', {
         max_chars: z.number().int().min(1000).max(40000).optional(),
       }, (args) => exclusive(async () => {
+        if (posting) return text(POSTING, true);
         const w = current();
         if (!w.webContents.getURL()) return text('No page is open. Use open_page first.', true);
         return text(describePage(await readPage(w), rules, args.max_chars ?? 12000));
@@ -467,6 +498,7 @@ export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
         times: z.number().int().min(1).max(5).describe('How many screens to scroll (1–5).'),
         max_chars: z.number().int().min(1000).max(40000).optional(),
       }, (args) => exclusive(async () => {
+        if (posting) return text(POSTING, true);
         const w = current();
         if (!w.webContents.getURL()) return text('No page is open. Use open_page first.', true);
         for (let i = 0; i < args.times; i++) {
@@ -483,6 +515,7 @@ export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
       tool('click', 'Click a tab, date-range option or link by its visible text (e.g. "Followers", "Last 28 days"). Buttons that act as the user (follow, like, comment, share, message, post, …) are refused. Counts as a page view.', {
         text: z.string().min(1).max(80).describe('The visible text of the tab, option or link.'),
       }, (args) => exclusive(async () => {
+        if (posting) return text(POSTING, true);
         if (ACTIONS.test(args.text)) return text(`Refused: “${args.text}” would act as the user. You may only read.`, true);
         const w = current();
         if (!w.webContents.getURL()) return text('No page is open. Use open_page first.', true);
@@ -511,6 +544,7 @@ export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
       })),
 
       tool('screenshot', 'A picture of the visible part of the open page, for charts and layouts the text does not show. No page view.', {}, () => exclusive(async () => {
+        if (posting) return text(POSTING, true);
         const w = current();
         if (!w.webContents.getURL()) return text('No page is open. Use open_page first.', true);
         const image = await w.webContents.capturePage(undefined, { stayHidden: true });
@@ -543,8 +577,8 @@ export function server(rules: SocialSettings): McpSdkServerConfigWithInstance {
           Date.parse(s.at) >= since && (!args.platform || s.platform === args.platform) && (!handle || s.handle === handle));
         return text(rows.length ? rows.map((s) => JSON.stringify(s)).join('\n') : 'No saved counts for that yet.');
       }),
-    ],
-  });
+  ];
+  return createSdkMcpServer({ name: 'social', version: '1.0.0', tools: [...(options.browse === false ? [] : browsing), ...(options.extra ?? [])] });
 }
 
 /** What Claude is told about the social tools, given the user's rules. */
@@ -569,6 +603,7 @@ let checking = false;
 export async function checkNow(rules: SocialSettings, by: 'auto' | 'you' = 'you'): Promise<void> {
   if (!rules.accepted) throw new Error('Turn on social analytics first.');
   if (checking) return;
+  if (posting) throw new Error('A video is being posted. Check again when it is done.');
   const targets = SOCIAL_PLATFORMS.filter((p) => rules.platforms[p] && cleanHandle(rules.handles[p]));
   if (!targets.length) throw new Error('Add your own handle for at least one platform first.');
   checking = true;
@@ -636,6 +671,7 @@ export async function status(rules: SocialSettings): Promise<SocialStatus> {
     today: await usage(),
     visits: (await readLines<SocialVisit>(VISITS, 100)).reverse(),
     snapshots: await readLines<SocialSnapshot>(SNAPSHOTS, 500),
+    drafts: (await readDrafts()).reverse(),
     checking,
     lastCheck: last ?? undefined,
   };

@@ -82,12 +82,16 @@ export interface AgentConfig {
 /** Split `npx -y "some server" --flag` into words. */
 const words = (line: string): string[] => (line.match(/"[^"]*"|\S+/g) ?? []).map((w) => w.replace(/^"|"$/g, ''));
 
-export async function agentConfig(root: string): Promise<AgentConfig> {
+/**
+ * Who answers: the env that points Claude Code at the chosen account or provider, and the model. `root` is the open
+ * project, whose own model choice wins; without one (Home › Social) the default model is used.
+ */
+export async function brainConfig(root?: string): Promise<Pick<AgentConfig, 'env' | 'model'>> {
   const settings = await loadSettings();
-  const choice = await modelChoice(root);
+  const options = modelOptions(settings);
+  const choice = root ? await modelChoice(root) : { project: '', default: options.some((o) => o.id === settings.model) ? settings.model : '' };
   let model = choice.project || choice.default || undefined;
   const env: AgentConfig['env'] = { ...process.env };
-  let notes = '';
 
   // Claude itself: the Claude Code sign-in, or an API key.
   if (settings.claude.auth === 'api-key') env.ANTHROPIC_API_KEY = settings.claude.apiKey;
@@ -102,6 +106,13 @@ export async function agentConfig(root: string): Promise<AgentConfig> {
     env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
     env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model; // background requests must use a model the endpoint has
   }
+  return { env, model };
+}
+
+export async function agentConfig(root: string): Promise<AgentConfig> {
+  const settings = await loadSettings();
+  const { env, model } = await brainConfig(root);
+  let notes = '';
 
   const mcpServers: AgentConfig['mcpServers'] = {};
   for (const server of settings.mcp) {
