@@ -107,7 +107,7 @@ function MarketSettings() {
         )}
       </div>
       <div className="fields">
-        <input className="grow" placeholder="https://cutroom.app" value={server} onChange={(e) => setServer(e.target.value)} aria-label="Marketplace server" />
+        <input className="grow" placeholder="https://cutroom-market.simon-80d.workers.dev" value={server} onChange={(e) => setServer(e.target.value)} aria-label="Marketplace server" />
         <button type="button" disabled={busy || server === account?.url} onClick={() => void run(() => api.marketSetServer(server))}>Use this server</button>
       </div>
       <p className="hint">Only change the server for a self-hosted marketplace. Changing it signs you out.</p>

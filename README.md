@@ -210,4 +210,4 @@ Copyright © OpenTheta AG. Cutroom is free software, licensed under the
 [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). The name "Cutroom" and its logo are not covered
 by the licence. Third-party tools Cutroom uses or installs (FFmpeg, Whisper, yt-dlp, HyperFrames, Remotion, Codex, …)
 keep their own licences. Use of the website and the Skill Marketplace is governed by the
-[Terms of Service](https://cutroom.app/terms) and the [Privacy Policy](https://cutroom.app/privacy).
+[Terms of Service](https://cutroom-market.simon-80d.workers.dev/terms) and the [Privacy Policy](https://cutroom-market.simon-80d.workers.dev/privacy).

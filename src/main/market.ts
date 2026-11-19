@@ -29,7 +29,7 @@ export const MARKET = path.join(HOME, 'market');
 const SKILLS = path.join(MARKET, 'skills');
 const INSTALLED = path.join(MARKET, 'installed.json');
 const ACCOUNT = path.join(HOME, 'market.enc');
-const DEFAULT_URL = 'https://cutroom.app';
+const DEFAULT_URL = 'https://cutroom-market.simon-80d.workers.dev';
 
 interface Stored {
   url?: string;
