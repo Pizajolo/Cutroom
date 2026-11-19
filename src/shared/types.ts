@@ -244,6 +244,26 @@ export interface Example {
   label: string;
 }
 
+/** A style or move Claude just saved: it waits for the user to keep or drop it. */
+export interface SkillDraft {
+  /** Folder name; kept, it becomes `my:<name>`. */
+  name: string;
+  title: string;
+  kind: 'style' | 'move';
+  description: string;
+  tags: string[];
+  /** For a move learned from someone else's video: creator and link. */
+  source?: string;
+  /** The whole SKILL.md. */
+  instructions: string;
+  /** `media://` address of its example clip. */
+  example?: string;
+  /** The library already has an entry of this name: keeping the draft replaces it. */
+  replaces: boolean;
+  /** The project it was made in (folder name). */
+  project?: string;
+}
+
 // --- Skill Marketplace (cutroom-market API) --------------------------------------------------------
 
 export interface MarketSkill {
@@ -564,6 +584,10 @@ export interface CutroomApi {
   removeExample(id: string, file: string): Promise<Skill[]>;
   /** Moves a saved style to the Trash. */
   deleteSkill(id: string): Promise<Skill[]>;
+  /** New styles and moves Claude saved, waiting to be kept or dropped. */
+  listDrafts(): Promise<SkillDraft[]>;
+  /** Keep some drafts (they join the library) and drop others (to the Trash). */
+  settleDrafts(keep: string[], drop: string[]): Promise<Skill[]>;
   getSettings(): Promise<Settings>;
   saveSettings(settings: Settings): Promise<void>;
   claudeStatus(): Promise<ClaudeStatus>;

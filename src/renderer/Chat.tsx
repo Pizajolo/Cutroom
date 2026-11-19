@@ -2,8 +2,9 @@ import { memo, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { ArrowUp, Film, Flag, GitBranch, Library, Sparkles, Square, Star, TriangleAlert, Undo2, X } from 'lucide-react';
 import { EMPTY_TIMELINE } from '../shared/types';
-import type { AgentEvent, ChatMessage, Cuts, Mark, MediaFile, ModelChoice, Skill, Timeline } from '../shared/types';
+import type { AgentEvent, ChatMessage, Cuts, Mark, MediaFile, ModelChoice, Skill, SkillDraft, Timeline } from '../shared/types';
 import { CutTabs } from './CutTabs';
+import { DraftReview } from './Drafts';
 import { useLibraryFilter } from './LibraryFilter';
 import { Markdown } from './Markdown';
 import { Settings } from './Settings';
@@ -45,6 +46,10 @@ function reduce(messages: ChatMessage[], event: AgentEvent): ChatMessage[] {
 export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, marks, setMarks, media, sender }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
+  /** New styles and moves the last turn saved, for the user to keep or drop. */
+  const [drafts, setDrafts] = useState<SkillDraft[]>([]);
+  /** Drafts the user put off with "Decide later": they don't open the popup again, the Library page lists them. */
+  const later = useRef<string[]>([]);
   /** Styles and moves picked for the next message (skill ids). */
   const [picked, setPicked] = useState<string[]>([]);
   const [model, setModel] = useState<ModelChoice | null>(null);
@@ -80,7 +85,9 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
       setMessages((all) => reduce(all, event));
       if (event.type === 'done') {
         setBusy(false);
-        void api.listSkills().then(setSkills); // the turn may have saved a new style
+        void api.listSkills().then(setSkills);
+        // The turn may have saved styles or moves: they join the library only once the user approves them.
+        void api.listDrafts().then((found) => found.some((d) => !later.current.includes(d.name)) && setDrafts(found));
       }
     });
   }, []);
@@ -209,6 +216,7 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
           </div>
         </div>
       )}
+      {drafts.length > 0 && <DraftReview drafts={drafts} onClose={() => ((later.current = drafts.map((d) => d.name)), setDrafts([]))} onSaved={(all) => (setSkills(all), setDrafts([]))} />}
       {connecting && (
         <div className="modal">
           <section role="dialog" aria-label="Settings">

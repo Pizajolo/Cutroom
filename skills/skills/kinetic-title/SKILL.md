@@ -2,7 +2,7 @@
 name: kinetic-title
 kind: move
 tags: title, text, motion, hook
-description: Kinetic title: a bold headline that slams in word by word over the opening shot. Use for hooks and section openers.
+description: "Kinetic title: a bold headline that slams in word by word over the opening shot. Use for hooks and section openers."
 ---
 
 # Kinetic title

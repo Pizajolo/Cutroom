@@ -8,6 +8,14 @@ import { HOME, run } from './run';
 
 /** The user's own styles: a Claude Code plugin folder. */
 export const LIBRARY = path.join(HOME, 'library');
+/** New styles and moves wait here until the user keeps or drops them. Outside skills/, so Claude doesn't load them yet. */
+export const DRAFTS = path.join(LIBRARY, 'drafts');
+/** Next to a draft's SKILL.md: the project it was made in, and whether that project was "made with" it. */
+export const DRAFT_INFO = '.draft.json';
+export interface DraftInfo {
+  root: string;
+  linked: boolean;
+}
 const VIDEOS = path.join(LIBRARY, 'videos.json');
 
 export interface ProjectSettings {
@@ -84,8 +92,11 @@ export async function linkExport(root: string, file: string): Promise<void> {
  * Without `clip` it is the whole current preview; with it, a section of the preview or of another file (`src`).
  */
 export async function saveExample(root: string, cut: string, name: string, clip: { src?: string; from?: number; to?: number } = {}): Promise<string> {
-  const dir = path.join(LIBRARY, 'skills', name);
-  if (!/^[\w-]+$/.test(name) || !existsSync(path.join(dir, 'SKILL.md'))) throw new Error(`No style or move called "${name}" in the library. Write its SKILL.md first.`);
+  if (!/^[\w-]+$/.test(name)) throw new Error(`"${name}" is not a valid name: use letters, digits and dashes.`);
+  // A new entry is a draft until the user keeps it; an example can also be added to one already in the library.
+  const draft = existsSync(path.join(DRAFTS, name, 'SKILL.md'));
+  const dir = path.join(draft ? DRAFTS : path.join(LIBRARY, 'skills'), name);
+  if (!existsSync(path.join(dir, 'SKILL.md'))) throw new Error(`No draft called "${name}". Write ${path.join(DRAFTS, name, 'SKILL.md')} first.`);
   const source = path.resolve(root, clip.src ?? cutFiles(cut).preview);
   const out = path.join(dir, 'example.mp4');
   if (clip.from === undefined && clip.to === undefined && !clip.src) await copyFile(source, out);
@@ -94,7 +105,9 @@ export async function saveExample(root: string, cut: string, name: string, clip:
     await run('ffmpeg', ['-v', 'error', '-y', ...range, '-i', source, '-vf', "scale='min(540,iw)':-2", '-c:v', 'libx264', '-crf', '26', '-pix_fmt', 'yuv420p', '-c:a', 'aac', out]);
   }
   // Only the user's own edit makes this project "made with" the style; a clip of a reference does not.
-  if (!clip.src) await useStyle(root, `my:${name}`);
+  // A draft is linked once the user keeps it.
+  if (draft) await writeFile(path.join(dir, DRAFT_INFO), JSON.stringify({ root, linked: !clip.src } satisfies DraftInfo));
+  else if (!clip.src) await useStyle(root, `my:${name}`);
   return out;
 }
 

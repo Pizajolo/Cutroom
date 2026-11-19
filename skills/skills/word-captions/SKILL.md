@@ -2,7 +2,7 @@
 name: word-captions
 kind: move
 tags: captions, text, short-form
-description: Word-by-word captions: two or three words on screen at a time, the spoken word highlighted, centred in the lower third. Use on talking footage for Reels, TikTok and Shorts.
+description: "Word-by-word captions: two or three words on screen at a time, the spoken word highlighted, centred in the lower third. Use on talking footage for Reels, TikTok and Shorts."
 ---
 
 # Word-by-word captions

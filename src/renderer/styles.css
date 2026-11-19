@@ -557,3 +557,18 @@ button.link:hover:not(:disabled) { background: none; text-decoration: underline;
 .insights .figure strong { font-size: var(--font-size-heading); font-variant-numeric: tabular-nums; }
 .note.warn-text { color: var(--warning); }
 .stats .partial { text-decoration: underline dotted var(--text-muted); text-underline-offset: 3px; cursor: help; }
+
+/* Review of new styles and moves before they join the library */
+.modal > section.drafts { width: min(760px, 92vw); height: auto; max-height: 88vh; }
+.draft-list { margin: 0; padding: 0; list-style: none; }
+.draft-list li { display: flex; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.draft-list li.dropped { opacity: 0.5; }
+.draft-list video, .draft-list .no-example { flex: none; width: 96px; aspect-ratio: 9 / 16; object-fit: contain; border-radius: var(--radius-sm); background: var(--bg-frame); }
+.draft-list .no-example { display: flex; align-items: center; justify-content: center; text-align: center; color: var(--text-muted); font-size: var(--font-size-caption); }
+.draft-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.draft-pick { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); cursor: pointer; }
+.draft-text details summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-small); }
+.draft-text pre {
+  max-height: 240px; overflow: auto; margin: var(--space-1) 0 0; padding: var(--space-2); border-radius: var(--radius-sm);
+  background: var(--bg-input); font-family: var(--font-mono); font-size: var(--font-size-small); white-space: pre-wrap; user-select: text;
+}

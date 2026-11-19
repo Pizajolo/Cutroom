@@ -2,7 +2,7 @@
 name: punch-in
 kind: move
 tags: camera, emphasis, cut
-description: Punch-in: a quick zoom into the speaker on a key line, then back out on the next cut. Use to emphasise a point or hide a jump cut in single-camera talking footage.
+description: "Punch-in: a quick zoom into the speaker on a key line, then back out on the next cut. Use to emphasise a point or hide a jump cut in single-camera talking footage."
 ---
 
 # Punch-in

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { app, safeStorage, shell } from 'electron';
 import { unzipSync, zipSync } from 'fflate';
 import { LIBRARY } from '../cli/project';
+import { cleanFrontmatter, frontmatterField } from '../shared/frontmatter';
 import { HOME } from '../cli/run';
 import type {
   MarketAccount,
@@ -316,6 +317,12 @@ async function bundle(name: string): Promise<Uint8Array> {
     }
   };
   await walk('');
+  // Claude Code tolerates loose frontmatter; the marketplace reads it as YAML, so `description: Punch-in: a zoom…` or
+  // `source: @creator` would make the upload fail. Send it quoted.
+  const text = cleanFrontmatter(new TextDecoder().decode(files['SKILL.md']));
+  files['SKILL.md'] = new TextEncoder().encode(text);
+  // A move learned from someone else's video keeps a clip of it only on this Mac: it is their footage.
+  if (frontmatterField(text, 'source')) for (const file of Object.keys(files)) if (file.startsWith('example.')) delete files[file];
   return zipSync(Object.fromEntries(Object.entries(files).map(([k, v]) => [k, [v, { level: k.startsWith('example.') ? 0 : 6 }]])));
 }
 

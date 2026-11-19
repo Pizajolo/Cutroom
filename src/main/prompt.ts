@@ -176,5 +176,7 @@ layouts, and never put anything from references/ on the timeline.
 The library holds styles (how a whole video is made) and moves (one technique: a caption
 treatment, a transition, a title…). When the user picks some, or the request clearly matches
 one, use them — several moves can be combined with one style. When the user asks to save a
-style, a move or a technique, use the save-style skill; new entries go in ${libraryDir}/skills/<name>/.
+style, a move or a technique, use the save-style skill. New entries are drafts in
+${libraryDir}/drafts/<name>/: when your turn ends the app shows the user each one to keep or drop,
+and only kept ones join the library (${libraryDir}/skills/).
 `;

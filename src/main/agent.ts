@@ -6,6 +6,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import { LIBRARY, readFavorites, styleVideos, useStyle } from '../cli/project';
 import { run } from '../cli/run';
+import { frontmatterField } from '../shared/frontmatter';
 import { UTILITY_SKILLS, clipLength, clipStarts, cutFiles } from '../shared/types';
 import type { AgentEvent, AudioItem, Mark, Overlay, Skill, Timeline } from '../shared/types';
 import type { Fork } from './cuts';
@@ -32,7 +33,7 @@ export async function listSkills(): Promise<Skill[]> {
   for (const [plugin, root] of [['cutroom', BUILTIN], ['my', LIBRARY], ['market', MARKET]] as const) {
     for (const dir of await readdir(path.join(root, 'skills'))) {
       const text = await readFile(path.join(root, 'skills', dir, 'SKILL.md'), 'utf8').catch(() => '');
-      const field = (key: string): string => new RegExp(`^${key}:\\s*(.+)$`, 'm').exec(text)?.[1]?.trim() ?? '';
+      const field = (key: string): string => frontmatterField(text, key);
       if (!text) continue;
       const id = `${plugin}:${dir}`;
       const saved = path.join(root, 'skills', dir, EXAMPLE);

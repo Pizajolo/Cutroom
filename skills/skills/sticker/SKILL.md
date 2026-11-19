@@ -2,7 +2,7 @@
 name: sticker
 kind: move
 tags: sticker, cutout, overlay, emphasis, playful
-description: Sticker: a person or object lifted out of the footage with a white die-cut outline, popping in beside the action. Use to point at a product, react to a line, or build a collage-style intro. Needs cutouts.
+description: "Sticker: a person or object lifted out of the footage with a white die-cut outline, popping in beside the action. Use to point at a product, react to a line, or build a collage-style intro. Needs cutouts."
 ---
 
 # Sticker

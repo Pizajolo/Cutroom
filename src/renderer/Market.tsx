@@ -103,6 +103,7 @@ export function PublishDialog({ skills, initial, account, onClose }: { skills: S
               </select>
             </label>
             {own.length === 0 && <p className="hint">You have no styles or moves of your own yet. Press “Save style” in a project’s chat.</p>}
+            {own.find((s) => s.id === id)?.source && <p className="hint">Learned from someone else’s video, so its example clip stays on this Mac and isn’t uploaded.</p>}
             <div className="row">
               {account.payments && (
                 <label className="stacked" style={{ width: 160 }}>Price (USD)

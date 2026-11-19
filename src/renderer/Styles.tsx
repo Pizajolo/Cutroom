@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen, Star, Store, Trash2, Upload, X } from 'lucide-react';
-import type { Example, MarketAccount, Skill } from '../shared/types';
+import type { Example, MarketAccount, Skill, SkillDraft } from '../shared/types';
+import { DraftReview } from './Drafts';
 import { useLibraryFilter } from './LibraryFilter';
 import { PublishDialog, SkillDialog } from './Market';
 import { api } from './lib';
@@ -91,7 +92,10 @@ export function Styles() {
   const [publish, setPublish] = useState('');
   const [market, setMarket] = useState('');
   const [account, setAccount] = useState<MarketAccount | null>(null);
+  const [drafts, setDrafts] = useState<SkillDraft[]>([]);
+  const [reviewing, setReviewing] = useState(false);
   useEffect(() => void api.listSkills().then(setSkills), []);
+  useEffect(() => void api.listDrafts().then(setDrafts), []);
   useEffect(() => void api.marketAccount().then(setAccount), []);
   const [visible, filter] = useLibraryFilter(skills);
   const opened = skills.find((skill) => skill.id === open);
@@ -110,6 +114,12 @@ export function Styles() {
         To add your own, finish an edit you like and press “Save style” in the chat, or mark a section and ask Claude to save it as a move.
         Find more — and share yours — in the Marketplace.
       </p>
+      {drafts.length > 0 && (
+        <p className="note row">
+          <span className="grow">{drafts.length === 1 ? 'One new style or move is' : `${drafts.length} new styles and moves are`} waiting for you to keep or drop.</span>
+          <button className="primary" onClick={() => setReviewing(true)}>Review</button>
+        </p>
+      )}
       {filter}
       <ul className="list">
         {visible.length === 0 && <li className="hint">Nothing matches.</li>}
@@ -132,6 +142,12 @@ export function Styles() {
         <StyleDialog
           key={opened.id} skill={opened} onChange={setSkills} onClose={() => setOpen('')}
           onPublish={() => (setOpen(''), setPublish(opened.id))} onMarket={() => (setOpen(''), setMarket(opened.market!.slug))}
+        />
+      )}
+      {reviewing && drafts.length > 0 && (
+        <DraftReview
+          drafts={drafts} onClose={() => setReviewing(false)}
+          onSaved={(all) => (setSkills(all), setReviewing(false), void api.listDrafts().then(setDrafts))}
         />
       )}
       {publish && account && <PublishDialog skills={skills} initial={publish} account={account} onClose={() => setPublish('')} />}

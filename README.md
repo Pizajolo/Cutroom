@@ -69,8 +69,10 @@ colour, and a button to mark an item for Claude.
 **The library: styles and moves.** Both are skills. A *style* is how a whole video is made (`skills/` ships
 talking-head short, podcast clip, product teaser, montage, explainer); a *move* is one technique — word-by-word captions,
 a punch-in, a kinetic title — usable in any video. **Save style** has Claude distil a finished edit into a style *and*
-its moves in `~/.cutroom/library/skills/`; mark a section (or name a moment in a reference) and ask to save just that
-move. Each keeps an example clip. Home › Library filters by kind, tags and text, lets you star favourites (listed first when picking in a project), plays the examples, lists every video
+its moves; mark a section (or name a moment in a reference) and ask to save just that move. Each keeps an example clip.
+Claude saves them as drafts (`~/.cutroom/library/drafts/`): when its reply ends, a popup shows every new style and move
+with its example and instructions, and you keep or drop each one. Kept ones move into `~/.cutroom/library/skills/`
+(replacing one of the same name, which goes to the Trash); **Decide later** leaves them waiting under Home › Library. Home › Library filters by kind, tags and text, lets you star favourites (listed first when picking in a project), plays the examples, lists every video
 exported with an entry and lets you edit its instructions. In a project, **Styles & moves** picks several for a
 request; click a picked one to mention it (`@punch-in`) and say where it goes.
 
@@ -82,7 +84,8 @@ skills and your library, loaded by Claude but never writable by it — and it ap
 Installed skills show **Update** when a creator releases a new version, and a warning if moderators removed one.
 Star favourites, rate and review what you installed, **Report** anything harmful, and **Buy** paid skills through
 Stripe Checkout. To share your own, open it in the Library and press **Publish to marketplace** (free, or for a price
-once payouts are set up on the website): the marketplace checks every version for malicious instructions and code and
+once payouts are set up on the website). The upload quotes the frontmatter so it is valid YAML, and a move learned
+from someone else's video goes without its example clip (that is their footage): the marketplace checks every version for malicious instructions and code and
 shows the result right away — live, in review, or rejected with the reasons. `cutroom://install/<slug>` links on the
 website open the skill in the app. Settings › Marketplace shows the account and, for a self-hosted marketplace, its
 address (or set `CUTROOM_MARKET_URL`). The website, API and moderation live in the
@@ -185,6 +188,7 @@ src/cli/              The `cutroom` command the agent calls: render, transcribe,
   project.ts            per-project settings, versions, sources, style ↔ video links
 src/main/             Electron shell: project folders, tool setup, preview, the agent session
   cuts.ts               chats in a project: new, split, rename, and moving older projects into the first one
+  drafts.ts             new styles and moves waiting for the user to keep or drop them
   prompt.ts             what the agent knows about editing in Cutroom
   settings.ts           accounts, models, providers, MCP servers
   market.ts             Skill Marketplace: Google sign-in (loopback + PKCE), browse, install/update, reviews, publish

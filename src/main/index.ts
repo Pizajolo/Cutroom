@@ -11,10 +11,11 @@ import iconDark from '../../resources/icon-dark.png?asset';
 import iconLight from '../../resources/icon-light.png?asset';
 import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
-import { LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
+import { DRAFTS, LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
 import { PROJECT_DIRS, cutFiles } from '../shared/types';
 import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Settings, Timeline } from '../shared/types';
 import * as agent from './agent';
+import { listDrafts, settleDrafts } from './drafts';
 import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
 import * as market from './market';
 import * as social from './social';
@@ -223,6 +224,11 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
     await shell.trashItem(agent.customSkillDir(id));
     return agent.listSkills();
   },
+  listDrafts,
+  async settleDrafts(keep, drop) {
+    await settleDrafts(keep, drop);
+    return agent.listSkills();
+  },
   getSettings: loadSettings,
   saveSettings,
   claudeStatus,
@@ -328,6 +334,7 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
 /** `media://project/<path>` serves files from the open project, `media://style/<name>/example.mp4` from the style library,
+ * `media://draft/<name>/example.mp4` from a style or move waiting for review,
  * `media://market/<slug>/example.mp4` from installed marketplace skills
  * and `media://export/<absolute path>` a video listed under a style, with range requests so video can seek. */
 async function serveMedia(request: Request): Promise<Response> {
@@ -339,7 +346,7 @@ async function serveMedia(request: Request): Promise<Response> {
     if (!(await socialPost.exportedVideos()).some((v) => v.path === file)) return new Response(null, { status: 403 });
     return serveFile(file, request);
   }
-  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'market' ? path.join(market.MARKET, 'skills') : url.host === 'export' ? '/' : root();
+  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'draft' ? DRAFTS : url.host === 'market' ? path.join(market.MARKET, 'skills') : url.host === 'export' ? '/' : root();
   const file = path.join(base, decodeURIComponent(url.pathname));
   const allowed = url.host === 'export' ? Object.values(await styleVideos()).flat().includes(file) : file.startsWith(base + path.sep);
   if (!allowed) return new Response(null, { status: 403 });
