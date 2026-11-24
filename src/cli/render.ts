@@ -299,8 +299,9 @@ export async function render(
   const timeline = await readTimeline(root, cut);
   if (!timeline) throw new Error(`No timeline yet. Write ${cutFiles(cut).timeline} first.`);
   const out = opts.preview ? path.join(root, cutFiles(cut).preview) : await nextExportPath(root, cut);
-  // Write next to the target, then rename, so a half-written file is never played or shipped.
-  const tmp = path.join(path.dirname(out), `.rendering-${process.pid}-${path.basename(out)}`);
+  // Write in the cut's folder, then rename, so a half-written file is never played or shipped. Not as a dotfile
+  // next to the target: macOS can give a dotfile the hidden flag, and a rename keeps it, so exports came out hidden.
+  const tmp = path.join(root, cutFiles(cut).dir, `rendering-${process.pid}-${path.basename(out)}`);
   const sources = opts.preview ? await proxies(root, timeline, (done) => opts.onProgress?.(done, 'proxies')) : undefined;
   if (opts.signal?.aborted) throw new Error('Cancelled.');
   const args = await ffmpegArgs(root, timeline, opts.preview ?? false, sources);
