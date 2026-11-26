@@ -165,7 +165,11 @@ export function App() {
       </header>
       <Preview
         video={video} cut={cuts.active} timeline={timeline} preview={preview} media={media} marks={marks} onMark={addMark} script={script}
-        onApprove={() => sender.current?.('The storyboard is approved. Create the video.')}
+        onApprove={(recording) =>
+          recording
+            ? void api.approveScript().then(() => sender.current?.('The script is approved. I will record it now.'))
+            : sender.current?.('The storyboard is approved. Create the video.')
+        }
         onHook={(n, hook) => sender.current?.(`Use hook ${n} as the opening instead: “${hook}”. Update the storyboard.`)}
         onApproveSpokenCut={() => void api.approveSpokenCut().then(() => sender.current?.('The spoken cut is approved. Now add the visuals and sound.'))}
       />

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { RefObject } from 'react';
-import { Check, FileText, Flag, Pause, Play } from 'lucide-react';
+import { Check, FileText, Flag, Pause, Play, ScrollText } from 'lucide-react';
 import { cutFiles, timelineLength } from '../shared/types';
 import type { Mark, MediaFile, Script, Timeline } from '../shared/types';
 import type { PreviewState } from './App';
 import { Markdown } from './Markdown';
+import { Teleprompter, scriptLines } from './Teleprompter';
 import { clock, useVideoTime } from './lib';
 
 interface Props {
@@ -17,7 +18,8 @@ interface Props {
   marks: Mark[];
   onMark: (mark: Mark) => void;
   script: Script;
-  onApprove: () => void;
+  /** `recording`: the script is for footage still to be recorded (it has a "## Script" of words to say). */
+  onApprove: (recording: boolean) => void;
   /** The user picked another opening from the storyboard's hook options. */
   onHook: (n: number, hook: string) => void;
   onApproveSpokenCut: () => void;
@@ -25,6 +27,11 @@ interface Props {
 
 /** The storyboard. Nothing is cut until the user approves it; the opening can be swapped for another hook option. */
 function ScriptPage({ script, onApprove, onHook }: Pick<Props, 'script' | 'onApprove' | 'onHook'>) {
+  // A recording script (written before there is footage) has the words to say under "## Script": it can be read
+  // off a teleprompter, and approving it means "I'll go and record this", not "cut the video".
+  const spoken = scriptLines(script.text);
+  const recording = spoken.length > 0;
+  const [prompting, setPrompting] = useState(false);
   // "## Hooks" holds a numbered list of openings; the one in use is marked "(in script)".
   const lines = script.text.split('\n');
   const start = lines.findIndex((line) => /^## Hooks\s*$/.test(line));
@@ -55,12 +62,24 @@ function ScriptPage({ script, onApprove, onHook }: Pick<Props, 'script' | 'onApp
         )}
         <Markdown text={after} />
       </article>
-      {script.pending && (
+      {(script.pending || recording) && (
         <footer>
-          <span className="hint">Ask for changes in the chat, or</span>
-          <button className="primary" onClick={onApprove}><Check size={16} /> Approve &amp; create video</button>
+          {recording && (
+            <button title="Read the script off the screen while you record" onClick={() => setPrompting(true)}>
+              <ScrollText size={16} /> Teleprompter
+            </button>
+          )}
+          {script.pending && (
+            <>
+              <span className="hint">Ask for changes in the chat, or</span>
+              <button className="primary" onClick={() => onApprove(recording)}>
+                <Check size={16} /> {recording ? 'Approve script' : <>Approve &amp; create video</>}
+              </button>
+            </>
+          )}
         </footer>
       )}
+      {prompting && <Teleprompter lines={spoken} onClose={() => setPrompting(false)} />}
     </div>
   );
 }

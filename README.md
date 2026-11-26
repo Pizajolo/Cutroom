@@ -51,9 +51,30 @@ files. Make the video once, split, and ask for German subtitles. Exports are nam
 can be cropped, sped up or slowed, faded and colour graded (per item or for the whole video). Claude writes it, the Pro timeline edits it, and the app re-renders the preview whenever
 it changes. `cutroom render` turns it into a video with a single FFmpeg filter graph.
 
+**Sound that sits right.** A music bed marked `"duck": true` dips under speech (about 10 dB, or the dB you set) and comes
+back up in the pauses; the dip is the same for a quiet speaker as for a loud one. Every render is levelled to -14 LUFS
+with peaks under -1 dBTP, what TikTok, Reels, Shorts and YouTube play at (`"loudness"` on the timeline sets another
+target, `false` turns it off). Levelling is measured, then applied as one steady gain change, so nothing pumps.
+
+**Checked before you see it.** `cutroom check` is the technical pass Claude runs before replying: flashes of black,
+frozen picture, dead air, a silent first second, loudness and peaks, and layers that run past the end or are never
+seen, each with its time. Held titles and still images are recognised as meant.
+
 **Storyboard first.** For a new video Claude looks at the footage and writes a storyboard (`script.md` in the chat's folder):
 concept, three hook options, a shot list with a real frame per shot, sound. You pick a hook, adjust it in the chat and
-press **Approve & create video**; only then is anything cut. For footage where someone talks, Claude first builds the
+press **Approve & create video**; only then is anything cut. Each shot names its *technique*: before writing the
+shots Claude runs `cutroom recall` with one line per beat ("I name three tools; each appears as I say it"), which finds
+the moves in your library, the built-in ones and those from the marketplace that fit, and ranks moves used in your last
+few projects lower, so videos don't all look alike. Claude loads the candidates, borrows one only where it serves the
+shot, and labels the rest **New move**; after an export it offers to save those to your library. Your own picks always
+come first, and "don't use my library" turns it off.
+
+**No footage yet? Script first.** Start with an idea, a rough draft or a reference you like, and Claude writes a script
+to record instead of a storyboard: hook options, the words to say in short spoken lines with on-screen cues, and the
+shots to record. **Teleprompter** under the script shows it large and scrolling (speed, size, mirror for teleprompter
+glass, Space to pause); **Approve script** sends you off to record. Once the footage is in, the script is the storyboard
+and Claude goes straight to the spoken cut, telling you which lines are missing. Corrections that apply to every script
+("I never say 'game-changer'") go into `~/.cutroom/library/voice.md`, so the next script starts in your voice. For footage where someone talks, Claude first builds the
 **spoken cut** — best takes, no dead air, nothing else — and waits for **Approve spoken cut** before adding visuals.
 **Add files** copies files into the folder you pick (or sorts them by type) and downloads videos from pasted links —
 TikTok, Instagram Reels, YouTube — with yt-dlp. The **Footage** button in the chat lets you pick the clips Claude should use.
@@ -63,7 +84,8 @@ TikTok, Instagram Reels, YouTube — with yt-dlp. The **Footage** button in the 
 the same for one step.
 
 **Two interfaces, one switch.** *Simple* is the preview and the chat: mark a frame or a section, say what
-should change. Under each reply that changed the edit, **Go back to before this** restores the earlier version. *Pro* adds the editor: a media bin to add files, a timeline to move, trim, split, duplicate and reorder
+should change. Each mark gets its own note, so you can watch through once, leave a note at every spot, and send them
+together; Claude answers each one. Under each reply that changed the edit, **Go back to before this** restores the earlier version. *Pro* adds the editor: a media bin to add files, a timeline to move, trim, split, duplicate and reorder
 (with snapping, undo and the usual shortcuts), an inspector for position, speed, volume, fades, crop and
 colour, and a button to mark an item for Claude.
 
@@ -229,7 +251,10 @@ src/shared/types.ts   Timeline format and the window.cutroom API
 src/shared/features.ts  Connections, features and how each is paid for
 src/shared/brand.ts   Brand kits: the format, defaults, and reading older or hand-written kits
 src/shared/social.ts  Social analytics rules: platforms, page kinds, pace, which links Claude may open
-src/cli/              The `cutroom` command the agent calls: render, transcribe, remotion, cutout, generate, style-example, ledger
+src/cli/              The `cutroom` command the agent calls: render, check, recall, transcribe, remotion, cutout, generate, style-example, ledger
+  loudness.ts           measuring and levelling the mix (EBU R128, two-pass)
+  check.ts              the technical check of a render and of the edit behind it
+  recall.ts             library moves that fit each storyboard beat
   project.ts            per-project settings, versions, sources, style ↔ video links
 src/main/             Electron shell: project folders, tool setup, preview, the agent session
   cuts.ts               chats in a project: new, split, rename, and moving older projects into the first one
@@ -249,7 +274,7 @@ src/main/             Electron shell: project folders, tool setup, preview, the 
   socialPost.ts         Posting: exported videos, Claude's propose_post tool, the TikTok Studio and Instagram upload flows
   socialChat.ts         The Social tab's own Claude chat (no project needed)
   updates.ts            the check for a newer release on GitHub
-src/renderer/         React UI: Home, Onboarding, Settings, Market, Brands (+ LayoutStudio, LayoutFrame, LogoStudio, LogoEditor, ClaudeBubble), Social (+ SocialChat), Chat, Preview, Timeline (+ Inspector, timelineOps)
+src/renderer/         React UI: Home, Onboarding, Settings, Market, Brands (+ LayoutStudio, LayoutFrame, LogoStudio, LogoEditor, ClaudeBubble), Social (+ SocialChat), Chat, Preview (+ Teleprompter), Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
 native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
 native/pdfpage.swift  Renders brand guideline PDF pages (PDFKit), compiled the same way

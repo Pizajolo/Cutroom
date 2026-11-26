@@ -103,9 +103,15 @@ async function describeMarks(root: string, cut: string, marks: Mark[], timeline:
         .catch(() => {});
     }
     const where = mark.end ? `${seconds(mark.start)}–${seconds(mark.end)}` : `frame at ${seconds(mark.start)}`;
-    lines.push(`- ${where}: ${under.join(', ') || 'nothing on the timeline'}${screenshot}`);
+    const note = mark.note?.trim() ? `\n  The user's note here: ${JSON.stringify(mark.note.trim())}` : '';
+    lines.push(`- ${where}: ${under.join(', ') || 'nothing on the timeline'}${screenshot}${note}`);
   }
-  return `\n\n<marks>\nThe user marked these parts of the edit (output-timeline times):\n${lines.join('\n')}\n</marks>`;
+  const noted = marks.some((m) => m.note?.trim());
+  return (
+    `\n\n<marks>\nThe user marked these parts of the edit (output-timeline times)` +
+    (noted ? '. A note under a mark is what to change at that spot; work through every one and say briefly what you did for each' : '') +
+    `:\n${lines.join('\n')}\n</marks>`
+  );
 }
 
 export const describeTool = (name: string, input: Record<string, unknown>): string => {

@@ -1,8 +1,10 @@
 // The `cutroom` command line. The agent (and the app itself) drive all rendering through it.
 import path from 'node:path';
+import { check } from './check';
 import { CUTOUT_USAGE, cutout } from './cutout';
 import { generate, schema } from './generate';
 import { activeCut, addLedger, saveExample } from './project';
+import { recall } from './recall';
 import { render } from './render';
 import { renderRemotion } from './remotion';
 import { transcribe } from './transcribe';
@@ -10,6 +12,11 @@ import { transcribe } from './transcribe';
 const HELP = `cutroom — run inside a Cutroom project folder
 
   cutroom render [--preview]              Render the cut's timeline.json to exports/ (or the in-app preview)
+  cutroom check [file]                    Technical check of the preview (or a file): black or frozen picture,
+                                          dead air, a late start, loudness and peaks, layers past the end
+  cutroom recall --beat "…" [--beat "…"] [--limit n] [--recent n] [--exclude name] [--styles]
+                                          Moves from the library that fit each storyboard beat (with --styles:
+                                          styles too, for a whole brief); moves used in recent projects rank lower
   cutroom transcribe <file> [--lang xx]   Whisper transcript with word timestamps (default: auto-detect)
   cutroom remotion <entry> <id> <out.mov> [--props '{...}']
                                           Render a Remotion composition to a transparent overlay
@@ -37,6 +44,21 @@ async function main(): Promise<string> {
     case 'render': {
       const out = await render(root, await activeCut(root), { preview: rest.includes('--preview') });
       return `Rendered ${path.relative(root, out)}`;
+    }
+    case 'check':
+      return check(root, await activeCut(root), rest[0]);
+    case 'recall': {
+      const many = (name: string): string[] => {
+        const values: string[] = [];
+        for (let value = flag(name); value !== undefined; value = flag(name)) values.push(value);
+        return values;
+      };
+      const [beats, exclude, limit, recent] = [many('--beat'), many('--exclude'), flag('--limit'), flag('--recent')];
+      const styles = rest.includes('--styles');
+      const query = rest.filter((arg) => arg !== '--styles').join(' ').trim();
+      if (query) beats.push(query);
+      if (!beats.length) throw new Error('Usage: cutroom recall --beat "what is said and seen" [--beat "…"] [--limit n] [--recent n] [--exclude name] [--styles]');
+      return recall(root, { beats, exclude, styles, limit: limit ? Number(limit) : undefined, recent: recent ? Number(recent) : undefined });
     }
     case 'transcribe': {
       const lang = flag('--lang');

@@ -67,6 +67,13 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
   const [listed, filter] = useLibraryFilter(skills);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  // A new mark gets its note field focused, so marking and saying what's wrong is one motion.
+  const lastNote = useRef<HTMLInputElement>(null);
+  const markCount = useRef(marks.length);
+  useEffect(() => {
+    if (marks.length > markCount.current) lastNote.current?.focus();
+    markCount.current = marks.length;
+  }, [marks.length]);
 
   // Each chat has its own conversation; a fresh one starts with an empty composer.
   useEffect(() => {
@@ -103,7 +110,8 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
 
   /** Send a message. Without a connected model it is held back with a warning, unless the user sends it `anyway`. */
   const sendText = async (text: string, anyway = false): Promise<boolean> => {
-    if (!text || busy || brain.current.checking) return false;
+    // Notes on marks are a message of their own: "watch, note, note, note, send".
+    if ((!text && !marks.some((m) => m.note?.trim())) || busy || brain.current.checking) return false;
     if (!brain.current.ready && !anyway) {
       brain.current.checking = true;
       const found = await api.brain().finally(() => (brain.current.checking = false));
@@ -194,7 +202,7 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
         {messages.map((message, i) => (
           <article key={i} className={`${message.role}${message.error ? ' error' : ''}`}>
             {message.marks?.map((mark, n) => (
-              <span key={n} className="chip"><Flag size={12} /> {markLabel(mark)}</span>
+              <span key={n} className="chip" title={mark.note}><Flag size={12} /> {markLabel(mark)}{mark.note?.trim() ? ` · ${mark.note.trim()}` : ''}</span>
             ))}
             {message.files?.map((file) => (
               <span key={file} className="chip file"><Film size={12} /> {fileName(file)}</span>
@@ -289,7 +297,7 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
             </ul>
           </div>
         )}
-        {marks.length + files.length + picked.length > 0 && (
+        {files.length + picked.length > 0 && (
           <div className="chips">
             {picked.map((id) => (
               <span key={id} className="chip skill">
@@ -302,16 +310,29 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
                 <Film size={12} /> {fileName(file)} <X size={12} />
               </button>
             ))}
-            {marks.map((mark, i) => (
-              <button type="button" key={i} className="chip" title="Remove mark" onClick={() => setMarks(marks.filter((m) => m !== mark))}>
-                <Flag size={12} /> {markLabel(mark)} <X size={12} />
-              </button>
-            ))}
           </div>
+        )}
+        {marks.length > 0 && (
+          <ul className="mark-notes" aria-label="Marked spots">
+            {marks.map((mark, i) => (
+              <li key={`${mark.start}-${mark.end ?? ''}-${mark.itemId ?? ''}-${i}`}>
+                <span className="when"><Flag size={12} /> {markLabel(mark)}</span>
+                <input
+                  ref={i === marks.length - 1 ? lastNote : undefined}
+                  value={mark.note ?? ''} placeholder="What should change here?" aria-label={`Note for ${markLabel(mark)}`}
+                  onChange={(e) => setMarks(marks.map((m) => (m === mark ? { ...m, note: e.target.value } : m)))}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), input.current?.focus())}
+                />
+                <button type="button" className="ghost" title="Remove mark" aria-label={`Remove mark ${markLabel(mark)}`} onClick={() => setMarks(marks.filter((m) => m !== mark))}>
+                  <X size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
         <textarea
           ref={input} rows={3} value={draft} autoFocus
-          placeholder={marks.length ? 'What should change at the marked spots?' : 'Tell Claude what to make or change…'}
+          placeholder={marks.length ? 'Anything else? Or just send the notes.' : 'Tell Claude what to make or change…'}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
         />
@@ -338,7 +359,7 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
           {busy ? (
             <button type="button" className="primary round" aria-label="Stop" onClick={() => void api.stop()}><Square size={14} /></button>
           ) : (
-            <button type="submit" className="primary round" aria-label="Send" disabled={!draft.trim()}><ArrowUp size={16} /></button>
+            <button type="submit" className="primary round" aria-label="Send" disabled={!draft.trim() && !marks.some((m) => m.note?.trim())}><ArrowUp size={16} /></button>
           )}
         </div>
       </form>

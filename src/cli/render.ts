@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { clipLength, cutFiles, playState, timelineLength } from '../shared/types';
+import { DEFAULT_LOUDNESS, clipLength, cutFiles, playState, timelineLength } from '../shared/types';
 import type { Clip, Grade, Overlay, Timeline } from '../shared/types';
+import { levelLoudness } from './loudness';
 import { addVersion, linkExport, readCuts } from './project';
 import { run } from './run';
 
@@ -29,6 +30,7 @@ export async function readTimeline(root: string, cut: string): Promise<Timeline 
     overlays: t.overlays ?? [],
     audio: t.audio ?? [],
     tracks: t.tracks,
+    loudness: t.loudness,
   };
   for (const item of [...timeline.clips, ...timeline.overlays, ...timeline.audio]) {
     if (!item.id || !item.src) throw new Error('Every timeline item needs an "id" and a "src".');
@@ -186,6 +188,10 @@ export async function proxies(root: string, t: Timeline, onProgress?: (done: num
 const tempo = (speed: number): string =>
   speed === 1 ? '' : speed < 0.5 || speed > 2 ? `atempo=${Math.sqrt(speed)},atempo=${Math.sqrt(speed)},` : `atempo=${speed},`;
 
+/** The ducking key (see ffmpegArgs) sits this many dB above the compressor's threshold while someone talks. */
+const DUCK_OVER = 24;
+const DUCK_THRESHOLD = 0.0158; // -36 dBFS: the limited key at -12 dBFS is DUCK_OVER above it
+
 /** Build the FFmpeg arguments for a timeline. Exported separately so it is easy to inspect. */
 export async function ffmpegArgs(root: string, t: Timeline, preview: boolean, sources: Map<string, string> = new Map()): Promise<string[]> {
   if (t.clips.length === 0) throw new Error('The timeline has no clips yet.');
@@ -231,7 +237,9 @@ export async function ffmpegArgs(root: string, t: Timeline, preview: boolean, so
 
   // Overlays: b-roll, picture-in-picture, cutouts and graphics, composited in order.
   let video = 'v';
-  const mix = ['[a]'];
+  // `[speech]` is the main track's sound; music that ducks listens to a copy of it (see below).
+  const mix = ['[speech]'];
+  const ducked: { label: string; db: number }[] = [];
   for (const o of t.overlays) {
     const image = IMAGE.test(o.src);
     const speed = image ? 1 : o.speed || 1;
@@ -273,10 +281,24 @@ export async function ffmpegArgs(root: string, t: Timeline, preview: boolean, so
     if (duration <= 0 || !playState(t, 'audio', a).audible) continue;
     inputs.push('-ss', String(a.in ?? 0), '-t', String(duration), '-i', abs(a.src));
     graph.push(`[${n}:a]${[AUDIO, `volume=${a.volume ?? 1}`, ...fades('a', a, duration), `adelay=${Math.round(a.at * 1000)}:all=1`].join(',')}[m${n}]`);
-    mix.push(`[m${n}]`);
+    if (a.duck) ducked.push({ label: `m${n}`, db: a.duck === true ? 10 : Math.min(20, Math.max(3, a.duck)) });
+    else mix.push(`[m${n}]`);
     n++;
   }
-  let audio = 'a';
+
+  // Ducking: a compressor on the music that listens to the speech. The speech it listens to is first turned into a
+  // steady "someone is talking" signal (gated against room noise, boosted, limited), so the dip is as deep for a quiet
+  // speaker as for a loud one: the key sits DUCK_OVER dB above the threshold, and the ratio sets the dip.
+  if (ducked.length) {
+    graph.push(`[a]asplit=2[speech][talk]`);
+    graph.push(`[talk]highpass=f=120,lowpass=f=5000,agate=threshold=0.008:range=0:attack=5:release=250,volume=40dB,alimiter=limit=0.25:level=0,asplit=${ducked.length}${ducked.map((_, i) => `[key${i}]`).join('')}`);
+  } else graph.push('[a]anull[speech]');
+  for (const [i, d] of ducked.entries()) {
+    const ratio = (DUCK_OVER / Math.max(1, DUCK_OVER - d.db)).toFixed(2);
+    graph.push(`[${d.label}][key${i}]sidechaincompress=threshold=${DUCK_THRESHOLD}:ratio=${ratio}:attack=20:release=500:knee=1[duck${i}]`);
+    mix.push(`[duck${i}]`);
+  }
+  let audio = 'speech';
   if (mix.length > 1) {
     graph.push(`${mix.join('')}amix=inputs=${mix.length}:duration=first:normalize=0[mix]`);
     audio = 'mix';
@@ -315,6 +337,8 @@ export async function render(
         if (at) opts.onProgress?.(Math.min(1, Number(at) / 1e6 / total), 'render');
       },
     });
+    // Level the mix for the feed: platforms play everything at about -14 LUFS, so a quiet video sounds weak next to others.
+    if (timeline.loudness !== false) await levelLoudness(tmp, timeline.loudness ?? DEFAULT_LOUDNESS, opts.signal);
     await rename(tmp, out);
   } catch (error) {
     // A cancelled or failed render leaves nothing behind.

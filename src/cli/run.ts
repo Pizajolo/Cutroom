@@ -9,7 +9,19 @@ export const HOME = process.env.CUTROOM_HOME ?? path.join(homedir(), '.cutroom')
 export function run(
   cmd: string,
   args: string[],
-  { onOutput, ...opts }: { cwd?: string; signal?: AbortSignal; env?: NodeJS.ProcessEnv; /** Called with each piece of stdout as it arrives. */ onOutput?: (chunk: string) => void } = {},
+  {
+    onOutput,
+    onStderr,
+    ...opts
+  }: {
+    cwd?: string;
+    signal?: AbortSignal;
+    env?: NodeJS.ProcessEnv;
+    /** Called with each piece of stdout as it arrives. */
+    onOutput?: (chunk: string) => void;
+    /** Called with each piece of stderr: FFmpeg's analysis filters (loudness, black frames, silence) report there. */
+    onStderr?: (chunk: string) => void;
+  } = {},
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { ...opts, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -19,7 +31,10 @@ export function run(
       out += d;
       onOutput?.(String(d));
     });
-    child.stderr.on('data', (d) => (err = (err + d).slice(-4000)));
+    child.stderr.on('data', (d) => {
+      err = (err + d).slice(-4000);
+      onStderr?.(String(d));
+    });
     child.on('error', (e) =>
       reject(new Error(`Could not run ${cmd}: ${e.message}`, { cause: e })),
     );

@@ -32,6 +32,8 @@ export function cutFiles(cut: string) {
     script: `${dir}/script.md`,
     /** Exists while a spoken cut waits for the user's approval. */
     spokenCut: `${dir}/spoken-cut`,
+    /** Written when the user approves a recording script, so it stops waiting for approval until it changes again. */
+    scriptApproved: `${dir}/script-approved`,
     versions: `${dir}/versions.json`,
     chat: `${dir}/chat.json`,
     /** Claude's session id, so the conversation continues where it left off. */
@@ -134,9 +136,18 @@ export interface AudioItem {
   volume?: number;
   fadeIn?: number;
   fadeOut?: number;
+  /**
+   * Dip under speech: while someone talks on the main track this item is pulled down (by about 10 dB at the default
+   * strength) and comes back up in the pauses. For music beds; leave it off for sound effects.
+   * true = default strength, or a number of dB (3–20).
+   */
+  duck?: boolean | number;
   muted?: boolean;
   label?: string;
 }
+
+/** Loudness the export is levelled to, in LUFS: about what TikTok, Reels, Shorts and YouTube play at. */
+export const DEFAULT_LOUDNESS = -14;
 
 /** The preview render: whether one is running and how far along (0–1), the version on screen, and any error. */
 export interface PreviewState {
@@ -172,6 +183,11 @@ export interface Timeline {
   overlays: Overlay[];
   audio: AudioItem[];
   tracks?: Partial<Record<TrackName, TrackState>>;
+  /**
+   * Level the finished mix to this loudness (LUFS, default -14) with peaks kept under -1 dBTP, so the video is
+   * neither quieter nor louder than everything else in the feed. false leaves the mix as it is.
+   */
+  loudness?: number | false;
 }
 
 /** Whether an item is seen and heard, after its own switches and its track's (mute, hide, solo). */
@@ -207,6 +223,8 @@ export interface Mark {
   end?: number;
   /** Set when the user marked a specific clip / overlay / audio item. */
   itemId?: string;
+  /** What should change here, in the user's words. Several noted marks can go out in one message. */
+  note?: string;
 }
 
 export interface MediaFile {
@@ -564,6 +582,8 @@ export interface CutroomApi {
   getScript(): Promise<Script>;
   /** The user accepts the speech-only cut; Claude may add visuals. */
   approveSpokenCut(): Promise<void>;
+  /** The user approved a script that still has to be recorded (no edit follows yet). */
+  approveScript(): Promise<void>;
   /** Every kept state of the edit, oldest first. */
   versions(): Promise<Version[]>;
   /** Mark a version as the final one (or clear the mark). */

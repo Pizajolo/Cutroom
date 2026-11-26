@@ -81,8 +81,9 @@ async function readScript(dir: string): Promise<Script> {
   const files = cutFiles(cut);
   const file = path.join(dir, files.script);
   const text = await readFile(file, 'utf8').catch(() => '');
-  const [written, edited] = await Promise.all([file, path.join(dir, files.timeline)].map((f) => stat(f).then((s) => s.mtimeMs, () => 0)));
-  return { text, pending: !!text && written! > edited!, spokenCut: existsSync(path.join(dir, files.spokenCut)) };
+  const times = await Promise.all([file, path.join(dir, files.timeline), path.join(dir, files.scriptApproved)].map((f) => stat(f).then((s) => s.mtimeMs, () => 0)));
+  const [written, edited, approved] = times as [number, number, number];
+  return { text, pending: !!text && written > Math.max(edited, approved), spokenCut: existsSync(path.join(dir, files.spokenCut)) };
 }
 
 /** Watch the project folder: timeline or overlay changes refresh the preview, media changes the file list. */
@@ -100,7 +101,7 @@ function watchProject(dir: string): void {
       const own = cutFiles(cut);
       const used = new Set([own.timeline, ...(timeline ? [...timeline.overlays, ...timeline.audio].map((i) => i.src) : [])]);
       if (files.some((f) => used.has(f))) void refresh();
-      if ([own.script, own.timeline, own.spokenCut].some((f) => files.includes(f))) emit('script', await readScript(dir));
+      if ([own.script, own.timeline, own.spokenCut, own.scriptApproved].some((f) => files.includes(f))) emit('script', await readScript(dir));
       if (files.some((f) => PROJECT_DIRS.some((d) => f.startsWith(`${d}/`)))) emit('media', await listMedia(dir));
     }, 300);
   });
@@ -181,9 +182,15 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
       if (event.type !== 'done') return;
       // Keep the result of this step as a version, and catch anything the watcher missed (e.g. a graphic re-rendered in place).
       const after = await readTimeline(dir, at).catch(() => null);
-      if (after?.clips.length) await addVersion(dir, at, text.split('\n')[0]!.slice(0, 80), after);
+      const label = text.trim() || marks.map((m) => m.note?.trim()).filter(Boolean).join('; ') || 'Notes on marks';
+      if (after?.clips.length) await addVersion(dir, at, label.split('\n')[0]!.slice(0, 80), after);
       if (project?.root === dir && cut === at) void refresh();
     });
+  },
+  async approveScript() {
+    const dir = root();
+    await writeFile(path.join(dir, cutFiles(cut).scriptApproved), new Date().toISOString());
+    emit('script', await readScript(dir));
   },
   async approveSpokenCut() {
     await rm(path.join(root(), cutFiles(cut).spokenCut), { force: true });

@@ -10,6 +10,12 @@ export function Markdown({ text }: { text: string }) {
       if (piece.length > 2 && piece.startsWith('*')) return <em key={n}>{piece.slice(1, -1)}</em>;
       return piece;
     });
+    // A storyboard shot's "Technique: @move — why" (or "Technique: new — name") stands out as a label.
+    const technique = !heading && !item && /^Technique:\s*(.*)$/i.exec(line);
+    if (technique) {
+      const isNew = /^new\b/i.test(technique[1]!);
+      return <p key={i} className={`technique${isNew ? ' new' : ''}`}><span className="tag">{isNew ? 'New move' : 'Technique'}</span> {pieces.map((p) => (typeof p === 'string' ? p.replace(/^Technique:\s*(new\s*[—–-]\s*)?/i, '') : p))}</p>;
+    }
     if (item) return <p key={i} className="li" style={{ marginLeft: `${Math.min(3, Math.floor(item[1]!.length / 2)) * 1.1}em` }}>{pieces}</p>;
     return heading ? <h3 key={i}>{pieces}</h3> : <p key={i}>{pieces}</p>;
   });
