@@ -4,12 +4,15 @@ import type { CutroomApi } from '../shared/types';
 
 const METHODS = [
   'openProject', 'recentProjects', 'openRecent', 'importFiles', 'downloadLinks', 'listMedia', 'getTimeline', 'saveTimeline',
-  'cuts', 'switchCut', 'newCut', 'splitCut', 'renameCut', 'deleteCut', 'loadChat', 'saveChat', 'send', 'stop', 'exportVideo', 'reveal', 'listSkills', 'tools',
+  'cuts', 'switchCut', 'newCut', 'splitCut', 'renameCut', 'setCutBrand', 'deleteCut', 'loadChat', 'saveChat', 'send', 'stop', 'exportVideo', 'reveal', 'listSkills', 'tools',
   'closeProject', 'forgetProject', 'revealSkill', 'readSkill', 'toggleFavorite', 'saveSkill', 'removeExample', 'deleteSkill', 'getSettings', 'saveSettings', 'claudeStatus',
   'claudeLogin', 'codexStatus', 'codexLogin', 'voices', 'micAccess', 'cloneVoice', 'deleteVoice', 'getScript', 'approveSpokenCut', 'versions', 'markFinal', 'ledger', 'features', 'setProjectFeature', 'duration', 'getModel', 'setProjectModel',
   'marketAccount', 'marketLogin', 'marketLogout', 'marketSetServer', 'marketOpenWeb', 'marketBrowse', 'marketDetail', 'marketInstall', 'marketUninstall',
   'marketInstalled', 'marketFavorites', 'marketSetFavorite', 'marketReview', 'marketDeleteReview', 'marketReport', 'marketBuy', 'marketPublish', 'marketMine',
   'marketUpdateOwn', 'brain', 'checkUpdate', 'downloadUpdate',
+  'listBrands', 'createBrand', 'saveBrand', 'deleteBrand', 'addBrandFiles', 'removeBrandFile', 'revealBrand',
+  'brandChat', 'brandChatSend', 'brandChatAttach', 'brandChatStop', 'brandChatReset', 'readBrandImage', 'liftImage', 'saveLogo', 'exportBrand', 'openExport', 'importBrand', 'lookupFont', 'fetchFont',
+  'logoChat', 'logoChatSend', 'logoChatStop', 'logoChatReset', 'logoChatAttach', 'logoDrafts', 'useLogoDraft',
   'socialStatus', 'socialOpen', 'socialSaveLogin', 'socialForgetLogin', 'socialSignIn', 'socialSignOut', 'socialCheckNow',
   'socialExports', 'socialChat', 'socialChatSend', 'socialChatStop', 'socialChatReset', 'socialPost', 'socialDiscard', 'socialShowWindow',
 ] as const;

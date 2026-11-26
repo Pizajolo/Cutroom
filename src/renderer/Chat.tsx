@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { ArrowUp, Film, Flag, GitBranch, Library, Sparkles, Square, Star, TriangleAlert, Undo2, X } from 'lucide-react';
+import { ArrowUp, Film, Flag, GitBranch, Library, Palette, Sparkles, Square, Star, TriangleAlert, Undo2, X } from 'lucide-react';
+import type { BrandKit } from '../shared/brand';
 import { EMPTY_TIMELINE } from '../shared/types';
 import type { AgentEvent, ChatMessage, Cuts, Mark, MediaFile, ModelChoice, Skill, Timeline } from '../shared/types';
 import { CutTabs } from './CutTabs';
@@ -48,6 +49,9 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
   /** Styles and moves picked for the next message (skill ids). */
   const [picked, setPicked] = useState<string[]>([]);
   const [model, setModel] = useState<ModelChoice | null>(null);
+  const [brands, setBrands] = useState<BrandKit[]>([]);
+  /** The brand kit was changed on a chat that already has an edit: offer to restyle it now. */
+  const [rebranded, setRebranded] = useState('');
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<string[]>([]);
@@ -72,15 +76,18 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
     setPicked([]);
     setPicking('');
     setWarning(null);
+    setRebranded('');
   }, [cuts.active]);
   useEffect(() => {
     void api.listSkills().then(setSkills);
     void api.getModel().then(setModel);
+    void api.listBrands().then(setBrands);
     return api.on('agent', (event) => {
       setMessages((all) => reduce(all, event));
       if (event.type === 'done') {
         setBusy(false);
         void api.listSkills().then(setSkills); // the turn may have saved a new style
+        void api.listBrands().then(setBrands); // …or a brand kit
       }
     });
   }, []);
@@ -104,6 +111,7 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
       if (!found.ready) return setWarning({ text, alternatives: found.alternatives }), false;
     }
     setWarning(null);
+    setRebranded('');
     setMessages((all) => [...all, { role: 'user', parts: [{ type: 'text', text }], marks, files, skills: picked }, { role: 'assistant', parts: [], before: timeline ?? EMPTY_TIMELINE }]);
     setBusy(true);
     void api.send(text, marks, files, picked);
@@ -144,6 +152,19 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
     el.focus();
   };
   const footage = media.filter((file) => file.dir === 'raw' && file.kind === 'video');
+  const brandId = cuts.cuts.find((c) => c.id === cuts.active)?.brand ?? '';
+  const brand = brands.find((b) => b.id === brandId);
+  const pickBrand = (id: string): void => {
+    if (id === '__save') {
+      setDraft('Save the look of this edit as a brand kit called ');
+      input.current?.focus();
+      return;
+    }
+    void api.setCutBrand(id).then((next) => {
+      onCuts(next);
+      setRebranded(id && hasEdit ? brands.find((b) => b.id === id)?.name ?? '' : '');
+    }, failed);
+  };
   const saveStyle = (): void => {
     setDraft('Save the style of this edit, and its moves, to my library. Call the style ');
     input.current?.focus();
@@ -151,12 +172,23 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
 
   return (
     <section className="chat">
-      <CutTabs cuts={cuts} onCuts={onCuts} busy={busy} renaming={renaming} setRenaming={setRenaming} />
+      <div className="chat-top">
+        <CutTabs cuts={cuts} onCuts={onCuts} busy={busy} renaming={renaming} setRenaming={setRenaming} />
+        <label className={brand ? 'brand-select set' : 'brand-select'} title={busy ? 'Wait until Claude has finished' : 'Brand kit of this chat: logo, colours, fonts and sound. Make kits in Home › Brand kits.'}>
+          <Palette size={14} />
+          <select value={brand ? brandId : ''} disabled={busy} aria-label="Brand kit of this chat" onChange={(e) => pickBrand(e.target.value)}>
+            <option value="">No brand kit</option>
+            {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            <option value="__save" disabled={!hasEdit}>Save this edit’s look as a brand kit…</option>
+          </select>
+        </label>
+      </div>
       <div className="messages" ref={list}>
         {messages.length === 0 && (
           <p className="hint">
             Describe the video you want — “make a 30 second reel from the best moments”. Paste links to videos you like
-            as references. Then mark frames or sections in the preview and say what to change.
+            as references. Then mark frames or sections in the preview and say what to change. Pick a brand kit at the top
+            right to set the logo, colours, fonts and sound for this chat.
           </p>
         )}
         {messages.map((message, i) => (
@@ -206,6 +238,16 @@ export const Chat = memo(function Chat({ cuts, onCuts, timeline, onRestore, mark
             </button>
             <span className="spacer" />
             <button type="button" className="ghost round" title="Dismiss" onClick={() => setWarning(null)}><X size={14} /></button>
+          </div>
+        </div>
+      )}
+      {rebranded && !busy && (
+        <div className="warning info" role="status">
+          <p><Palette size={14} /> This chat now uses <strong>{rebranded}</strong>. Claude restyles the edit with your next message.</p>
+          <div className="row">
+            <button type="button" className="primary" onClick={() => void sendText(`Restyle this edit with the ${rebranded} brand kit.`)}>Restyle now</button>
+            <span className="spacer" />
+            <button type="button" className="ghost round" title="Dismiss" onClick={() => setRebranded('')}><X size={14} /></button>
           </div>
         </div>
       )}

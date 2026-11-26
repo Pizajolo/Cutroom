@@ -72,12 +72,26 @@ function newId(root: string, name: string): string {
   }
 }
 
-/** A new, empty chat on the same footage. */
+/** A new, empty chat on the same footage. It starts with the brand kit of the chat that was open. */
 export async function newCut(root: string, name: string): Promise<Cuts> {
   const id = newId(root, name);
   await mkdir(path.join(root, cutFiles(id).dir), { recursive: true });
-  await writeCuts(root, [...(await readCuts(root)), { id, name: name.trim() || 'Chat' }]);
+  const cuts = await readCuts(root);
+  const active = await activeCut(root);
+  const brand = cuts.find((c) => c.id === active)?.brand;
+  await writeCuts(root, [...cuts, { id, name: name.trim() || 'Chat', ...(brand ? { brand } : {}) }]);
   return setActive(root, id);
+}
+
+/** Set the brand kit of a cut ('' = none). Its agent hears of the change with the next message (see brands.ts). */
+export async function setCutBrand(root: string, id: string, brand: string): Promise<Cuts> {
+  const cuts = await readCuts(root);
+  await writeCuts(root, cuts.map((c) => {
+    if (c.id !== id) return c;
+    const { brand: _old, ...rest } = c;
+    return brand ? { ...rest, brand } : rest;
+  }));
+  return listCuts(root);
 }
 
 /**
@@ -126,7 +140,8 @@ export async function splitCut(root: string, parentId: string, message: number, 
   const fork: Fork = { parent: parent.name, parentDir: from.dir, wentOn, session, at: reply.uuid, ends: wentOn && !reply.uuid ? ends : undefined };
   await writeFile(path.join(root, to.fork), JSON.stringify(fork));
 
-  await writeCuts(root, [...cuts, { id, name: name.trim() || 'Chat', from: parentId }]);
+  // The brand kit goes along (brand-seen.json too, as the conversation knew it): change it in the new chat to restyle just that one.
+  await writeCuts(root, [...cuts, { id, name: name.trim() || 'Chat', from: parentId, ...(parent.brand ? { brand: parent.brand } : {}) }]);
   return setActive(root, id);
 }
 

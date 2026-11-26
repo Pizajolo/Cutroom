@@ -12,10 +12,17 @@ import iconLight from '../../resources/icon-light.png?asset';
 import { readTimeline, render } from '../cli/render';
 import { run } from '../cli/run';
 import { LIBRARY, toggleFavorite, addVersion, markFinal, readLedger, readVersions, styleVideos, unlinkVideo } from '../cli/project';
+import { BRAND_FILE_TYPES } from '../shared/brand';
 import { PROJECT_DIRS, cutFiles } from '../shared/types';
 import type { ChatMessage, CutroomApi, Cuts, Mark, Project, Script, Settings, Timeline } from '../shared/types';
 import * as agent from './agent';
-import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, splitCut } from './cuts';
+import * as brandChat from './brandChat';
+import * as brandExport from './brandExport';
+import * as brands from './brands';
+import * as fonts from './fonts';
+import * as logoStudio from './logoStudio';
+import { closeRaster } from './raster';
+import { dropCut, ensureCuts, listCuts, newCut, renameCut, setActive, setCutBrand, splitCut } from './cuts';
 import * as market from './market';
 import * as social from './social';
 import * as socialChat from './socialChat';
@@ -34,6 +41,8 @@ let watcher: FSWatcher | undefined;
 let previewJob: AbortController | undefined;
 let previewVersion = 0;
 let exporting = false;
+/** Brand kit exports of this session: the only files openExport opens. */
+const exported = new Set<string>();
 
 const emit = (channel: string, payload: unknown): void => win?.webContents.send(channel, payload);
 const root = (): string => {
@@ -156,6 +165,7 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   newCut: async (name) => (idle(), switchTo(await newCut(root(), name))),
   splitCut: async (message, name) => (idle(), switchTo(await splitCut(root(), cut, message, name))),
   renameCut: (id, name) => renameCut(root(), id, name),
+  setCutBrand: async (brand) => (idle(), setCutBrand(root(), cut, brand)),
   async deleteCut(id) {
     idle();
     const cuts = await dropCut(root(), id);
@@ -222,6 +232,101 @@ const api: Omit<CutroomApi, 'on' | 'pathForFile'> = {
   async deleteSkill(id) {
     await shell.trashItem(agent.customSkillDir(id));
     return agent.listSkills();
+  },
+  // Brand kits
+  listBrands: brands.listBrands,
+  createBrand: brands.createBrand,
+  saveBrand: brands.saveBrand,
+  async deleteBrand(id) {
+    await shell.trashItem(brands.brandDir(id));
+    return brands.listBrands();
+  },
+  async addBrandFiles(kit, slot) {
+    const type = BRAND_FILE_TYPES[slot.split(':')[0] as keyof typeof BRAND_FILE_TYPES];
+    const many = slot === 'music' || slot === 'sfx';
+    const picked = await dialog.showOpenDialog(win!, {
+      properties: many ? ['openFile', 'multiSelections'] : ['openFile'],
+      filters: [{ name: type.label, extensions: type.extensions }],
+    });
+    const next = await brands.addBrandFiles(kit, slot, picked.filePaths);
+    // A logo, font or LUT that was replaced goes to the Trash.
+    const gone = brands.brandFiles(kit).filter((f) => !brands.brandFiles(next).includes(f));
+    for (const name of gone) await shell.trashItem(path.join(brands.brandDir(kit.id), name)).catch(() => {});
+    return next;
+  },
+  async removeBrandFile(kit, slot, file) {
+    const next = await brands.saveBrand(brands.withoutFile(kit, slot, file));
+    const gone = brands.brandFiles(kit).filter((f) => !brands.brandFiles(next).includes(f));
+    for (const name of gone) await shell.trashItem(path.join(brands.brandDir(kit.id), name)).catch(() => {});
+    return next;
+  },
+  brandChat: brandChat.load,
+  brandChatSend: (id, text, files) => brandChat.send(id, text, files, (event) => emit('brand-agent', { kit: id, event }), (kit) => emit('brand', kit)),
+  brandChatStop: async () => brandChat.stop(),
+  async brandChatAttach(id, paths) {
+    const files = paths ?? (await dialog.showOpenDialog(win!, {
+      title: 'Brand guidelines, a reference video or pictures',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'PDFs, videos and pictures', extensions: Object.values(brandChat.ATTACHMENTS).flat() }],
+    })).filePaths;
+    return brandChat.attach(id, files);
+  },
+  brandChatReset: brandChat.reset,
+  readBrandImage: brands.readImage,
+  liftImage: brands.liftImage,
+  async saveLogo(kit, slot, png) {
+    const next = await brands.saveLogo(kit, slot, png);
+    const gone = brands.brandFiles(kit).filter((f) => !brands.brandFiles(next).includes(f));
+    for (const name of gone) await shell.trashItem(path.join(brands.brandDir(kit.id), name)).catch(() => {});
+    return next;
+  },
+  logoChat: logoStudio.load,
+  logoChatSend: (id, text, files) =>
+    logoStudio.send(id, text, files, (event) => emit('logo-agent', { kit: id, event }), (draft) => emit('logo-draft', { kit: id, draft }), (kit) => emit('brand', kit)),
+  logoChatStop: async () => logoStudio.stop(),
+  logoChatReset: logoStudio.reset,
+  async logoChatAttach(id, paths) {
+    const files = paths ?? (await dialog.showOpenDialog(win!, {
+      title: 'A logo, a sketch or brand guidelines',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Pictures and PDFs', extensions: logoStudio.STUDIO_ATTACHMENTS }],
+    })).filePaths;
+    return logoStudio.attach(id, files);
+  },
+  logoDrafts: logoStudio.listDrafts,
+  useLogoDraft: logoStudio.useDraft,
+  lookupFont: fonts.lookupFont,
+  async fetchFont(kit, role) {
+    const next = await brands.fetchFont(kit, role);
+    const gone = brands.brandFiles(kit).filter((f) => !brands.brandFiles(next).includes(f));
+    for (const name of gone) await shell.trashItem(path.join(brands.brandDir(kit.id), name)).catch(() => {});
+    return next;
+  },
+  revealBrand: async (id) => shell.showItemInFolder(path.join(brands.brandDir(id), 'brand.json')),
+  async exportBrand(kit, format) {
+    const labels = { pdf: ['Brand guidelines (PDF)', 'pdf'], md: ['Markdown', 'md'], zip: ['Brand package', 'zip'] } as const;
+    const picked = await dialog.showSaveDialog(win!, {
+      title: `Export ${kit.name}`,
+      defaultPath: path.join(app.getPath('documents'), brandExport.exportName(kit, format)),
+      filters: [{ name: labels[format][0], extensions: [labels[format][1]] }],
+    });
+    if (picked.canceled || !picked.filePath) return null;
+    await brandExport.exportBrand(kit, format, picked.filePath);
+    exported.add(picked.filePath);
+    return picked.filePath;
+  },
+  async openExport(file, reveal) {
+    if (!exported.has(file)) throw new Error('Only files exported here can be opened.');
+    if (reveal) shell.showItemInFolder(file);
+    else await shell.openPath(file);
+  },
+  async importBrand(file) {
+    const source = file ?? (await dialog.showOpenDialog(win!, {
+      title: 'Import a brand kit',
+      properties: ['openFile'],
+      filters: [{ name: 'Brand package or brand.json', extensions: ['zip', 'json'] }],
+    })).filePaths[0];
+    return source ? brandExport.importBrand(source) : null;
   },
   getSettings: loadSettings,
   saveSettings,
@@ -317,17 +422,20 @@ const socialRules = async (): Promise<Settings['social']> => (await loadSettings
 const MIME: Record<string, string> = {
   '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.m4v': 'video/mp4',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
-  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.aif': 'audio/aiff', '.aiff': 'audio/aiff',
+  '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2',
 };
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } },
+  // corsEnabled: fonts are always fetched with CORS, so brand kit fonts need it to show in the preview.
+  { scheme: 'media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } },
 ]);
 // Keep the preview out of the system's media controls (macOS Now Playing, media keys, headphones). Otherwise a
 // "pause" from another app or device stops the preview a moment after it starts. Space bar and the buttons still work.
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 
 /** `media://project/<path>` serves files from the open project, `media://style/<name>/example.mp4` from the style library,
+ * `media://brand/<id>/<file>` a brand kit's logos, fonts and sounds,
  * `media://market/<slug>/example.mp4` from installed marketplace skills
  * and `media://export/<absolute path>` a video listed under a style, with range requests so video can seek. */
 async function serveMedia(request: Request): Promise<Response> {
@@ -339,7 +447,7 @@ async function serveMedia(request: Request): Promise<Response> {
     if (!(await socialPost.exportedVideos()).some((v) => v.path === file)) return new Response(null, { status: 403 });
     return serveFile(file, request);
   }
-  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'market' ? path.join(market.MARKET, 'skills') : url.host === 'export' ? '/' : root();
+  const base = url.host === 'style' ? path.join(LIBRARY, 'skills') : url.host === 'brand' ? brands.BRANDS : url.host === 'market' ? path.join(market.MARKET, 'skills') : url.host === 'export' ? '/' : root();
   const file = path.join(base, decodeURIComponent(url.pathname));
   const allowed = url.host === 'export' ? Object.values(await styleVideos()).flat().includes(file) : file.startsWith(base + path.sep);
   if (!allowed) return new Response(null, { status: 403 });
@@ -360,6 +468,8 @@ async function serveFile(file: string, request: Request): Promise<Response> {
       'content-length': String(end - start + 1),
       'content-range': `bytes ${start}-${end}/${size}`,
       'accept-ranges': 'bytes',
+      // Only the app's own pages load media://; fonts need this header to be used across the file:// / media:// line.
+      'access-control-allow-origin': '*',
       'cache-control': 'no-store',
     },
   });
@@ -429,7 +539,7 @@ void app.whenReady().then(() => {
   });
   void ensureTools((tools) => emit('tools', tools));
   // The social window only hides when closed; it goes when the main window does.
-  win.on('closed', () => social.close());
+  win.on('closed', () => (social.close(), closeRaster()));
   social.onChange(() => void socialRules().then(social.status).then((status) => emit('social', status), () => {}));
   void social.init().then(social.changed);
   social.startAutoCheck(socialRules);
@@ -440,5 +550,8 @@ app.on('window-all-closed', () => {
   previewJob?.abort();
   agent.stop();
   socialChat.stop();
+  brandChat.stop();
+  logoStudio.stop();
+  closeRaster();
   app.quit();
 });

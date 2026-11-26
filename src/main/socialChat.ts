@@ -126,7 +126,7 @@ export async function send(text: string, videos: string[], emit: (event: AgentEv
           forward({ type: 'text', text: m.event.delta.text });
         } else if (m.type === 'assistant') {
           for (const block of m.message.content) {
-            if (block.type === 'tool_use') forward({ type: 'tool', text: describeTool(block.name, block.input as Record<string, unknown>) });
+            if (block.type === 'tool_use' && block.name !== 'ToolSearch') forward({ type: 'tool', text: describeTool(block.name, block.input as Record<string, unknown>) });
           }
         } else if (m.type === 'result' && m.is_error) {
           error = 'result' in m ? m.result : `The assistant stopped early (${m.subtype}).`;

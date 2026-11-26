@@ -1,6 +1,7 @@
 // Types shared by the CLI, the Electron main process and the renderer.
 import { llmProviders } from './features';
 import type { Connection, Feature, FeatureState } from './features';
+import type { BrandKit, BrandSlot, LogoSlot } from './brand';
 import type { ExportedVideo, SocialPlatform, SocialSettings, SocialStatus } from './social';
 
 /** The four folders every project has. Everything Cutroom generates lives in `.cutroom/`. */
@@ -17,6 +18,8 @@ export interface Cut {
   name: string;
   /** The cut this one was split from. */
   from?: string;
+  /** The brand kit this chat's video uses (its id), if any. */
+  brand?: string;
 }
 
 /** Project-relative paths of one cut's files. */
@@ -35,6 +38,8 @@ export function cutFiles(cut: string) {
     session: `${dir}/session`,
     /** Set on a cut that was split off and has not talked to Claude yet: where its session branches. */
     fork: `${dir}/fork.json`,
+    /** The brand kit as Claude last saw it in this chat, so it can be told when it changes. */
+    brandSeen: `${dir}/brand-seen.json`,
   };
 }
 
@@ -345,7 +350,7 @@ export interface MarketOwnSkill {
 }
 
 /** Skills that are tools rather than editing styles. */
-export const UTILITY_SKILLS = ['cutroom:save-style', 'cutroom:elevenlabs', 'cutroom:generate', 'cutroom:sound-effects', 'cutroom:cutout'];
+export const UTILITY_SKILLS = ['cutroom:save-style', 'cutroom:save-brand', 'cutroom:elevenlabs', 'cutroom:generate', 'cutroom:sound-effects', 'cutroom:cutout'];
 
 export interface ToolStatus {
   name: string;
@@ -502,6 +507,23 @@ export type AgentEvent =
   | { type: 'tool'; text: string }
   | { type: 'done'; error?: string; uuid?: string };
 
+/** One version of a logo drawn in the logo studio. */
+export interface LogoDraft {
+  version: number;
+  svg: string;
+  /** What this version is, in Claude's words. */
+  note: string;
+  at: string;
+}
+
+/** Whether a font family is free to download (Google Fonts or Fontsource), and similar names if it is not. */
+export interface FontLookup {
+  found?: { family: string; weights: number[]; license: string; library: string; category: string };
+  suggestions: string[];
+  /** The suggestions start with free look-alikes of a well-known paid typeface. */
+  lookalikes?: boolean;
+}
+
 /** The cuts of the open project and the one being worked on. */
 export interface Cuts {
   cuts: Cut[];
@@ -532,6 +554,8 @@ export interface CutroomApi {
   /** Branch the active cut after reply `message` (an index into its chat) into a new cut, and switch to it. */
   splitCut(message: number, name: string): Promise<Cuts>;
   renameCut(id: string, name: string): Promise<Cuts>;
+  /** Give the active cut a brand kit ('' = none). Claude is told with the next message. */
+  setCutBrand(brand: string): Promise<Cuts>;
   /** Moves the cut's folder to the Trash. The last cut cannot be removed. */
   deleteCut(id: string): Promise<Cuts>;
   loadChat(): Promise<ChatMessage[]>;
@@ -564,6 +588,53 @@ export interface CutroomApi {
   removeExample(id: string, file: string): Promise<Skill[]>;
   /** Moves a saved style to the Trash. */
   deleteSkill(id: string): Promise<Skill[]>;
+  // Brand kits
+  listBrands(): Promise<BrandKit[]>;
+  createBrand(name: string): Promise<BrandKit>;
+  saveBrand(kit: BrandKit): Promise<BrandKit>;
+  /** Moves the kit's folder to the Trash. Chats that used it go on without one. */
+  deleteBrand(id: string): Promise<BrandKit[]>;
+  /** Opens a file dialog and copies the chosen files into the kit (saving it). */
+  addBrandFiles(kit: BrandKit, slot: BrandSlot): Promise<BrandKit>;
+  /** Takes a file out of the kit (saving it); the file goes to the Trash. */
+  removeBrandFile(kit: BrandKit, slot: BrandSlot, file?: string): Promise<BrandKit>;
+  /** The kit's Claude chat. Replies stream on 'brand-agent'; kits Claude changes arrive on 'brand'. */
+  brandChat(id: string): Promise<ChatMessage[]>;
+  /** `files`: attachment names from brandChatAttach. */
+  brandChatSend(id: string, text: string, files: string[]): Promise<void>;
+  /** Attach brand guideline PDFs, reference videos or pictures (a file dialog opens without `paths`); resolves with their names. */
+  brandChatAttach(id: string, paths?: string[]): Promise<string[]>;
+  brandChatStop(): Promise<void>;
+  /** A new conversation about the kit; the kit stays as it is. */
+  brandChatReset(id: string): Promise<void>;
+  /** One of the kit's images as a data: URL, for the logo editor. */
+  readBrandImage(id: string, file: string): Promise<string>;
+  /** Lift the subject of an image off its background with Apple Vision; resolves with a PNG data: URL. */
+  liftImage(dataUrl: string): Promise<string>;
+  /** Save an edited logo (PNG bytes) into a slot. */
+  saveLogo(kit: BrandKit, slot: LogoSlot, png: Uint8Array): Promise<BrandKit>;
+  revealBrand(id: string): Promise<void>;
+  // Logo studio: a chat in which Claude draws the kit's logo as SVG.
+  logoChat(id: string): Promise<ChatMessage[]>;
+  /** Replies stream on 'logo-agent', new versions arrive on 'logo-draft', kit changes on 'brand'. */
+  logoChatSend(id: string, text: string, files: string[]): Promise<void>;
+  logoChatStop(): Promise<void>;
+  /** A new conversation; the versions stay. */
+  logoChatReset(id: string): Promise<void>;
+  logoChatAttach(id: string, paths?: string[]): Promise<string[]>;
+  logoDrafts(id: string): Promise<LogoDraft[]>;
+  /** Put a version into a logo slot (SVG plus a PNG beside it). */
+  useLogoDraft(id: string, version: number, slot: LogoSlot): Promise<BrandKit>;
+  /** Is this family a free font? */
+  lookupFont(family: string): Promise<FontLookup>;
+  /** Download the role's family and weight into the kit (free fonts only) and save it. */
+  fetchFont(kit: BrandKit, role: 'heading' | 'body'): Promise<BrandKit>;
+  /** Save the kit as brand guidelines (PDF or Markdown) or as a brand package (.zip) that Cutroom can import. Null if cancelled. */
+  exportBrand(kit: BrandKit, format: 'pdf' | 'md' | 'zip'): Promise<string | null>;
+  /** Open a file this session exported, or show it in Finder. */
+  openExport(file: string, reveal?: boolean): Promise<void>;
+  /** A new kit from a brand package (.zip) or a kit's brand.json (a dialog opens without `file`). Null if cancelled. */
+  importBrand(file?: string): Promise<BrandKit | null>;
   getSettings(): Promise<Settings>;
   saveSettings(settings: Settings): Promise<void>;
   claudeStatus(): Promise<ClaudeStatus>;
@@ -649,6 +720,12 @@ export interface CutroomApi {
   /** A `cutroom://install/<slug>` link was opened: show that skill. */
   on(channel: 'market-open', fn: (slug: string) => void): () => void;
   on(channel: 'agent', fn: (event: AgentEvent) => void): () => void;
+  /** A step of the brand kit chat, for kit `kit`. */
+  on(channel: 'brand-agent', fn: (payload: { kit: string; event: AgentEvent }) => void): () => void;
+  on(channel: 'logo-agent', fn: (payload: { kit: string; event: AgentEvent }) => void): () => void;
+  on(channel: 'logo-draft', fn: (payload: { kit: string; draft: LogoDraft }) => void): () => void;
+  /** Claude changed a brand kit. */
+  on(channel: 'brand', fn: (kit: BrandKit) => void): () => void;
   on(channel: 'script', fn: (script: Script) => void): () => void;
   on(channel: 'timeline', fn: (timeline: Timeline | null) => void): () => void;
   on(channel: 'preview', fn: (state: PreviewState) => void): () => void;

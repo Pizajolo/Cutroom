@@ -4,10 +4,12 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
-import { LIBRARY, readFavorites, styleVideos, useStyle } from '../cli/project';
+import { LIBRARY, readCuts, readFavorites, styleVideos, useStyle } from '../cli/project';
 import { run } from '../cli/run';
 import { UTILITY_SKILLS, clipLength, clipStarts, cutFiles } from '../shared/types';
 import type { AgentEvent, AudioItem, Mark, Overlay, Skill, Timeline } from '../shared/types';
+import { brandChange, describeBrand, readBrand } from './brands';
+import type { BrandSeen } from './brands';
 import type { Fork } from './cuts';
 import { MARKET, ensureMarketPlugin, installedVersions } from './market';
 import { systemPrompt } from './prompt';
@@ -170,7 +172,14 @@ export async function send(root: string, cut: string, text: string, marks: Mark[
       `A style shapes the whole video. A move is applied where the message says (the user refers to it as @name); if it doesn't say, where it fits best — and tell them where you used it.\n` +
       `${picked.map((s) => `- ${s.id} (${s.kind}, @${s.name})`).join('\n')}\n</techniques>`
     : '';
-  const prompt = (fork ? splitNote(fork, paths.dir) : '') + text + techniques + footage + (await describeMarks(root, cut, marks, timeline));
+  // The chat's brand kit is part of the instructions on every turn; when it changed since the last one, the message says so.
+  const brandId = (await readCuts(root)).find((c) => c.id === cut)?.brand;
+  const kit = brandId ? await readBrand(brandId) : null;
+  const seenFile = path.join(root, paths.brandSeen);
+  const seen = JSON.parse(await readFile(seenFile, 'utf8').catch(() => 'null')) as BrandSeen | null;
+  // A chat without a conversation yet simply starts with the kit; only an ongoing one needs telling.
+  const brandNote = own || fork?.session ? brandChange(seen, kit) : '';
+  const prompt = (fork ? splitNote(fork, paths.dir) : '') + brandNote + text + techniques + footage + (await describeMarks(root, cut, marks, timeline));
   const controller = (turn = new AbortController());
   working = true;
   let error: string | undefined;
@@ -188,7 +197,7 @@ export async function send(root: string, cut: string, text: string, marks: Mark[
         env: { ...config.env, CUTROOM_CUT: cut },
         model: config.model,
         mcpServers: config.mcpServers,
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(LIBRARY, paths.dir) + config.notes },
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: systemPrompt(LIBRARY, paths.dir) + config.notes + (kit ? describeBrand(kit) : '') },
         hooks: { PreToolUse: [{ matcher: 'Write|Edit|MultiEdit|NotebookEdit', hooks: [stayInCut(root, cut)] }] },
         // Only Cutroom's own instructions and skills — not the user's personal Claude Code setup.
         settingSources: [],
@@ -216,6 +225,8 @@ export async function send(root: string, cut: string, text: string, marks: Mark[
         started = true;
         await writeFile(sessionFile, m.session_id);
         await rm(forkFile, { force: true });
+        if (kit) await writeFile(seenFile, JSON.stringify({ id: kit.id, name: kit.name, updatedAt: kit.updatedAt } satisfies BrandSeen));
+        else await rm(seenFile, { force: true });
       }
       if ('parent_tool_use_id' in m && m.parent_tool_use_id) continue;
       if ((m.type === 'assistant' || m.type === 'user') && m.uuid) uuid = m.uuid;
@@ -229,7 +240,7 @@ export async function send(root: string, cut: string, text: string, marks: Mark[
             const style = (await listSkills()).find((s) => s.id === name || s.id.endsWith(`:${name}`));
             if (style && !UTILITY_SKILLS.includes(style.id)) await useStyle(root, style.id);
           }
-          if (block.type === 'tool_use') emit({ type: 'tool', text: describeTool(block.name, block.input as Record<string, unknown>) });
+          if (block.type === 'tool_use' && block.name !== 'ToolSearch') emit({ type: 'tool', text: describeTool(block.name, block.input as Record<string, unknown>) });
         }
       } else if (m.type === 'result' && m.is_error) {
         error = 'result' in m ? m.result : `The assistant stopped early (${m.subtype}).`;

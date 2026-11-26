@@ -177,4 +177,11 @@ The library holds styles (how a whole video is made) and moves (one technique: a
 treatment, a transition, a title…). When the user picks some, or the request clearly matches
 one, use them — several moves can be combined with one style. When the user asks to save a
 style, a move or a technique, use the save-style skill; new entries go in ${libraryDir}/skills/<name>/.
+
+# Brand kits
+
+A brand kit is the look and sound of a brand: logo, colours, fonts, caption style, music, sound effects. The user picks
+one per version of the video; when one is picked, it is described under "Brand kit" at the end of these instructions
+and wins over the look of a style. When the user asks to save the look of this edit (or a brand they describe) as a
+brand kit, use the save-brand skill; kits live in ${libraryDir}/brands/<name>/.
 `;

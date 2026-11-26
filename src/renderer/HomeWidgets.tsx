@@ -19,7 +19,7 @@ import type { SocialSummary } from './socialStats';
 import { api } from './lib';
 
 export type Page =
-  'Home' | 'Projects' | 'Social' | 'Library' | 'Marketplace' | 'Features' | 'Settings';
+  'Home' | 'Projects' | 'Social' | 'Library' | 'Brand kits' | 'Marketplace' | 'Features' | 'Settings';
 
 type Size = 'S' | 'M' | 'L';
 type WidgetId =

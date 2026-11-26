@@ -7,6 +7,7 @@ import {
   House,
   LayoutGrid,
   Library,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Settings as SettingsIcon,
@@ -17,6 +18,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { SocialSettings, SocialStatus } from '../shared/social';
 import type { Project } from '../shared/types';
+import { Brands } from './Brands';
 import { Features } from './Features';
 import { Dashboard } from './HomeWidgets';
 import type { Page } from './HomeWidgets';
@@ -31,6 +33,7 @@ const NAV: { page: Page; icon: LucideIcon }[] = [
   { page: 'Projects', icon: Folder },
   { page: 'Social', icon: BarChart3 },
   { page: 'Library', icon: Library },
+  { page: 'Brand kits', icon: Palette },
   { page: 'Marketplace', icon: Store },
   { page: 'Features', icon: LayoutGrid },
 ];
@@ -226,6 +229,7 @@ export function Home({
             </>
           )}
           {page === 'Library' && <Styles />}
+          {page === 'Brand kits' && <Brands />}
           {page === 'Marketplace' && <Market />}
           {page === 'Social' && <Social />}
           {page === 'Features' && (

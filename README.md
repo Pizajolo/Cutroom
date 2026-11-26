@@ -21,6 +21,7 @@ On first launch Cutroom checks its toolbox and installs what is missing:
 | FFmpeg / ffprobe | cuts, compositing, exports | `PATH`, else `brew install ffmpeg` |
 | Whisper (`whisper-cli` + `base` model) | transcripts, caption timing | `PATH`, else `brew install whisper-cpp`; model downloads to `~/.cutroom/models` |
 | yt-dlp | downloading reference videos from links | downloaded to `~/.cutroom/bin` |
+| Cutout and PDF helpers | subject cutouts; brand guideline pages | compiled from `native/` with Apple's command line tools |
 | HyperFrames, Remotion | motion graphics and captions | npm dependencies |
 
 Remotion needs a [company licence](https://www.remotion.dev/license) for some teams; HyperFrames is the default.
@@ -73,6 +74,52 @@ its moves in `~/.cutroom/library/skills/`; mark a section (or name a moment in a
 move. Each keeps an example clip. Home › Library filters by kind, tags and text, lets you star favourites (listed first when picking in a project), plays the examples, lists every video
 exported with an entry and lets you edit its instructions. In a project, **Styles & moves** picks several for a
 request; click a picked one to mention it (`@punch-in`) and say where it goes.
+
+**Brand kits: how a video looks and sounds.** A style says how a video is cut; a brand kit says what it looks like:
+logos (full, icon, for dark backgrounds), watermark, end card, colours, heading and caption fonts (uploaded or by name),
+text sizes, caption style, music tracks or a mood, sound effects, a LUT, transitions and energy, voice-over voice,
+language and tone, format and length, and free notes. Home › Brand kits lists them; each opens as a form, saved as you
+type, next to a live preview of a frame and the end card. Claude sits in a bubble in the lower right corner: it opens
+into a chat over the page that shows each step it takes, and the form and preview change as it fills in the kit from
+your website or a few words, or adjusts it ("warmer colours", "captions in capitals"). **Attach** (or drop anywhere on
+the page) a brand guideline PDF, a video in the brand's style, a link to one, or pictures, and Claude takes everything
+the kit can hold from them: it reads the PDF (and renders pages with a small PDFKit helper compiled on first launch,
+`native/pdfpage.swift`), watches the video's frames and measures its cuts, listens to it with Whisper, and cuts logos out
+of a page or an end card. It never takes music, footage or voice from a video. It can only read web pages and your
+attachments and change that kit (values and logos; never your uploaded files); one conversation per kit, kept with its
+attachments in the kit's folder (`.chat/`). **Layout studio** (Brand kits › a kit › Layout, or click the preview): drag and resize the title, subtitle, captions,
+logo and handle tag in a frame and set their size, alignment, colour, letter case and italics. TikTok's, Instagram
+Reels' and YouTube Shorts' own interface — tabs, the like/comment/share column, the name, caption and sound — can be
+drawn on top, and what they cover is shaded; anything under it, or two elements on top of each other, is listed, and
+**Move into the safe area** fixes it. Positions are fractions of the frame (`layout` in brand.json), so they hold in
+every format; the kit's caption position, watermark corner and text sizes follow from them. The editing agent gets
+the exact boxes and the area to keep clear, the brand guidelines a layout page, and Claude's `update_kit` checks every
+layout change against the apps (the zones are approximate: `PLATFORMS` in `src/shared/brand.ts`).
+**Logo studio** (Brand kits › a kit › Logo studio): a chat in which Claude draws the logo as SVG — a clean vector
+redraw of the one there is, or new designs from a description or an attached sketch — with every version beside the
+chat. Claude renders a proof of each version (on white, black and the brand colour, at 64 and 32 px), looks at it and
+fixes what is off before it answers. Lettering is set with real font outlines (the kit's fonts, or any free font,
+via fontkit), so the logo needs no installed font; detailed artwork can be traced (imagetracerjs) and then cleaned up.
+**Use as** puts a version into a logo slot as an SVG with a transparent PNG beside it, for tools that cannot read SVG.
+Rendering and tracing run in a hidden Chromium page (`src/main/raster.ts`), so no native image library is needed.
+**Fonts:** a family typed in the form is looked up in the free font libraries (Google Fonts and the other
+open-licensed families Fontsource lists, about 2,100); a free one downloads into the kit as a .ttf with its licence
+recorded, so graphics and captions never depend on what is installed. For a paid font the form says so and offers free
+look-alikes (Helvetica → Inter, Futura → Jost, …); upload the file to use the real one. Claude downloads fonts the same
+way when it sets them. The list of free fonts is kept in `~/.cutroom/fonts-index.json` and refreshed weekly.
+**Export** saves a kit as brand guidelines — a designed PDF manual (cover, logos,
+palette with HEX/RGB/CMYK, type specimens, captions, motion, sound and voice, do's and don'ts) or the same as Markdown —
+or as a brand package (.zip: the kit and its files, both documents, and `tokens.css`/`tokens.json` design tokens).
+**Import** on the Brand kits page (or dropping the .zip there) turns a package back into a kit.
+The pencil on a logo opens the logo editor: remove a background colour (only what touches the edge, or holes too) or
+lift the logo off a photo with Apple Vision, crop by dragging or trim to the logo, zoom, and recolour (all one colour,
+swap a colour, black and white, inverted), judged on transparent, dark, light or the brand colour, and saved into any
+logo slot — e.g. a white version for dark backgrounds. In a project, the brand menu at the top of the chat
+sets the kit for that chat only. A new chat starts with the kit of the open one, and **Split from here** keeps it, so
+split a finished video and pick another kit to make the same video for another brand. Claude gets the kit with every
+message and is told when it changes; on a chat that already has an edit, **Restyle now** asks it to apply the new kit
+right away. Ask in a chat to save the look of an edit as a brand kit (the `save-brand` skill). Kits live in
+`~/.cutroom/library/brands/<id>/` (`brand.json` and the files); the chat's kit is in `cuts.json`.
 
 **The Skill Marketplace.** Home › Marketplace finds styles and moves made by other editors: search, filter by kind,
 price and tags, watch the example clips, read the instructions and reviews. **Sign in with Google** opens your browser;
@@ -180,21 +227,32 @@ bump `version`, publish a GitHub release tagged `v<version>`, write the notes, a
 ```
 src/shared/types.ts   Timeline format and the window.cutroom API
 src/shared/features.ts  Connections, features and how each is paid for
+src/shared/brand.ts   Brand kits: the format, defaults, and reading older or hand-written kits
 src/shared/social.ts  Social analytics rules: platforms, page kinds, pace, which links Claude may open
 src/cli/              The `cutroom` command the agent calls: render, transcribe, remotion, cutout, generate, style-example, ledger
   project.ts            per-project settings, versions, sources, style ↔ video links
 src/main/             Electron shell: project folders, tool setup, preview, the agent session
   cuts.ts               chats in a project: new, split, rename, and moving older projects into the first one
   prompt.ts             what the agent knows about editing in Cutroom
+  brands.ts             brand kits: files, logos, what the agent is told and when the kit changed
+  logoStudio.ts         the logo studio: Claude's drawing tools (show_logo, trace_image, text_outline, use_logo), versions
+  chatRunner.ts         one saved Claude conversation (brand kit chat, logo studio): streaming, steps, sessions
+  raster.ts             SVG to PNG, proof sheets and tracing in a hidden Chromium page
+  logoText.ts           text as SVG outlines from a font file (fontkit)
+  fonts.ts              free fonts: lookup, look-alikes for paid ones, downloads from Google Fonts and Fontsource
+  brandExport.ts        brand guidelines (PDF via a hidden window, Markdown), design tokens, brand packages and import
+  brandChat.ts          the Claude chat on a brand kit's page: attachments and its tools (update_kit, download_logo,
+                        video_frames, video_still, transcribe_video, pdf_pages, save_logo, download_video)
   settings.ts           accounts, models, providers, MCP servers
   market.ts             Skill Marketplace: Google sign-in (loopback + PKCE), browse, install/update, reviews, publish
   social.ts             Social analytics: the signed-in browser window, saved logins, pace and limits, Claude's social tools
   socialPost.ts         Posting: exported videos, Claude's propose_post tool, the TikTok Studio and Instagram upload flows
   socialChat.ts         The Social tab's own Claude chat (no project needed)
   updates.ts            the check for a newer release on GitHub
-src/renderer/         React UI: Home, Onboarding, Settings, Market, Social (+ SocialChat), Chat, Preview, Timeline (+ Inspector, timelineOps)
+src/renderer/         React UI: Home, Onboarding, Settings, Market, Brands (+ LayoutStudio, LayoutFrame, LogoStudio, LogoEditor, ClaudeBubble), Social (+ SocialChat), Chat, Preview, Timeline (+ Inspector, timelineOps)
 skills/               Built-in styles, moves and helper skills
 native/cutout.swift   The cutout helper (Apple Vision), compiled on first launch into ~/.cutroom/bin
+native/pdfpage.swift  Renders brand guideline PDF pages (PDFKit), compiled the same way
 ```
 
 The agent runs shell commands and edits files in the project folder without asking for each one. It loads
